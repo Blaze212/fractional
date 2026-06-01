@@ -4,8 +4,6 @@
 export interface AgencyConfig {
   identity: {
     name: string
-    shortName: string
-    tagline: string
   }
   brand: {
     // Hex values used in tailwind.config.ts and any inline styles
@@ -20,8 +18,7 @@ export interface AgencyConfig {
   export: {
     // Shown in the DOCX resume header line beneath the candidate's name
     sponsorshipText: string
-    // Filename stem when the user downloads the generated DOCX
-    resumeFileStem: string // e.g. "{name}_resume" — {name} is replaced at runtime
+    // Filename stem when the user downloads the generated submittal DOCX
     submittalFileStem: string // e.g. "{name}_for_{client}_submittal"
   }
   llm: {
@@ -31,13 +28,6 @@ export interface AgencyConfig {
     // Appended to the resume-parse system prompt. Usually empty unless the
     // agency parses resumes with domain-specific rules.
     resumeParseNotes: string
-  }
-  ui: {
-    // Page-level copy overrides
-    pageTitle: string
-    uploadPrompt: string
-    generateButtonLabel: string
-    successHeading: string
   }
 }
 
@@ -54,8 +44,6 @@ export interface AgencyConfig {
 export const AGENCY_CONFIG: AgencyConfig = {
   identity: {
     name: 'Aligned Recruitment',
-    shortName: 'Aligned',
-    tagline: 'We make recruitment easy.',
   },
 
   brand: {
@@ -69,7 +57,6 @@ export const AGENCY_CONFIG: AgencyConfig = {
 
   export: {
     sponsorshipText: 'Authorized to work in the US without sponsorship',
-    resumeFileStem: '{name}_resume',
     submittalFileStem: '{name}_for_{client}_submittal',
   },
 
@@ -87,13 +74,5 @@ Style rules:
 `.trim(),
 
     resumeParseNotes: '',
-  },
-
-  ui: {
-    pageTitle: 'Aligned Recruitment — Candidate Submittal',
-    uploadPrompt:
-      'Upload a résumé and complete the role details to generate a candidate submittal.',
-    generateButtonLabel: 'Generate Submittal',
-    successHeading: 'Submittal ready',
   },
 }

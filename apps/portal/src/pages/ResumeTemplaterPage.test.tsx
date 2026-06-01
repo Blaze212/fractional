@@ -77,6 +77,12 @@ const mockBullets: FitBullet[] = [
   { text: 'Led the finance organization.', source_ref: 'career_highlights[0]' },
 ]
 
+const mockKeyQualifications: FitBullet[] = [
+  { text: 'Oversaw all financial operations.', source_ref: 'selected_experience[0]' },
+  { text: 'Raised $50M Series C.', source_ref: 'selected_experience[0]' },
+  { text: 'Reduced burn by 30%.', source_ref: 'career_highlights[1]' },
+]
+
 type FetchOverrides = {
   parseResponse?: object
   parseOk?: boolean
@@ -89,6 +95,7 @@ function setupFetchMock(overrides: FetchOverrides = {}) {
   const fitResponse = overrides.fitResponse ?? {
     fit_bullets: mockBullets,
     fit_summary: 'A C-Level SaaS leader.',
+    key_qualifications: mockKeyQualifications,
   }
 
   global.fetch = vi.fn().mockImplementation((url: string) => {
@@ -177,7 +184,12 @@ describe('ResumeTemplaterPage (submittal)', () => {
       'A C-Level SaaS leader.',
     )
     expect(screen.getByLabelText(/Fit bullet 1/i)).toBeInTheDocument()
-    expect(screen.getByText(/selected_experience\[0\]/)).toBeInTheDocument()
+    expect(screen.getAllByText(/selected_experience\[0\]/).length).toBeGreaterThan(0)
+    // key qualifications selected by the LLM render as editable bullets
+    expect(screen.getByLabelText(/Key qualification 1/i)).toBeInTheDocument()
+    expect((screen.getByLabelText(/Key qualification 2/i) as HTMLTextAreaElement).value).toBe(
+      'Raised $50M Series C.',
+    )
     // candidate snapshot prefers the richer fields
     expect(screen.getByText(/Work Authorization:/i)).toBeInTheDocument()
     expect(screen.getByText(/U\.S\. Citizen/i)).toBeInTheDocument()

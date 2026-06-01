@@ -21,7 +21,6 @@ function mergeWithDefaults(partial: Partial<AgencyConfig>): AgencyConfig {
     brand: { ...AGENCY_CONFIG.brand, ...partial.brand },
     export: { ...AGENCY_CONFIG.export, ...partial.export },
     llm: { ...AGENCY_CONFIG.llm, ...partial.llm },
-    ui: { ...AGENCY_CONFIG.ui, ...partial.ui },
   }
 }
 

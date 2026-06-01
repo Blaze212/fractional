@@ -19,6 +19,7 @@ export interface SubmittalFields {
   hiringManager: string
   fitSummary: string
   fitBullets: FitBullet[]
+  keyQualifications: FitBullet[]
   compLogistics: string
   recruiterNotes: string
 }
@@ -43,12 +44,13 @@ export type SubmittalRenderData = {
   total_experience: string
   fit_summary: string
   fit_bullets: { text: string }[]
+  show_key_qualifications: boolean
   key_qualifications: { text: string }[]
   recent_experience: { company: string; title: string; dates: string }[]
   show_comp_logistics: boolean
-  comp_logistics: string
+  comp_logistics_items: { text: string }[]
   show_recruiter_notes: boolean
-  recruiter_notes: string
+  recruiter_notes_items: { text: string }[]
 }
 
 export type SubmittalLogo = { bytes: Uint8Array; dims: LogoDimensions }
@@ -57,12 +59,26 @@ function currentTitle(profile: ParsedProfile): string {
   return profile.current_title ?? profile.selected_experience[0]?.title ?? ''
 }
 
+// Each non-empty line in a multi-line text box becomes its own bullet point.
+function linesToBullets(text: string): { text: string }[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => ({ text: line }))
+}
+
 export function mapToSubmittalRenderData(
   profile: ParsedProfile,
   fields: SubmittalFields,
 ): SubmittalRenderData {
-  const keyQualificationsSource =
-    profile.career_highlights.length > 0 ? profile.career_highlights : profile.skills.slice(0, 6)
+  // The LLM selects the qualifications that actually support the JD; an empty
+  // list is a valid "poor fit / no supporting points" signal, so we render it
+  // as-is rather than padding it with unrelated profile highlights.
+  const keyQualificationsSource = fields.keyQualifications.map((q) => q.text)
+
+  const compLogisticsItems = linesToBullets(fields.compLogistics)
+  const recruiterNotesItems = linesToBullets(fields.recruiterNotes)
 
   return {
     client_name: fields.clientName,
@@ -84,16 +100,17 @@ export function mapToSubmittalRenderData(
     total_experience: profile.total_experience ?? '',
     fit_summary: fields.fitSummary,
     fit_bullets: fields.fitBullets.map((b) => ({ text: b.text })),
+    show_key_qualifications: keyQualificationsSource.length > 0,
     key_qualifications: keyQualificationsSource.map((text) => ({ text })),
     recent_experience: profile.selected_experience.slice(0, 4).map((e) => ({
       company: e.company ?? '',
       title: e.title ?? '',
       dates: formatDateRange(e.start_date, e.end_date),
     })),
-    show_comp_logistics: !!fields.compLogistics.trim(),
-    comp_logistics: fields.compLogistics.trim(),
-    show_recruiter_notes: !!fields.recruiterNotes.trim(),
-    recruiter_notes: fields.recruiterNotes.trim(),
+    show_comp_logistics: compLogisticsItems.length > 0,
+    comp_logistics_items: compLogisticsItems,
+    show_recruiter_notes: recruiterNotesItems.length > 0,
+    recruiter_notes_items: recruiterNotesItems,
   }
 }
 

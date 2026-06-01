@@ -4,7 +4,6 @@
 export interface AgencyEdgeConfig {
   identity: {
     name: string
-    shortName: string
   }
   llm: {
     fitNarrativeStyleGuide: string
@@ -12,20 +11,19 @@ export interface AgencyEdgeConfig {
   }
 }
 
-// ─── Aligned Recruitment ─────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────
 // Tone extracted from the Employer Recruitment Branding Playbook:
 //   Values-based, strategic, clear, organized, approachable.
 //   "We make recruitment easy." — concise, confident, no fluff.
 
 export const AGENCY_CONFIG: AgencyEdgeConfig = {
   identity: {
-    name: 'Aligned Recruitment',
-    shortName: 'Aligned',
+    name: 'Agency Name',
   },
 
   llm: {
     fitNarrativeStyleGuide: `
-AGENCY VOICE — Aligned Recruitment:
+AGENCY VOICE:
 - Write in a professional, values-grounded tone that is direct and efficient — no filler phrases, no superlatives unsupported by the profile.
 - Lead with the candidate's clearest differentiator for this role, then support with specifics.
 - Prefer precise, active language ("led a 12-person team" not "strong leadership background").

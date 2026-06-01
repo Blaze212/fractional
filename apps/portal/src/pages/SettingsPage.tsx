@@ -5,19 +5,6 @@ import { AGENCY_CONFIG } from '../lib/agencyConfig'
 import { AppHeader } from '../components/AppHeader'
 import { LogoUploader } from '../components/LogoUploader'
 
-// Fields that are stored in config but not yet rendered anywhere in the app.
-// Shown with a callout so we can decide to wire up or drop them.
-function NotApplied({ label }: { label: string }) {
-  return (
-    <span
-      title={label}
-      className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-700"
-    >
-      not applied
-    </span>
-  )
-}
-
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
     <h2 className="border-b border-slate-200 pb-2 text-sm font-semibold text-slate-900">
@@ -29,20 +16,15 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
 function Field({
   label,
   hint,
-  notApplied,
   children,
 }: {
   label: string
   hint?: string
-  notApplied?: boolean
   children: React.ReactNode
 }) {
   return (
     <div className="space-y-1">
-      <label className="block text-sm font-medium text-slate-700">
-        {label}
-        {notApplied && <NotApplied label={`${label} is stored but not rendered in the app yet`} />}
-      </label>
+      <label className="block text-sm font-medium text-slate-700">{label}</label>
       {hint && <p className="text-xs text-slate-400">{hint}</p>}
       {children}
     </div>
@@ -158,20 +140,6 @@ export default function SettingsPage() {
               placeholder="Aligned Recruitment"
             />
           </Field>
-          <Field label="Short Name" notApplied>
-            <TextInput
-              value={draft.identity.shortName}
-              onChange={(v) => patch('identity', { shortName: v })}
-              placeholder="Aligned"
-            />
-          </Field>
-          <Field label="Tagline" notApplied>
-            <TextInput
-              value={draft.identity.tagline}
-              onChange={(v) => patch('identity', { tagline: v })}
-              placeholder="We make recruitment easy."
-            />
-          </Field>
         </section>
 
         {/* Brand Colors */}
@@ -235,64 +203,21 @@ export default function SettingsPage() {
               placeholder="{name}_for_{client}_submittal"
             />
           </Field>
-          <Field
-            label="Resume File Name"
-            hint="Use {name}. E.g. {name}_resume → Jane_Smith_resume.docx"
-            notApplied
-          >
-            <TextInput
-              value={draft.export.resumeFileStem}
-              onChange={(v) => patch('export', { resumeFileStem: v })}
-              placeholder="{name}_resume"
-            />
-          </Field>
         </section>
 
-        {/* UI Copy */}
-        <section className="space-y-4">
-          <SectionHeading>UI Copy</SectionHeading>
-          <Field label="Generate Button Label">
-            <TextInput
-              value={draft.ui.generateButtonLabel}
-              onChange={(v) => patch('ui', { generateButtonLabel: v })}
-              placeholder="Generate Submittal"
-            />
-          </Field>
-          <Field label="Page Title" notApplied hint="Would set the browser tab title.">
-            <TextInput value={draft.ui.pageTitle} onChange={(v) => patch('ui', { pageTitle: v })} />
-          </Field>
-          <Field label="Success Heading" notApplied hint="Shown when the submittal is ready.">
-            <TextInput
-              value={draft.ui.successHeading}
-              onChange={(v) => patch('ui', { successHeading: v })}
-              placeholder="Submittal ready"
-            />
-          </Field>
-          <Field label="Upload Prompt" hint="Subtitle shown below the page heading." notApplied>
-            <textarea
-              value={draft.ui.uploadPrompt}
-              onChange={(e) => patch('ui', { uploadPrompt: e.target.value })}
-              rows={2}
-              className="focus:border-brand focus:ring-brand w-full resize-y rounded-lg border border-slate-300 p-2.5 text-sm focus:outline-none focus:ring-1"
-            />
-          </Field>
-        </section>
-
-        {/* LLM Style Guide — read-only; requires a code change + redeploy */}
+        {/* LLM Style Guide — editable; applied to the next submittal generation */}
         <section className="space-y-4">
           <SectionHeading>LLM Style Guide</SectionHeading>
           <p className="text-xs text-slate-500">
-            Controls the agency voice injected into the AI fit-narrative prompt. Defined in{' '}
-            <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">
-              supabase/functions/_shared/agencyConfig.ts
-            </code>{' '}
-            — requires a code change and redeploy to update.
+            Controls the agency voice injected into the AI fit-narrative prompt. Saved with your
+            settings and applied to the next submittal you generate — no code change or redeploy
+            needed. Leave blank to use the model&apos;s default tone.
           </p>
           <textarea
-            readOnly
-            value={config.llm.fitNarrativeStyleGuide}
+            value={draft.llm.fitNarrativeStyleGuide}
+            onChange={(e) => patch('llm', { fitNarrativeStyleGuide: e.target.value })}
             rows={10}
-            className="w-full resize-y rounded-lg border border-slate-200 bg-slate-50 p-3 font-mono text-xs text-slate-500"
+            className="focus:border-brand focus:ring-brand w-full resize-y rounded-lg border border-slate-300 p-3 font-mono text-xs focus:outline-none focus:ring-1"
           />
         </section>
 

@@ -61,6 +61,11 @@ const groundedResult: FitResult = {
     { text: 'Deep SaaS and fintech finance leadership.', source_ref: 'industries' },
   ],
   fit_summary: 'A C-Level SaaS finance leader well suited to scale this role.',
+  key_qualifications: [
+    { text: 'Oversaw all financial operations.', source_ref: 'selected_experience[0]' },
+    { text: 'Raised $50M Series C.', source_ref: 'selected_experience[0]' },
+    { text: 'Reduced burn by 30%.', source_ref: 'career_highlights[1]' },
+  ],
 }
 
 function makeMockAiClient(
@@ -152,6 +157,41 @@ describe('validateSubmittalInput', () => {
       expect(result.value.jd_text).toBe('jd')
     }
   })
+
+  it('passes through an optional fit_narrative_style_guide', () => {
+    const result = validateSubmittalInput({
+      parsed_profile: mockProfile,
+      jd_text: 'jd',
+      client_name: 'Globex',
+      role_title: 'CFO',
+      fit_narrative_style_guide: 'Be terse and punchy.',
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value.fit_narrative_style_guide).toBe('Be terse and punchy.')
+  })
+
+  it('leaves fit_narrative_style_guide undefined when not provided', () => {
+    const result = validateSubmittalInput({
+      parsed_profile: mockProfile,
+      jd_text: 'jd',
+      client_name: 'Globex',
+      role_title: 'CFO',
+    })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.value.fit_narrative_style_guide).toBeUndefined()
+  })
+
+  it('rejects an over-length fit_narrative_style_guide', () => {
+    const result = validateSubmittalInput({
+      parsed_profile: mockProfile,
+      jd_text: 'jd',
+      client_name: 'Globex',
+      role_title: 'CFO',
+      fit_narrative_style_guide: 'x'.repeat(10_001),
+    })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.message).toContain('fit_narrative_style_guide')
+  })
 })
 
 describe('extractNumericTokens', () => {
@@ -196,12 +236,50 @@ describe('findUnsupportedNumbers (anti-hallucination)', () => {
 })
 
 describe('runFitGeneration', () => {
-  it('returns a grounded result with exactly 3 bullets and a summary', async () => {
+  it('returns a grounded result with exactly 3 bullets, a summary, and key qualifications', async () => {
     const deps: Deps = { aiClient: makeMockAiClient() }
     const { result, meta } = await runFitGeneration(baseInput, deps, silentLogger)
     expect(result.fit_bullets).toHaveLength(3)
     expect(result.fit_summary).toBeTruthy()
+    expect(result.key_qualifications).toHaveLength(3)
+    expect(result.key_qualifications[0].source_ref).toBe('selected_experience[0]')
     expect(meta.model).toBe('gpt-5.4-mini')
+  })
+
+  it('allows zero key qualifications for a poor fit with no supporting points', async () => {
+    const noQuals: FitResult = { ...groundedResult, key_qualifications: [] }
+    const deps: Deps = { aiClient: makeMockAiClient(noQuals) }
+    const { result } = await runFitGeneration(baseInput, deps, silentLogger)
+    expect(result.key_qualifications).toEqual([])
+  })
+
+  it('throws when more than 5 key qualifications are returned', async () => {
+    const tooMany: FitResult = {
+      ...groundedResult,
+      key_qualifications: Array.from({ length: 6 }, () => ({
+        text: 'Oversaw all financial operations.',
+        source_ref: 'selected_experience[0]',
+      })),
+    }
+    const deps: Deps = { aiClient: makeMockAiClient(tooMany) }
+    await expect(runFitGeneration(baseInput, deps, silentLogger)).rejects.toMatchObject({
+      code: 'UNPROCESSABLE_ENTITY',
+    })
+  })
+
+  it('flags an ungrounded figure that appears only in a key qualification', async () => {
+    const hallucinated: FitResult = {
+      ...groundedResult,
+      key_qualifications: [
+        { text: 'Managed a $999M portfolio.', source_ref: 'selected_experience[0]' },
+        groundedResult.key_qualifications[1],
+        groundedResult.key_qualifications[2],
+      ],
+    }
+    const deps: Deps = { aiClient: makeMockAiClient(hallucinated) }
+    await expect(runFitGeneration(baseInput, deps, silentLogger)).rejects.toMatchObject({
+      code: 'UNPROCESSABLE_ENTITY',
+    })
   })
 
   it('passes the submittal schema name and grounding inputs to the AI client', async () => {
@@ -216,6 +294,40 @@ describe('runFitGeneration', () => {
     const prompt = (aiClient.completeJson as ReturnType<typeof vi.fn>).mock.calls[0][1] as string
     expect(prompt).toContain('Acme Corp')
     expect(prompt).toContain('We need a CFO')
+  })
+
+  it('injects the caller-provided style guide into the system prompt', async () => {
+    const aiClient = makeMockAiClient()
+    await runFitGeneration(
+      { ...baseInput, fit_narrative_style_guide: 'House rule: no exclamation marks.' },
+      { aiClient },
+      silentLogger,
+    )
+    const systemPrompt = (aiClient.completeJson as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as string
+    expect(systemPrompt).toContain('House rule: no exclamation marks.')
+  })
+
+  it('falls back to the default agency voice when no style guide is provided', async () => {
+    const aiClient = makeMockAiClient()
+    await runFitGeneration(baseInput, { aiClient }, silentLogger)
+    const systemPrompt = (aiClient.completeJson as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as string
+    // Marker unique to the appended default style guide (not the base prompt).
+    expect(systemPrompt).toContain('proven track record')
+  })
+
+  it('omits the style guide entirely when an empty string is provided', async () => {
+    const aiClient = makeMockAiClient()
+    await runFitGeneration(
+      { ...baseInput, fit_narrative_style_guide: '   ' },
+      { aiClient },
+      silentLogger,
+    )
+    const systemPrompt = (aiClient.completeJson as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as string
+    // The default style guide must not be appended; its unique marker is absent.
+    expect(systemPrompt).not.toContain('proven track record')
   })
 
   it('throws when the model returns other than 3 bullets', async () => {

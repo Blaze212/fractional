@@ -4,7 +4,7 @@ import { UnprocessableEntityException } from '../_shared/errors.ts'
 import type { ParsedProfile } from '../resume-parse/schema.ts'
 import { FIT_RESULT_SCHEMA } from './schema.ts'
 import type { FitResult } from './schema.ts'
-import { SUBMITTAL_SYSTEM_PROMPT } from './system-prompt.ts'
+import { buildSubmittalSystemPrompt } from './system-prompt.ts'
 import { buildSubmittalPrompt } from './prompt.ts'
 
 export interface Deps {
@@ -16,6 +16,9 @@ export interface SubmittalInput {
   jd_text: string
   client_name: string
   role_title: string
+  // Agency voice injected into the system prompt. Optional: when omitted the
+  // function falls back to the built-in default in system-prompt.ts.
+  fit_narrative_style_guide?: string
 }
 
 interface RawBody {
@@ -23,9 +26,11 @@ interface RawBody {
   jd_text?: string | null
   client_name?: string | null
   role_title?: string | null
+  fit_narrative_style_guide?: string | null
 }
 
 const MAX_JD_CHARS = 40_000
+const MAX_STYLE_GUIDE_CHARS = 10_000
 
 function isParsedProfile(value: ParsedProfile | null | undefined): value is ParsedProfile {
   if (!value || typeof value !== 'object') return false
@@ -61,6 +66,21 @@ export function validateSubmittalInput(
   const roleTitle = requireText(body.role_title)
   if (!roleTitle) return { ok: false, message: 'role_title is required' }
 
+  let styleGuide: string | undefined
+  const rawGuide = body.fit_narrative_style_guide
+  if (rawGuide !== undefined && rawGuide !== null) {
+    if (typeof rawGuide !== 'string') {
+      return { ok: false, message: 'fit_narrative_style_guide must be a string' }
+    }
+    if (rawGuide.length > MAX_STYLE_GUIDE_CHARS) {
+      return {
+        ok: false,
+        message: `fit_narrative_style_guide exceeds ${MAX_STYLE_GUIDE_CHARS} character limit`,
+      }
+    }
+    styleGuide = rawGuide
+  }
+
   return {
     ok: true,
     value: {
@@ -68,6 +88,7 @@ export function validateSubmittalInput(
       jd_text: jd,
       client_name: clientName,
       role_title: roleTitle,
+      fit_narrative_style_guide: styleGuide,
     },
   }
 }
@@ -95,7 +116,11 @@ export function profileFactText(profile: ParsedProfile): string {
 // not anywhere in the candidate profile — i.e. likely hallucinated figures.
 export function findUnsupportedNumbers(output: FitResult, profile: ParsedProfile): string[] {
   const haystack = profileFactText(profile)
-  const texts = [output.fit_summary, ...output.fit_bullets.map((b) => b.text)]
+  const texts = [
+    output.fit_summary,
+    ...output.fit_bullets.map((b) => b.text),
+    ...output.key_qualifications.map((b) => b.text),
+  ]
   const unsupported = new Set<string>()
   for (const text of texts) {
     for (const token of extractNumericTokens(text)) {
@@ -118,7 +143,7 @@ export async function runFitGeneration(
   let res: { data: FitResult; tokens: { input: number; output: number; model?: string } }
   try {
     res = await deps.aiClient.completeJson<FitResult>(
-      SUBMITTAL_SYSTEM_PROMPT,
+      buildSubmittalSystemPrompt(input.fit_narrative_style_guide),
       buildSubmittalPrompt(input),
       'submittal_fit',
       FIT_RESULT_SCHEMA,
@@ -138,6 +163,11 @@ export async function runFitGeneration(
   }
   if (typeof result.fit_summary !== 'string' || result.fit_summary.trim().length === 0) {
     throw new UnprocessableEntityException({ message: 'Fit generation returned an empty summary' })
+  }
+  if (!Array.isArray(result.key_qualifications) || result.key_qualifications.length > 5) {
+    throw new UnprocessableEntityException({
+      message: 'Fit generation must return at most 5 key qualifications',
+    })
   }
 
   const unsupported = findUnsupportedNumbers(result, input.parsed_profile)

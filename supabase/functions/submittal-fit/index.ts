@@ -18,6 +18,7 @@ interface RawBody {
   jd_text?: string | null
   client_name?: string | null
   role_title?: string | null
+  fit_narrative_style_guide?: string | null
 }
 
 function jsonResponse(
@@ -64,10 +65,12 @@ Deno.serve(
     try {
       const { result, meta } = await runFitGeneration(validation.value, { aiClient }, log)
       return jsonResponse(
-        { fit_bullets: result.fit_bullets, fit_summary: result.fit_summary, meta } as Record<
-          string,
-          object | string | number | boolean | null
-        >,
+        {
+          fit_bullets: result.fit_bullets,
+          fit_summary: result.fit_summary,
+          key_qualifications: result.key_qualifications,
+          meta,
+        } as Record<string, object | string | number | boolean | null>,
         200,
         req,
       )

@@ -8,6 +8,7 @@ export interface FitBullet {
 export interface FitResult {
   fit_bullets: FitBullet[]
   fit_summary: string
+  key_qualifications: FitBullet[]
 }
 
 const fitBulletItem = {
@@ -30,7 +31,13 @@ export const FIT_RESULT_SCHEMA: JsonSchema = {
       items: fitBulletItem,
     },
     fit_summary: { type: 'string' },
+    key_qualifications: {
+      type: 'array',
+      minItems: 0,
+      maxItems: 5,
+      items: fitBulletItem,
+    },
   },
-  required: ['fit_bullets', 'fit_summary'],
+  required: ['fit_bullets', 'fit_summary', 'key_qualifications'],
   additionalProperties: false,
 }

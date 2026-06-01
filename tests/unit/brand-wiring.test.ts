@@ -37,6 +37,44 @@ describe('brand color wiring', () => {
   })
 })
 
+describe('settings cleanup', () => {
+  it('removes every "not applied" setting and the badge component', () => {
+    expect(settings).not.toContain('notApplied')
+    expect(settings).not.toContain('NotApplied')
+    expect(settings).not.toContain('not applied')
+  })
+
+  it('drops the dead config fields entirely', () => {
+    for (const field of [
+      'shortName',
+      'tagline',
+      'resumeFileStem',
+      'pageTitle',
+      'uploadPrompt',
+      'successHeading',
+      'generateButtonLabel',
+    ]) {
+      expect(settings).not.toContain(field)
+    }
+  })
+})
+
+describe('LLM style guide wiring', () => {
+  it('makes the style guide editable and bound to the draft config', () => {
+    // Editable means it writes back to the draft via patch('llm', ...) and is
+    // no longer a read-only mirror of the server file.
+    expect(settings).toContain("patch('llm', { fitNarrativeStyleGuide:")
+    expect(settings).toContain('draft.llm.fitNarrativeStyleGuide')
+    const styleSection = settings.slice(settings.indexOf('LLM Style Guide'))
+    expect(styleSection).not.toContain('readOnly')
+    expect(settings).not.toContain('_shared/agencyConfig.ts')
+  })
+
+  it('passes the saved style guide to submittal-fit so no redeploy is needed', () => {
+    expect(templater).toContain('fit_narrative_style_guide: config.llm.fitNarrativeStyleGuide')
+  })
+})
+
 describe('unified header', () => {
   it('uses the shared AppHeader on both pages', () => {
     expect(settings).toContain('<AppHeader')

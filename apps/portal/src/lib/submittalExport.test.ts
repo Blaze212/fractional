@@ -56,6 +56,11 @@ const fields: SubmittalFields = {
     { text: 'Reduced burn by 30%.', source_ref: 'career_highlights[1]' },
     { text: 'Deep SaaS finance expertise.', source_ref: 'industries' },
   ],
+  keyQualifications: [
+    { text: 'Oversaw all financial operations.', source_ref: 'selected_experience[0]' },
+    { text: 'Raised $50M Series C.', source_ref: 'selected_experience[0]' },
+    { text: 'Reduced burn by 30%.', source_ref: 'career_highlights[1]' },
+  ],
   compLogistics: 'Target $300k base + equity.',
   recruiterNotes: 'Available to start in 4 weeks.',
 }
@@ -105,6 +110,54 @@ describe('mapToSubmittalRenderData', () => {
     expect(rd.fit_bullets).toHaveLength(3)
     expect(rd.recent_experience[0].company).toBe('Acme Corp')
   })
+
+  it('sources key qualifications from the LLM-selected bullets', () => {
+    const rd = mapToSubmittalRenderData(profile, fields)
+    expect(rd.show_key_qualifications).toBe(true)
+    expect(rd.key_qualifications).toEqual([
+      { text: 'Oversaw all financial operations.' },
+      { text: 'Raised $50M Series C.' },
+      { text: 'Reduced burn by 30%.' },
+    ])
+  })
+
+  it('hides the section for a poor fit with no supporting points (no profile padding)', () => {
+    const rd = mapToSubmittalRenderData(profile, { ...fields, keyQualifications: [] })
+    expect(rd.show_key_qualifications).toBe(false)
+    expect(rd.key_qualifications).toEqual([])
+  })
+
+  it('splits comp & logistics and recruiter notes into one bullet per line', () => {
+    const rd = mapToSubmittalRenderData(profile, {
+      ...fields,
+      compLogistics: 'Target $300k base + equity.\nAvailable in 4 weeks.\nRemote-friendly.',
+      recruiterNotes: 'Strong culture fit.\r\nPrefers Series B+.',
+    })
+    expect(rd.comp_logistics_items).toEqual([
+      { text: 'Target $300k base + equity.' },
+      { text: 'Available in 4 weeks.' },
+      { text: 'Remote-friendly.' },
+    ])
+    expect(rd.recruiter_notes_items).toEqual([
+      { text: 'Strong culture fit.' },
+      { text: 'Prefers Series B+.' },
+    ])
+  })
+
+  it('ignores blank lines and surrounding whitespace when building bullets', () => {
+    const rd = mapToSubmittalRenderData(profile, {
+      ...fields,
+      compLogistics: '  First line  \n\n   \n  Second line\n',
+    })
+    expect(rd.comp_logistics_items).toEqual([{ text: 'First line' }, { text: 'Second line' }])
+    expect(rd.show_comp_logistics).toBe(true)
+  })
+
+  it('hides the section when the text box has no non-empty lines', () => {
+    const rd = mapToSubmittalRenderData(profile, { ...fields, compLogistics: '  \n\n  ' })
+    expect(rd.show_comp_logistics).toBe(false)
+    expect(rd.comp_logistics_items).toEqual([])
+  })
 })
 
 describe('exportSubmittal', () => {
@@ -132,6 +185,28 @@ describe('exportSubmittal', () => {
     expect(xml).not.toContain('fit_bullets')
   })
 
+  it('renders each comp/notes line as its own bullet paragraph', () => {
+    const rd = mapToSubmittalRenderData(profile, {
+      ...fields,
+      compLogistics: 'Target $300k base.\nAvailable in 4 weeks.',
+      recruiterNotes: 'Strong culture fit.\nPrefers Series B+.',
+    })
+    const buf = renderSubmittalDocx(loadTemplate(), rd, null)
+    const xml = renderedText(buf)
+
+    for (const line of [
+      'Target $300k base.',
+      'Available in 4 weeks.',
+      'Strong culture fit.',
+      'Prefers Series B+.',
+    ]) {
+      expect(xml).toContain(`•\t${line}`)
+    }
+    expect(xml).not.toContain('{{')
+    expect(xml).not.toContain('comp_logistics_items')
+    expect(xml).not.toContain('recruiter_notes_items')
+  })
+
   it('omits hidden optional sections', () => {
     const rd = mapToSubmittalRenderData(profile, {
       ...fields,
@@ -147,6 +222,14 @@ describe('exportSubmittal', () => {
     expect(xml).not.toContain('REQ-123')
     expect(xml).not.toContain('Compensation')
     expect(xml).not.toContain('Recruiter Notes')
+  })
+
+  it('omits the Key Qualifications heading when there are none', () => {
+    const rd = mapToSubmittalRenderData(profile, { ...fields, keyQualifications: [] })
+    const buf = renderSubmittalDocx(loadTemplate(), rd, null)
+    const xml = renderedText(buf)
+    expect(xml).not.toContain('Key Qualifications')
+    expect(xml).not.toContain('{{')
   })
 
   it('succeeds with no logo (transparent placeholder retained)', () => {

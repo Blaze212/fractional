@@ -77,6 +77,65 @@ function TextField({
   )
 }
 
+function SectionCard({
+  title,
+  count,
+  hint,
+  children,
+}: {
+  title: string
+  count?: number
+  hint?: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-slate-800">{title}</h3>
+        {typeof count === 'number' && (
+          <span className="bg-brand-muted text-brand rounded-full px-2 py-0.5 text-xs font-semibold">
+            {count}
+          </span>
+        )}
+        {hint && <span className="text-xs text-slate-400">{hint}</span>}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function BulletEditor({
+  index,
+  label,
+  value,
+  sourceRef,
+  onChange,
+}: {
+  index: number
+  label: string
+  value: string
+  sourceRef: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <div className="flex gap-3">
+      <span className="bg-brand-muted text-brand mt-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold">
+        {index + 1}
+      </span>
+      <div className="flex-1 space-y-1">
+        <AutoResizeTextarea
+          aria-label={label}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          rows={2}
+          className="focus:border-brand focus:ring-brand w-full rounded-lg border border-slate-300 p-2.5 text-sm focus:outline-none focus:ring-1"
+        />
+        <p className="text-right text-[11px] text-slate-400">Source: {sourceRef}</p>
+      </div>
+    </div>
+  )
+}
+
 export default function ResumeTemplaterPage() {
   const { config } = useAgencyConfig()
   const { logo } = useAgencyLogo()
@@ -95,6 +154,7 @@ export default function ResumeTemplaterPage() {
   // Generated + editable
   const [profile, setProfile] = useState<ParsedProfile | null>(null)
   const [fitBullets, setFitBullets] = useState<FitBullet[]>([])
+  const [keyQualifications, setKeyQualifications] = useState<FitBullet[]>([])
   const [fitSummary, setFitSummary] = useState('')
   const [compLogistics, setCompLogistics] = useState('')
   const [recruiterNotes, setRecruiterNotes] = useState('')
@@ -156,11 +216,13 @@ export default function ResumeTemplaterPage() {
           jd_text: jdText,
           client_name: clientName,
           role_title: roleTitle,
+          fit_narrative_style_guide: config.llm.fitNarrativeStyleGuide,
         }),
       })
       const fitJson = (await fitRes.json()) as {
         fit_bullets?: FitBullet[]
         fit_summary?: string
+        key_qualifications?: FitBullet[]
         error?: { message?: string }
       }
       if (!fitRes.ok || !fitJson.fit_bullets || !fitJson.fit_summary) {
@@ -170,6 +232,7 @@ export default function ResumeTemplaterPage() {
       stopTimer()
       setProfile(parseJson.profile)
       setFitBullets(fitJson.fit_bullets)
+      setKeyQualifications(fitJson.key_qualifications ?? [])
       setFitSummary(fitJson.fit_summary)
       setPageState('success')
     } catch (err) {
@@ -183,6 +246,10 @@ export default function ResumeTemplaterPage() {
 
   function updateBullet(index: number, text: string) {
     setFitBullets((bullets) => bullets.map((b, i) => (i === index ? { ...b, text } : b)))
+  }
+
+  function updateKeyQualification(index: number, text: string) {
+    setKeyQualifications((quals) => quals.map((q, i) => (i === index ? { ...q, text } : q)))
   }
 
   async function handleExport() {
@@ -212,6 +279,7 @@ export default function ResumeTemplaterPage() {
         hiringManager,
         fitSummary,
         fitBullets,
+        keyQualifications,
         compLogistics,
         recruiterNotes,
       }
@@ -327,7 +395,7 @@ export default function ResumeTemplaterPage() {
               disabled={!canGenerate}
               className="bg-brand hover:bg-brand-light rounded-lg px-6 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {pageState === 'error' ? 'Try Again' : config.ui.generateButtonLabel}
+              {pageState === 'error' ? 'Try Again' : 'Generate Submittal'}
             </button>
           </div>
         )}
@@ -345,15 +413,15 @@ export default function ResumeTemplaterPage() {
         )}
 
         {pageState === 'success' && profile && (
-          <div className="space-y-6">
-            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-6">
-              <div>
-                <h2 className="text-xl font-bold text-slate-900">{profile.name ?? 'Candidate'}</h2>
+          <div className="space-y-5">
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <h2 className="text-lg font-bold text-slate-900">{profile.name ?? 'Candidate'}</h2>
                 <p className="text-brand-secondary text-sm font-medium">
                   {roleTitle} @ {clientName}
                 </p>
               </div>
-              <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+              <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1 border-t border-slate-100 pt-3 text-sm sm:grid-cols-2">
                 {(profile.current_title ?? profile.selected_experience[0]?.title) && (
                   <div>
                     <dt className="inline font-medium text-slate-900">Current Title: </dt>
@@ -383,70 +451,75 @@ export default function ResumeTemplaterPage() {
               </dl>
             </div>
 
-            <div className="space-y-2">
-              <label htmlFor="fit-summary" className="block text-sm font-semibold text-slate-800">
-                Fit Summary
-              </label>
+            <SectionCard title="Fit Summary">
               <AutoResizeTextarea
                 id="fit-summary"
+                aria-label="Fit Summary"
                 value={fitSummary}
                 onChange={(e) => setFitSummary(e.target.value)}
                 rows={2}
-                className="focus:border-brand focus:ring-brand w-full rounded-lg border border-slate-300 p-3 text-sm focus:outline-none focus:ring-1"
+                className="focus:border-brand focus:ring-brand w-full rounded-lg border border-slate-300 p-2.5 text-sm focus:outline-none focus:ring-1"
               />
-            </div>
+            </SectionCard>
 
-            <div className="space-y-3">
-              <h3 className="text-sm font-semibold text-slate-800">
-                Why {profile.name ?? 'this candidate'} for {clientName}
-              </h3>
-              {fitBullets.map((bullet, i) => (
-                <div key={i} className="space-y-1">
-                  <AutoResizeTextarea
-                    aria-label={`Fit bullet ${i + 1}`}
+            <SectionCard
+              title={`Why ${profile.name ?? 'this candidate'} for ${clientName}`}
+              count={fitBullets.length}
+            >
+              <div className="space-y-2.5">
+                {fitBullets.map((bullet, i) => (
+                  <BulletEditor
+                    key={i}
+                    index={i}
+                    label={`Fit bullet ${i + 1}`}
                     value={bullet.text}
-                    onChange={(e) => updateBullet(i, e.target.value)}
-                    rows={2}
-                    className="focus:border-brand focus:ring-brand w-full rounded-lg border border-slate-300 p-3 text-sm focus:outline-none focus:ring-1"
+                    sourceRef={bullet.source_ref}
+                    onChange={(v) => updateBullet(i, v)}
                   />
-                  <p className="text-xs text-slate-400">Source: {bullet.source_ref}</p>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </SectionCard>
 
-            <div className="space-y-2">
-              <label
-                htmlFor="comp-logistics"
-                className="block text-sm font-semibold text-slate-800"
-              >
-                Compensation &amp; Logistics
-              </label>
+            {keyQualifications.length > 0 && (
+              <SectionCard title="Key Qualifications" count={keyQualifications.length}>
+                <div className="space-y-2.5">
+                  {keyQualifications.map((qual, i) => (
+                    <BulletEditor
+                      key={i}
+                      index={i}
+                      label={`Key qualification ${i + 1}`}
+                      value={qual.text}
+                      sourceRef={qual.source_ref}
+                      onChange={(v) => updateKeyQualification(i, v)}
+                    />
+                  ))}
+                </div>
+              </SectionCard>
+            )}
+
+            <SectionCard title="Compensation & Logistics" hint="One per line">
               <AutoResizeTextarea
                 id="comp-logistics"
+                aria-label="Compensation & Logistics"
                 value={compLogistics}
                 onChange={(e) => setCompLogistics(e.target.value)}
-                placeholder="Target comp, availability, work authorization, location…"
+                placeholder="Target comp&#10;Availability&#10;Work authorization"
                 rows={3}
-                className="focus:border-brand focus:ring-brand w-full rounded-lg border border-slate-300 p-3 text-sm focus:outline-none focus:ring-1"
+                className="focus:border-brand focus:ring-brand w-full rounded-lg border border-slate-300 p-2.5 text-sm focus:outline-none focus:ring-1"
               />
-            </div>
+            </SectionCard>
 
-            <div className="space-y-2">
-              <label
-                htmlFor="recruiter-notes"
-                className="block text-sm font-semibold text-slate-800"
-              >
-                Recruiter Notes
-              </label>
+            <SectionCard title="Recruiter Notes" hint="One per line">
               <AutoResizeTextarea
                 id="recruiter-notes"
+                aria-label="Recruiter Notes"
                 value={recruiterNotes}
                 onChange={(e) => setRecruiterNotes(e.target.value)}
                 placeholder="Anything else the hiring manager should know…"
                 rows={3}
-                className="focus:border-brand focus:ring-brand w-full rounded-lg border border-slate-300 p-3 text-sm focus:outline-none focus:ring-1"
+                className="focus:border-brand focus:ring-brand w-full rounded-lg border border-slate-300 p-2.5 text-sm focus:outline-none focus:ring-1"
               />
-            </div>
+            </SectionCard>
 
             {errorMessage && (
               <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
