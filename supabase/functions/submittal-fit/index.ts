@@ -4,6 +4,7 @@ import { ValidationException, errorBody, logError } from '../_shared/errors.ts'
 import { OpenAiResponsesClient } from '../_shared/ai-client.ts'
 import type { ParsedProfile } from '../resume-parse/schema.ts'
 import { validateSubmittalInput, runFitGeneration } from './submittal-fit.ts'
+import { trackUsageEvent } from '../_shared/track-usage.ts'
 
 const DEFAULT_MODEL = 'gpt-5.4-mini'
 const DEFAULT_GRADER_MODEL = 'gpt-5.4'
@@ -77,6 +78,7 @@ Deno.serve(
         { aiClient, graderDeps: { graderAiClient } },
         log,
       )
+      void trackUsageEvent(userId, 'submittal_fit', log)
       return jsonResponse(
         {
           fit_bullets: result.fit_bullets,

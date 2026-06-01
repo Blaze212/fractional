@@ -3,6 +3,7 @@ import { logger } from '../_shared/logger.ts'
 import { ValidationException, errorBody, logError } from '../_shared/errors.ts'
 import { OpenAiResponsesClient } from '../_shared/ai-client.ts'
 import { validateResumeText, runParsing } from './resume-parse.ts'
+import { trackUsageEvent } from '../_shared/track-usage.ts'
 
 const DEFAULT_MODEL = 'gpt-5.4-mini'
 
@@ -55,6 +56,7 @@ Deno.serve(
 
     try {
       const { profile, meta } = await runParsing(validation.text, { aiClient }, log)
+      void trackUsageEvent(userId, 'resume_parse', log)
       return jsonResponse(
         { profile, meta } as Record<string, object | string | number | boolean | null>,
         200,
