@@ -18,7 +18,9 @@ export interface GraderDeps {
   graderAiClient: AiClient
 }
 
-// Phrases that signal hype — forbidden when fit_level is not 'strong'.
+// Phrases forbidden in client-facing fields (fit_summary, fit_bullets, key_qualifications).
+// Hype phrases: forbidden when fit_level is not 'strong'.
+// Gap-disclosure phrases: forbidden at all fit levels (gap details belong in internal_assessment).
 const BANNED_PHRASES = [
   'ideal fit',
   'perfect fit',
@@ -27,12 +29,30 @@ const BANNED_PHRASES = [
   'uniquely qualified',
   'tailor-made',
   'tailor made',
+  // Gap-disclosure language — never appropriate in client-facing copy
+  'partial fit',
+  'weak fit',
+  'not a fit',
+  'main gaps',
+  'key gaps',
+  'gaps are',
+  'the gaps are',
 ]
+
+// Phrases that are only banned for non-strong fit levels (hype detection).
+const HYPE_ONLY_PHRASES = new Set([
+  'ideal fit',
+  'perfect fit',
+  'exceptional fit',
+  'outstanding fit',
+  'uniquely qualified',
+  'tailor-made',
+  'tailor made',
+])
 
 // --- Layer 0: pure deterministic checks ---
 
 export function checkBannedPhrases(result: FitResult): string[] {
-  if (result.fit_level === 'strong') return []
   const texts = [
     result.fit_summary,
     ...result.fit_bullets.map((b) => b.text),
@@ -40,8 +60,10 @@ export function checkBannedPhrases(result: FitResult): string[] {
   ]
   const hits: string[] = []
   for (const phrase of BANNED_PHRASES) {
+    const isHypeOnly = HYPE_ONLY_PHRASES.has(phrase)
+    if (isHypeOnly && result.fit_level === 'strong') continue
     if (texts.some((t) => t.toLowerCase().includes(phrase))) {
-      hits.push(`Banned phrase "${phrase}" used with fit_level "${result.fit_level}"`)
+      hits.push(`Banned phrase "${phrase}" found in client-facing copy`)
     }
   }
   return hits

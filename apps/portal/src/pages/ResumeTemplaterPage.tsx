@@ -617,12 +617,32 @@ export default function ResumeTemplaterPage() {
               </dl>
             </div>
 
-            <GradeBanner
-              grade={fitGrade}
-              onRegenerate={handleGenerate}
-              isGenerating={isGenerating}
-            />
-            <RecruiterAssessment assessment={fitAssessment} />
+            {(fitAssessment !== null ||
+              (fitGrade !== null &&
+                (fitGrade.action !== 'ship' || fitGrade.warnings.length > 0))) && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+                    Internal only
+                  </span>
+                  <div className="h-px flex-1 bg-slate-200" />
+                </div>
+                <GradeBanner
+                  grade={fitGrade}
+                  onRegenerate={handleGenerate}
+                  isGenerating={isGenerating}
+                />
+                <RecruiterAssessment assessment={fitAssessment} />
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 py-1">
+              <div className="h-px flex-1 bg-slate-200" />
+              <span className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+                Included in export
+              </span>
+              <div className="h-px flex-1 bg-slate-200" />
+            </div>
 
             <SectionCard title="Fit Summary">
               <AutoResizeTextarea

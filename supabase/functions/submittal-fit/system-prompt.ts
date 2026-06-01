@@ -44,10 +44,16 @@ If you cannot support a claim directly from the profile, leave it out.
 
 
 ** DEFAULT Rules for 'fit_summary':**
-- Position the candidate for this specific CLIENT and ROLE (e.g., “Strong fit for X because Y and Z”).  
+- Lead with what the candidate genuinely brings to this specific CLIENT and ROLE, grounded in the profile.
+- NEVER include phrases like “partial fit”, “weak fit”, “moderate fit”, “not recommended”, “not a fit”, “main gaps”, “key gaps”, “gaps are”, or “the gaps are” — this field is client-facing and gap disclosure belongs exclusively in 'internal_assessment.gaps'.
+- NEVER disclose the fit_level label or the internal assessment outcome in this field.
+- If fit_level is 'moderate', 'weak', or 'not_recommended': close with ONE constructive sentence using “ramp on”, “develop”, or “grow into” framing for the most important missing area. Be truthful but framed as forward potential — no enumerated gap list, no self-sabotaging label.
+  - Correct: “Jane brings 8 years of agile delivery experience in software environments and would ramp on formal Scrum Master responsibilities and certification in this role.”
+  - Correct: “Alex offers strong cross-functional coordination and stakeholder management; would develop Trello-specific workflows alongside the team.”
+  - Wrong: “Barton is a partial fit for this role. The main gaps are formal Scrum Master tenure and Scrum certification.”
 - Only use facts present in the profile (no invented metrics).
 ** You may override the following DEFAULT Rules for 'fit_summary' when 'styleGuide' is provided:**
-- Exactly **two** sentences.  
+- Exactly **two** sentences.
 
 ### HONEST SELF-ASSESSMENT (MANDATORY — output these fields before the narrative)
 

@@ -276,27 +276,27 @@ describe('checkBannedPhrases (Layer 0)', () => {
     expect(checkBannedPhrases(groundedResult)).toHaveLength(0)
   })
 
-  it('skips the check entirely for strong fit_level', () => {
-    const withBanned: FitResult = {
+  it('skips hype-phrase check for strong fit_level', () => {
+    const withHype: FitResult = {
       ...groundedResult,
       fit_level: 'strong',
       fit_summary: 'This is an ideal fit for the role.',
     }
-    expect(checkBannedPhrases(withBanned)).toHaveLength(0)
+    expect(checkBannedPhrases(withHype)).toHaveLength(0)
   })
 
-  it('flags a banned phrase for non-strong fit_level', () => {
-    const weakWithBanned: FitResult = {
+  it('flags a hype phrase for non-strong fit_level', () => {
+    const weakWithHype: FitResult = {
       ...groundedResult,
       fit_level: 'moderate',
       fit_summary: 'This is an ideal fit for the role.',
     }
-    const issues = checkBannedPhrases(weakWithBanned)
+    const issues = checkBannedPhrases(weakWithHype)
     expect(issues.length).toBeGreaterThan(0)
     expect(issues[0]).toContain('ideal fit')
   })
 
-  it('detects banned phrases in bullets for non-strong fits', () => {
+  it('detects hype phrases in bullets for non-strong fits', () => {
     const result: FitResult = {
       ...groundedResult,
       fit_level: 'weak',
@@ -308,6 +308,32 @@ describe('checkBannedPhrases (Layer 0)', () => {
     }
     const issues = checkBannedPhrases(result)
     expect(issues.some((i) => i.includes('perfect fit'))).toBe(true)
+  })
+
+  it('flags "partial fit" in fit_summary even for strong fit_level', () => {
+    const result: FitResult = {
+      ...groundedResult,
+      fit_level: 'strong',
+      fit_summary: 'Jane is a partial fit for this role.',
+    }
+    const issues = checkBannedPhrases(result)
+    expect(issues.some((i) => i.includes('partial fit'))).toBe(true)
+  })
+
+  it('flags gap-disclosure phrases at any fit_level', () => {
+    const cases: Array<{ phrase: string; summary: string }> = [
+      { phrase: 'partial fit', summary: 'Barton is a partial fit for this role.' },
+      { phrase: 'main gaps', summary: 'The main gaps are certification and Trello.' },
+      { phrase: 'gaps are', summary: 'The gaps are formal tenure and scrum cert.' },
+      { phrase: 'not a fit', summary: 'Candidate is not a fit for this position.' },
+    ]
+    for (const { phrase, summary } of cases) {
+      for (const fit_level of ['strong', 'moderate', 'weak', 'not_recommended'] as const) {
+        const result: FitResult = { ...groundedResult, fit_level, fit_summary: summary }
+        const issues = checkBannedPhrases(result)
+        expect(issues.some((i) => i.includes(phrase))).toBe(true)
+      }
+    }
   })
 })
 

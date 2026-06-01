@@ -12,6 +12,7 @@
 The `submittal-fit` edge function generates candidate narratives for real hiring managers. Prior to this change it only asked "why does this candidate fit?" — producing over-praising output with no mechanism for surfacing gaps or catching hallucinations. Recruiters had to manually verify every narrative before sending.
 
 Two risks were accumulating:
+
 1. **Factual risk** — fabricated metrics, titles, or employers reach a hiring manager.
 2. **Reputational risk** — over-praising a weak candidate undermines agency credibility.
 
@@ -22,25 +23,30 @@ Two risks were accumulating:
 We add a two-layer grading system on top of the existing generator:
 
 **Layer 0 — deterministic (always runs):**
+
 - Banned-phrase × fit_level contradiction (e.g., "ideal fit" in a `weak` narrative)
 - Coverage consistency check: `strong` claim with unmet must-haves forces escalation
 - Numeric grounding recheck via `findUnsupportedNumbers`
 
 **Layer 1 — generator self-assessment (same LLM call):**
+
 - Generator extracts JD must-haves, scores coverage, emits `fit_level` + `internal_assessment.gaps`
 - `fit_level` rubric: `strong` ≥80% must-haves met, `moderate` 1-2 gaps, `weak` multiple misses, `not_recommended` missing core requirements
 
 **Layer 2 — conditional LLM grader (gpt-5.4, separate call):**
+
 - Runs only when the risk gate trips: `fit_level != strong`, gaps present, or Layer 0 issues
 - Independently re-derives must-have coverage before seeing the generator's claim
 - Flags non-numeric hallucinations and under-reported gaps
 - Returns `failure_class`: `hallucination` | `structural` | `none`
 
 **Auto-regenerate on hallucination:**
+
 - If the grader returns `hallucination`, the generator call is retried exactly once
 - If the retry also fails, the response returns `grade.action = 'human_review'` rather than throwing
 
 **Failure classification split:**
+
 - `hallucination` (transient) → `action: 'regenerate'` → auto-retry once → `human_review` on second failure
 - `structural` (weak fit, not retryable) → `action: 'human_review'` immediately
 - `grader error` → fail safe to `human_review` with warning; never silently ship
@@ -50,6 +56,7 @@ We add a two-layer grading system on top of the existing generator:
 ## Backwards-Incompatible Change
 
 The 200 response body gains two new top-level keys:
+
 - `assessment` — internal recruiter-facing data (`fit_level`, `jd_must_haves`, `must_have_coverage`, `gaps`)
 - `grade` — the gate result (`action`, `failure_class`, `issues`, `warnings`)
 

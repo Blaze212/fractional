@@ -444,6 +444,34 @@ describe('GradeBanner', () => {
   })
 })
 
+describe('Section visibility labels', () => {
+  it('hides "Internal only" section for a clean ship with no assessment', async () => {
+    await generateAndWait()
+    expect(screen.queryByText('Internal only')).not.toBeInTheDocument()
+  })
+
+  it('shows "Internal only" section when grade has warnings', async () => {
+    const grade: FitGrade = {
+      action: 'ship',
+      failure_class: 'none',
+      issues: [],
+      warnings: ['Check salary expectations'],
+    }
+    await generateAndWait(grade)
+    expect(screen.getByText('Internal only')).toBeInTheDocument()
+  })
+
+  it('shows "Internal only" section when assessment is present', async () => {
+    await generateAndWait(undefined, mockAssessment)
+    expect(screen.getByText('Internal only')).toBeInTheDocument()
+  })
+
+  it('always shows "Included in export" divider after generation', async () => {
+    await generateAndWait()
+    expect(screen.getByText('Included in export')).toBeInTheDocument()
+  })
+})
+
 describe('RecruiterAssessment', () => {
   it('renders nothing when assessment is null', async () => {
     await generateAndWait()
