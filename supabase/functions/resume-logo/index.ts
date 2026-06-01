@@ -10,6 +10,17 @@ import {
 
 const BUCKET = () =>
   (typeof Deno !== 'undefined' ? Deno.env.get('RESUME_LOGO_BUCKET') : undefined) ?? 'resume-logos'
+
+// In local dev the storage client builds URLs using the internal Docker URL
+// (kong:8000). Rewrite them to the public-facing URL so browsers can reach them.
+function toPublicUrl(signedUrl: string): string {
+  const internalBase =
+    (typeof Deno !== 'undefined' ? Deno.env.get('SUPABASE_URL') : undefined) ?? ''
+  const publicBase =
+    (typeof Deno !== 'undefined' ? Deno.env.get('PUBLIC_SUPABASE_URL') : undefined) ?? internalBase
+  if (!internalBase || internalBase === publicBase) return signedUrl
+  return signedUrl.replace(internalBase, publicBase)
+}
 const MAX_MB = () =>
   parseInt(
     (typeof Deno !== 'undefined' ? Deno.env.get('RESUME_LOGO_MAX_MB') : undefined) ?? '2',
@@ -90,7 +101,7 @@ async function handleGet(req: Request, userId: string): Promise<Response> {
   return jsonResponse(
     {
       logo: {
-        signed_url: signedUrl.signedUrl,
+        signed_url: toPublicUrl(signedUrl.signedUrl),
         mime_type: logoMeta.mime_type,
         width_px: logoMeta.width_px,
         height_px: logoMeta.height_px,

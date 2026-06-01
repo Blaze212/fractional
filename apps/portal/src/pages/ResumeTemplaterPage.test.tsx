@@ -3,6 +3,8 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ParsedProfile } from '../lib/resumeTypes'
 import type { FitBullet } from '../lib/submittalExport'
+import { AgencyConfigProvider } from '../contexts/AgencyConfigContext'
+import { AgencyLogoProvider } from '../contexts/AgencyLogoContext'
 
 vi.mock('../lib/supabase', () => ({
   supabase: {
@@ -10,8 +12,18 @@ vi.mock('../lib/supabase', () => ({
       getSession: vi.fn().mockResolvedValue({
         data: { session: { access_token: 'test-token' } },
       }),
+      onAuthStateChange: vi
+        .fn()
+        .mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } }),
       signOut: vi.fn(),
     },
+    from: vi.fn().mockReturnValue({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null }),
+      upsert: vi.fn().mockResolvedValue({ error: null }),
+      delete: vi.fn().mockReturnThis(),
+    }),
   },
 }))
 
@@ -34,6 +46,9 @@ const mockProfile: ParsedProfile = {
   phone: '+1 555 0100',
   location: 'New York, NY',
   linkedin_url: null,
+  current_title: 'Chief Financial Officer',
+  work_authorization: 'U.S. Citizen',
+  total_experience: '15 years',
   summary: 'Experienced CFO in SaaS finance.',
   career_highlights: ['Led $50M Series C'],
   selected_experience: [
@@ -98,9 +113,13 @@ function setupFetchMock(overrides: FetchOverrides = {}) {
 
 function renderPage() {
   return render(
-    <MemoryRouter>
-      <ResumeTemplaterPage />
-    </MemoryRouter>,
+    <AgencyConfigProvider>
+      <AgencyLogoProvider>
+        <MemoryRouter>
+          <ResumeTemplaterPage />
+        </MemoryRouter>
+      </AgencyLogoProvider>
+    </AgencyConfigProvider>,
   )
 }
 
@@ -154,6 +173,10 @@ describe('ResumeTemplaterPage (submittal)', () => {
     )
     expect(screen.getByLabelText(/Fit bullet 1/i)).toBeInTheDocument()
     expect(screen.getByText(/selected_experience\[0\]/)).toBeInTheDocument()
+    // candidate snapshot prefers the richer fields
+    expect(screen.getByText(/Work Authorization:/i)).toBeInTheDocument()
+    expect(screen.getByText(/U\.S\. Citizen/i)).toBeInTheDocument()
+    expect(screen.getByText(/Total Experience:/i)).toBeInTheDocument()
   })
 
   it('allows editing a fit bullet', async () => {

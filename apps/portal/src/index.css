@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Brand color CSS variables — set by AgencyConfigContext at runtime.
+   Defaults here match AGENCY_CONFIG in agencyConfig.ts. */
+:root {
+  --color-brand: #172b36;
+  --color-brand-light: #244455;
+  --color-brand-secondary: #687e8a;
+  --color-brand-muted: #eaf2f6;
+}
+
 body {
   @apply bg-slate-50 text-slate-900 antialiased;
 }

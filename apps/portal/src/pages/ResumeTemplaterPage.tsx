@@ -1,19 +1,15 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { ParsedProfile } from '../lib/resumeTypes'
 import { mapToSubmittalRenderData, exportSubmittal } from '../lib/submittalExport'
 import type { FitBullet, SubmittalFields } from '../lib/submittalExport'
+import { useAgencyConfig } from '../contexts/AgencyConfigContext'
+import { useAgencyLogo } from '../contexts/AgencyLogoContext'
+import { AgencyLogoMark } from '../components/AgencyLogoMark'
 
 type PageState = 'idle' | 'generating' | 'success' | 'error'
 type Stage = 'parsing' | 'fit'
-
-type LogoInfo = {
-  signed_url: string
-  mime_type: string
-  width_px: number
-  height_px: number
-  updated_at: string
-} | null
 
 const ESTIMATE_SECONDS = 75
 
@@ -44,154 +40,6 @@ function ProgressBar({ elapsed, stage }: { elapsed: number; stage: Stage }) {
           style={{ width: `${progress}%` }}
         />
       </div>
-    </div>
-  )
-}
-
-function LogoUploader({
-  logo,
-  onLogoChange,
-  disabled,
-}: {
-  logo: LogoInfo
-  onLogoChange: (logo: LogoInfo) => void
-  disabled: boolean
-}) {
-  const [uploading, setUploading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
-  async function fetchLogo() {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-    if (!session) return
-
-    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resume-logo`, {
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    })
-    if (res.ok) {
-      const json = (await res.json()) as { logo: LogoInfo }
-      onLogoChange(json.logo)
-    }
-  }
-
-  useEffect(() => {
-    fetchLogo()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    setError(null)
-    setUploading(true)
-
-    try {
-      const dimensions = await new Promise<{ width: number; height: number }>((resolve, reject) => {
-        const img = new Image()
-        const url = URL.createObjectURL(file)
-        img.onload = () => {
-          URL.revokeObjectURL(url)
-          resolve({ width: img.naturalWidth, height: img.naturalHeight })
-        }
-        img.onerror = () => {
-          URL.revokeObjectURL(url)
-          reject(new Error('Failed to load image'))
-        }
-        img.src = url
-      })
-
-      const form = new FormData()
-      form.append('file', file)
-      form.append('width', String(dimensions.width))
-      form.append('height', String(dimensions.height))
-
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resume-logo`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${await getToken()}` },
-        body: form,
-      })
-
-      if (!res.ok) {
-        const err = (await res.json()) as { error?: { message?: string } }
-        throw new Error(err.error?.message ?? 'Upload failed')
-      }
-
-      await fetchLogo()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed')
-    } finally {
-      setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
-  }
-
-  async function handleRemove() {
-    setError(null)
-    setUploading(true)
-    try {
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resume-logo`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${await getToken()}` },
-      })
-      if (!res.ok) throw new Error('Remove failed')
-      onLogoChange(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Remove failed')
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  return (
-    <div className="space-y-2">
-      <label className="block text-sm font-medium text-slate-700">Agency Logo</label>
-      <div className="flex items-center gap-4">
-        {logo ? (
-          <>
-            <img
-              src={logo.signed_url}
-              alt="Agency logo"
-              className="h-12 max-w-[120px] rounded border border-slate-200 object-contain"
-            />
-            <button
-              type="button"
-              onClick={handleRemove}
-              disabled={disabled || uploading}
-              className="text-sm text-red-500 hover:text-red-700 disabled:opacity-50"
-            >
-              Remove
-            </button>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={disabled || uploading}
-              className="text-brand text-sm hover:underline disabled:opacity-50"
-            >
-              Replace
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={disabled || uploading}
-            className="hover:border-brand hover:text-brand rounded-lg border border-dashed border-slate-300 px-4 py-2 text-sm text-slate-500 disabled:opacity-50"
-          >
-            {uploading ? 'Uploading…' : '+ Add logo (PNG/JPEG, max 2 MB)'}
-          </button>
-        )}
-      </div>
-      {error && <p className="text-xs text-red-600">{error}</p>}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/png,image/jpeg"
-        onChange={handleFileChange}
-        className="hidden"
-      />
     </div>
   )
 }
@@ -230,6 +78,8 @@ function TextField({
 }
 
 export default function ResumeTemplaterPage() {
+  const { config } = useAgencyConfig()
+  const { logo } = useAgencyLogo()
   const [pageState, setPageState] = useState<PageState>('idle')
   const [stage, setStage] = useState<Stage>('parsing')
 
@@ -249,7 +99,6 @@ export default function ResumeTemplaterPage() {
   const [compLogistics, setCompLogistics] = useState('')
   const [recruiterNotes, setRecruiterNotes] = useState('')
 
-  const [logo, setLogo] = useState<LogoInfo>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [elapsed, setElapsed] = useState(0)
   const [exporting, setExporting] = useState(false)
@@ -375,8 +224,11 @@ export default function ResumeTemplaterPage() {
       const a = document.createElement('a')
       const candidate = profile.name?.replace(/\s+/g, '_') ?? 'candidate'
       const client = clientName.replace(/\s+/g, '_')
+      const filename = config.export.submittalFileStem
+        .replace('{name}', candidate)
+        .replace('{client}', client)
       a.href = url
-      a.download = `${candidate}_for_${client}_submittal.docx`
+      a.download = `${filename}.docx`
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
@@ -396,25 +248,26 @@ export default function ResumeTemplaterPage() {
   const showInputs = pageState === 'idle' || pageState === 'error'
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="bg-brand-muted min-h-screen">
       <header className="border-b border-slate-200 bg-white px-6 py-4">
         <div className="mx-auto flex max-w-3xl items-center justify-between">
-          <h1 className="text-brand text-lg font-bold">Candidate Submittal</h1>
-          <button
-            type="button"
-            onClick={() => supabase.auth.signOut()}
-            className="text-sm text-slate-500 hover:text-slate-700"
-          >
-            Sign out
-          </button>
+          <AgencyLogoMark />
+          <nav className="flex items-center gap-4">
+            <Link to="/settings" className="text-sm text-slate-500 hover:text-slate-700">
+              Settings
+            </Link>
+            <button
+              type="button"
+              onClick={() => supabase.auth.signOut()}
+              className="text-sm text-slate-500 hover:text-slate-700"
+            >
+              Sign out
+            </button>
+          </nav>
         </div>
       </header>
 
       <main className="mx-auto max-w-3xl space-y-8 px-4 py-10">
-        {pageState !== 'generating' && (
-          <LogoUploader logo={logo} onLogoChange={setLogo} disabled={isGenerating} />
-        )}
-
         {showInputs && (
           <div className="space-y-5">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -490,7 +343,7 @@ export default function ResumeTemplaterPage() {
               disabled={!canGenerate}
               className="bg-brand hover:bg-brand-light rounded-lg px-6 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {pageState === 'error' ? 'Try Again' : 'Generate Submittal'}
+              {pageState === 'error' ? 'Try Again' : config.ui.generateButtonLabel}
             </button>
           </div>
         )}
@@ -509,11 +362,41 @@ export default function ResumeTemplaterPage() {
 
         {pageState === 'success' && profile && (
           <div className="space-y-6">
-            <div className="rounded-xl border border-slate-200 bg-white p-6">
-              <h2 className="text-xl font-bold text-slate-900">{profile.name ?? 'Candidate'}</h2>
-              <p className="text-sm text-slate-500">
-                {roleTitle} @ {clientName}
-              </p>
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-6">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">{profile.name ?? 'Candidate'}</h2>
+                <p className="text-brand-secondary text-sm font-medium">
+                  {roleTitle} @ {clientName}
+                </p>
+              </div>
+              <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+                {(profile.current_title ?? profile.selected_experience[0]?.title) && (
+                  <div>
+                    <dt className="inline font-medium text-slate-900">Current Title: </dt>
+                    <dd className="inline text-slate-600">
+                      {profile.current_title ?? profile.selected_experience[0]?.title}
+                    </dd>
+                  </div>
+                )}
+                {profile.location && (
+                  <div>
+                    <dt className="inline font-medium text-slate-900">Location: </dt>
+                    <dd className="inline text-slate-600">{profile.location}</dd>
+                  </div>
+                )}
+                {profile.work_authorization && (
+                  <div>
+                    <dt className="inline font-medium text-slate-900">Work Authorization: </dt>
+                    <dd className="inline text-slate-600">{profile.work_authorization}</dd>
+                  </div>
+                )}
+                {profile.total_experience && (
+                  <div>
+                    <dt className="inline font-medium text-slate-900">Total Experience: </dt>
+                    <dd className="inline text-slate-600">{profile.total_experience}</dd>
+                  </div>
+                )}
+              </dl>
             </div>
 
             <div className="space-y-2">

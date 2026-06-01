@@ -6,9 +6,10 @@ export default {
     extend: {
       colors: {
         brand: {
-          DEFAULT: '#1a3a5c',
-          light: '#2d5986',
-          muted: '#e8f0f8',
+          DEFAULT: 'var(--color-brand)',
+          light: 'var(--color-brand-light)',
+          secondary: 'var(--color-brand-secondary)',
+          muted: 'var(--color-brand-muted)',
         },
       },
     },

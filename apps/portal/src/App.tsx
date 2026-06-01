@@ -1,12 +1,15 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
+import { AgencyConfigProvider } from './contexts/AgencyConfigContext'
+import { AgencyLogoProvider } from './contexts/AgencyLogoContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
 
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'))
 const UpdatePasswordPage = lazy(() => import('./pages/UpdatePasswordPage'))
 const ResumeTemplaterPage = lazy(() => import('./pages/ResumeTemplaterPage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 
 function PageFallback() {
   return (
@@ -18,24 +21,29 @@ function PageFallback() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <Suspense fallback={<PageFallback />}>
-        <Routes>
-          {/* Public auth routes */}
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route path="/update-password" element={<UpdatePasswordPage />} />
+    <AgencyConfigProvider>
+      <AuthProvider>
+        <AgencyLogoProvider>
+          <Suspense fallback={<PageFallback />}>
+            <Routes>
+              {/* Public auth routes */}
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/update-password" element={<UpdatePasswordPage />} />
 
-          {/* Protected routes */}
-          <Route element={<ProtectedRoute />}>
-            <Route path="/resume-templater" element={<ResumeTemplaterPage />} />
-          </Route>
+              {/* Protected routes */}
+              <Route element={<ProtectedRoute />}>
+                <Route path="/resume-templater" element={<ResumeTemplaterPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+              </Route>
 
-          {/* Default redirect */}
-          <Route path="/" element={<Navigate to="/resume-templater" replace />} />
-          <Route path="*" element={<Navigate to="/resume-templater" replace />} />
-        </Routes>
-      </Suspense>
-    </AuthProvider>
+              {/* Default redirect */}
+              <Route path="/" element={<Navigate to="/resume-templater" replace />} />
+              <Route path="*" element={<Navigate to="/resume-templater" replace />} />
+            </Routes>
+          </Suspense>
+        </AgencyLogoProvider>
+      </AuthProvider>
+    </AgencyConfigProvider>
   )
 }
