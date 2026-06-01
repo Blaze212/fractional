@@ -1,5 +1,7 @@
 import type { AiClient, JsonSchema } from '../_shared/ai-client.ts'
 import type { LoggerLike } from '../_shared/logger.ts'
+import { logAiUsage } from '../_shared/log-ai-usage.ts'
+import type { UsageContext } from '../_shared/log-ai-usage.ts'
 import type { FitResult, FitLevel } from './schema.ts'
 import type { SubmittalInput } from './submittal-fit.ts'
 import { findUnsupportedNumbers } from './grounding.ts'
@@ -188,14 +190,64 @@ async function runLayer2Grader(
   result: FitResult,
   deps: GraderDeps,
   log: LoggerLike,
+  usageCtx: UsageContext,
 ): Promise<GraderOutput> {
-  log.info('submittal-fit: running Layer 2 LLM grader')
-  const res = await deps.graderAiClient.completeJson<GraderOutput>(
-    buildGraderSystemPrompt(),
-    buildGraderPrompt(input, result),
-    'submittal_fit_grader',
-    GRADER_OUTPUT_SCHEMA,
+  const model = (deps.graderAiClient as { model?: string }).model ?? 'unknown'
+  log.debug({ model, schema_name: 'submittal_fit_grader' }, 'submittal-fit-grader: layer 2 start')
+
+  let res: {
+    data: GraderOutput
+    tokens: { input: number; output: number; model?: string; latencyMs: number }
+  }
+  try {
+    res = await deps.graderAiClient.completeJson<GraderOutput>(
+      buildGraderSystemPrompt(),
+      buildGraderPrompt(input, result),
+      'submittal_fit_grader',
+      GRADER_OUTPUT_SCHEMA,
+    )
+  } catch (err) {
+    log.error({ err, layer: 2, model }, 'submittal-fit-grader: LLM error')
+    void logAiUsage(
+      {
+        supabaseUrl: usageCtx.supabaseUrl,
+        serviceKey: usageCtx.serviceKey,
+        userId: usageCtx.userId,
+        feature: 'submittal-fit-grader',
+        tokens: { input: 0, output: 0, latencyMs: 0 },
+        success: false,
+        errorCode: err instanceof Error ? err.constructor.name : 'LLM_ERROR',
+      },
+      log,
+    )
+    throw err
+  }
+
+  const hallucination_flag =
+    res.data.hallucinated_claims.length > 0 || res.data.failure_class === 'hallucination'
+  log.info(
+    {
+      model: res.tokens.model,
+      input_tokens: res.tokens.input,
+      output_tokens: res.tokens.output,
+      latency_ms: res.tokens.latencyMs,
+      hallucination_flag,
+    },
+    'submittal-fit-grader: layer 2 complete',
   )
+
+  void logAiUsage(
+    {
+      supabaseUrl: usageCtx.supabaseUrl,
+      serviceKey: usageCtx.serviceKey,
+      userId: usageCtx.userId,
+      feature: 'submittal-fit-grader',
+      tokens: res.tokens,
+      success: true,
+    },
+    log,
+  )
+
   return res.data
 }
 
@@ -206,10 +258,23 @@ export async function gradeFit(
   result: FitResult,
   deps: GraderDeps,
   log: LoggerLike,
+  usageCtx: UsageContext,
 ): Promise<FitGrade> {
+  log.debug({}, 'submittal-fit-grader: layer 0 start')
   const layer0Issues = runLayer0Checks(result, input.parsed_profile)
 
+  const bannedPhraseIssues = layer0Issues.filter((i) => !i.startsWith('Ungrounded numeric')).length
+  const coverageIssues = layer0Issues.filter((i) => i.includes('must-have')).length
+  log.debug(
+    { banned_phrase_issues: bannedPhraseIssues, coverage_issues: coverageIssues },
+    'submittal-fit-grader: layer 0 complete',
+  )
+
   if (!shouldRunLayer2(result, layer0Issues)) {
+    log.info(
+      { action: 'ship', failure_class: 'none', issue_count: 0, warning_count: 0 },
+      'submittal-fit-grader: final grade decision',
+    )
     return { action: 'ship', failure_class: 'none', issues: [], warnings: [] }
   }
 
@@ -218,10 +283,19 @@ export async function gradeFit(
 
   let graderOutput: GraderOutput
   try {
-    graderOutput = await runLayer2Grader(input, result, deps, log)
+    graderOutput = await runLayer2Grader(input, result, deps, log, usageCtx)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     log.warn({ err: msg }, 'submittal-fit: Layer 2 grader failed — failing safe to human_review')
+    log.info(
+      {
+        action: 'human_review',
+        failure_class: 'none',
+        issue_count: layer0Issues.length,
+        warning_count: 1,
+      },
+      'submittal-fit-grader: final grade decision',
+    )
     return {
       action: 'human_review',
       failure_class: 'none',
@@ -241,34 +315,59 @@ export async function gradeFit(
 
   if (!hasHallucination && !hasStructural) {
     // Gaps only — surface as soft amber warnings, no confirmation required.
+    const warnings = graderOutput.under_reported_gaps.slice(0, 3)
+    log.info(
+      { action: 'ship', failure_class: 'none', issue_count: 0, warning_count: warnings.length },
+      'submittal-fit-grader: final grade decision',
+    )
     return {
       action: 'ship',
       failure_class: 'none',
       issues: [],
-      warnings: graderOutput.under_reported_gaps.slice(0, 3),
+      warnings,
     }
   }
 
   if (hasHallucination) {
+    const issues = [
+      ...layer0Issues,
+      ...graderOutput.hallucinated_claims.slice(0, 3).map((c) => `Hallucinated claim: ${c}`),
+    ]
+    log.info(
+      {
+        action: 'regenerate',
+        failure_class: 'hallucination',
+        issue_count: issues.length,
+        warning_count: 0,
+      },
+      'submittal-fit-grader: final grade decision',
+    )
     return {
       action: 'regenerate',
       failure_class: 'hallucination',
-      issues: [
-        ...layer0Issues,
-        ...graderOutput.hallucinated_claims.slice(0, 3).map((c) => `Hallucinated claim: ${c}`),
-      ],
+      issues,
       warnings: [],
     }
   }
 
   // Structural: fit level significantly misrepresented — flag for human review.
+  const issues = [
+    ...layer0Structural,
+    ...graderOutput.under_reported_gaps.slice(0, 3).map((g) => `Gap: ${g}`),
+  ]
+  log.info(
+    {
+      action: 'human_review',
+      failure_class: 'structural',
+      issue_count: issues.length,
+      warning_count: 0,
+    },
+    'submittal-fit-grader: final grade decision',
+  )
   return {
     action: 'human_review',
     failure_class: 'structural',
-    issues: [
-      ...layer0Structural,
-      ...graderOutput.under_reported_gaps.slice(0, 3).map((g) => `Gap: ${g}`),
-    ],
+    issues,
     warnings: [],
   }
 }

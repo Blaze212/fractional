@@ -1,10 +1,14 @@
-import type { AiClient } from '../_shared/ai-client.ts'
+import type { AiClient, TokenUsage } from '../_shared/ai-client.ts'
 import type { LoggerLike } from '../_shared/logger.ts'
 import { UnprocessableEntityException } from '../_shared/errors.ts'
+import { logAiUsage } from '../_shared/log-ai-usage.ts'
+import type { UsageContext } from '../_shared/log-ai-usage.ts'
 import { PARSED_PROFILE_SCHEMA } from './schema.ts'
 import type { ParsedProfile } from './schema.ts'
 import { SYSTEM_PROMPT } from './system-prompt.ts'
 import { buildResumeParsePrompt } from './prompt.ts'
+
+export type { UsageContext }
 
 export interface Deps {
   aiClient: AiClient
@@ -40,18 +44,38 @@ export async function runParsing(
   resumeText: string,
   deps: Deps,
   log: LoggerLike,
+  usageCtx: UsageContext,
 ): Promise<{ profile: ParsedProfile; meta: { model: string; input_char_count: number } }> {
-  log.info({ input_char_count: resumeText.length }, 'resume-parse: starting LLM call')
+  log.info({ input_char_count: resumeText.length }, 'resume-parse: starting')
 
-  let result: { data: ParsedProfile; tokens: { input: number; output: number; model?: string } }
+  const prompt = buildResumeParsePrompt(resumeText)
+  log.debug({ prompt_char_count: prompt.length }, 'resume-parse: prompt built')
+
+  log.debug({ model: 'gpt', schema_name: 'parsed_profile' }, 'resume-parse: LLM call starting')
+
+  let result: { data: ParsedProfile; tokens: TokenUsage }
   try {
     result = await deps.aiClient.completeJson<ParsedProfile>(
       SYSTEM_PROMPT,
-      buildResumeParsePrompt(resumeText),
+      prompt,
       'parsed_profile',
       PARSED_PROFILE_SCHEMA,
     )
   } catch (err) {
+    const errorModel = (deps.aiClient as { model?: string }).model ?? 'unknown'
+    log.error({ err, model: errorModel }, 'resume-parse: LLM call failed')
+    void logAiUsage(
+      {
+        supabaseUrl: usageCtx.supabaseUrl,
+        serviceKey: usageCtx.serviceKey,
+        userId: usageCtx.userId,
+        feature: 'resume-parse',
+        tokens: { input: 0, output: 0, latencyMs: 0 },
+        success: false,
+        errorCode: err instanceof Error ? err.constructor.name : 'LLM_ERROR',
+      },
+      log,
+    )
     const message = err instanceof Error ? err.message : 'LLM call failed'
     throw new UnprocessableEntityException({ message: `Failed to parse resume: ${message}` })
   }
@@ -63,12 +87,24 @@ export async function runParsing(
 
   log.info(
     {
+      model: result.tokens.model,
       input_tokens: result.tokens.input,
       output_tokens: result.tokens.output,
-      selected_count: profile.selected_experience?.length ?? 0,
-      other_count: profile.other_experience?.length ?? 0,
+      latency_ms: result.tokens.latencyMs,
     },
     'resume-parse: LLM call complete',
+  )
+
+  void logAiUsage(
+    {
+      supabaseUrl: usageCtx.supabaseUrl,
+      serviceKey: usageCtx.serviceKey,
+      userId: usageCtx.userId,
+      feature: 'resume-parse',
+      tokens: result.tokens,
+      success: true,
+    },
+    log,
   )
 
   return {

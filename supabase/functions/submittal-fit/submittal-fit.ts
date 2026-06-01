@@ -1,6 +1,8 @@
-import type { AiClient } from '../_shared/ai-client.ts'
+import type { AiClient, TokenUsage } from '../_shared/ai-client.ts'
 import type { LoggerLike } from '../_shared/logger.ts'
 import { UnprocessableEntityException } from '../_shared/errors.ts'
+import { logAiUsage } from '../_shared/log-ai-usage.ts'
+import type { UsageContext } from '../_shared/log-ai-usage.ts'
 import type { ParsedProfile } from '../resume-parse/schema.ts'
 import { FIT_RESULT_SCHEMA } from './schema.ts'
 import type { FitResult } from './schema.ts'
@@ -12,6 +14,7 @@ import { extractNumericTokens, profileFactText, findUnsupportedNumbers } from '.
 
 // Re-export grounding utilities so existing callers (tests, eval harness) keep working.
 export { extractNumericTokens, profileFactText, findUnsupportedNumbers }
+export type { UsageContext }
 
 export interface Deps {
   aiClient: AiClient
@@ -104,12 +107,20 @@ async function callGenerator(
   input: SubmittalInput,
   aiClient: AiClient,
   log: LoggerLike,
-): Promise<{ result: FitResult; model: string }> {
+  usageCtx: UsageContext,
+  attempt: number,
+): Promise<{ result: FitResult; model: string; tokens: TokenUsage }> {
   log.info(
-    { client: input.client_name, role: input.role_title, jd_char_count: input.jd_text.length },
+    {
+      client: input.client_name,
+      role: input.role_title,
+      jd_char_count: input.jd_text.length,
+      attempt,
+    },
     'submittal-fit: generator call starting',
   )
-  let res: { data: FitResult; tokens: { input: number; output: number; model?: string } }
+
+  let res: { data: FitResult; tokens: TokenUsage }
   try {
     res = await aiClient.completeJson<FitResult>(
       buildSubmittalSystemPrompt(input.fit_narrative_style_guide),
@@ -118,6 +129,20 @@ async function callGenerator(
       FIT_RESULT_SCHEMA,
     )
   } catch (err) {
+    const model = (aiClient as { model?: string }).model ?? 'unknown'
+    log.error({ err, model, attempt }, 'submittal-fit: LLM call failed')
+    void logAiUsage(
+      {
+        supabaseUrl: usageCtx.supabaseUrl,
+        serviceKey: usageCtx.serviceKey,
+        userId: usageCtx.userId,
+        feature: 'submittal-fit',
+        tokens: { input: 0, output: 0, latencyMs: 0 },
+        success: false,
+        errorCode: err instanceof Error ? err.constructor.name : 'LLM_ERROR',
+      },
+      log,
+    )
     const message = err instanceof Error ? err.message : 'LLM call failed'
     throw new UnprocessableEntityException({
       message: `Failed to generate fit narrative: ${message}`,
@@ -128,20 +153,52 @@ async function callGenerator(
 
   // Shape validation — these are contract violations, always throw.
   if (!result || !Array.isArray(result.fit_bullets) || result.fit_bullets.length !== 3) {
+    log.error(
+      { reason: 'fit_bullets count != 3', attempt },
+      'submittal-fit: shape validation failed',
+    )
     throw new UnprocessableEntityException({
       message: 'Fit generation must return exactly 3 bullets',
     })
   }
   if (typeof result.fit_summary !== 'string' || result.fit_summary.trim().length === 0) {
+    log.error({ reason: 'empty fit_summary', attempt }, 'submittal-fit: shape validation failed')
     throw new UnprocessableEntityException({ message: 'Fit generation returned an empty summary' })
   }
   if (!Array.isArray(result.key_qualifications) || result.key_qualifications.length > 5) {
+    log.error(
+      { reason: 'key_qualifications > 5', attempt },
+      'submittal-fit: shape validation failed',
+    )
     throw new UnprocessableEntityException({
       message: 'Fit generation must return at most 5 key qualifications',
     })
   }
 
-  return { result, model: res.tokens.model ?? 'unknown' }
+  log.info(
+    {
+      model: res.tokens.model,
+      input_tokens: res.tokens.input,
+      output_tokens: res.tokens.output,
+      latency_ms: res.tokens.latencyMs,
+      attempt,
+    },
+    'submittal-fit: generator call complete',
+  )
+
+  void logAiUsage(
+    {
+      supabaseUrl: usageCtx.supabaseUrl,
+      serviceKey: usageCtx.serviceKey,
+      userId: usageCtx.userId,
+      feature: 'submittal-fit',
+      tokens: res.tokens,
+      success: true,
+    },
+    log,
+  )
+
+  return { result, model: res.tokens.model ?? 'unknown', tokens: res.tokens }
 }
 
 const DEFAULT_SHIP_GRADE: FitGrade = {
@@ -155,28 +212,53 @@ export async function runFitGeneration(
   input: SubmittalInput,
   deps: Deps,
   log: LoggerLike,
+  usageCtx: UsageContext,
 ): Promise<{ result: FitResult; grade: FitGrade; meta: { model: string } }> {
-  const { result, model } = await callGenerator(input, deps.aiClient, log)
+  let totalInputTokens = 0
+  let totalOutputTokens = 0
+  let callCount = 0
 
-  log.info('submittal-fit: generator call complete')
+  const { result, model, tokens } = await callGenerator(input, deps.aiClient, log, usageCtx, 1)
+  totalInputTokens += tokens.input
+  totalOutputTokens += tokens.output
+  callCount++
 
   // No grader injected — return default ship grade (Phase 1 / grader-disabled path).
   if (!deps.graderDeps) {
+    log.info(
+      { grade_action: 'ship', failure_class: 'none', issue_count: 0, warning_count: 0 },
+      'submittal-fit: final grade',
+    )
+    log.info(
+      {
+        total_input_tokens: totalInputTokens,
+        total_output_tokens: totalOutputTokens,
+        call_count: callCount,
+      },
+      'submittal-fit: token summary',
+    )
     return { result, grade: DEFAULT_SHIP_GRADE, meta: { model } }
   }
 
   // Phase 2: run grader with conditional Layer 2 and auto-regenerate on hallucination.
-  let grade = await gradeFit(input, result, deps.graderDeps, log)
+  let grade = await gradeFit(input, result, deps.graderDeps, log, usageCtx)
 
   if (grade.action === 'regenerate') {
-    log.warn({ issues: grade.issues }, 'submittal-fit: hallucination detected — auto-regenerating')
+    log.warn(
+      { issues: grade.issues, attempt: 1 },
+      'submittal-fit: hallucination detected — auto-regenerating',
+    )
     try {
-      const { result: retryResult, model: retryModel } = await callGenerator(
-        input,
-        deps.aiClient,
-        log,
-      )
-      const retryGrade = await gradeFit(input, retryResult, deps.graderDeps, log)
+      const {
+        result: retryResult,
+        model: retryModel,
+        tokens: retryTokens,
+      } = await callGenerator(input, deps.aiClient, log, usageCtx, 2)
+      totalInputTokens += retryTokens.input
+      totalOutputTokens += retryTokens.output
+      callCount++
+
+      const retryGrade = await gradeFit(input, retryResult, deps.graderDeps, log, usageCtx)
       if (retryGrade.action === 'regenerate') {
         // Second attempt still hallucinating — fail safe, never throw.
         grade = {
@@ -186,11 +268,28 @@ export async function runFitGeneration(
           warnings: ['Auto-regeneration did not resolve hallucination'],
         }
       } else {
+        log.info(
+          {
+            grade_action: retryGrade.action,
+            failure_class: retryGrade.failure_class,
+            issue_count: retryGrade.issues.length,
+            warning_count: retryGrade.warnings.length,
+          },
+          'submittal-fit: final grade',
+        )
+        log.info(
+          {
+            total_input_tokens: totalInputTokens,
+            total_output_tokens: totalOutputTokens,
+            call_count: callCount,
+          },
+          'submittal-fit: token summary',
+        )
         return { result: retryResult, grade: retryGrade, meta: { model: retryModel } }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      log.warn({ err: msg }, 'submittal-fit: auto-regeneration failed')
+      log.warn({ err: msg, attempt: 2 }, 'submittal-fit: auto-regeneration failed')
       grade = {
         action: 'human_review',
         failure_class: 'hallucination',
@@ -199,6 +298,24 @@ export async function runFitGeneration(
       }
     }
   }
+
+  log.info(
+    {
+      grade_action: grade.action,
+      failure_class: grade.failure_class,
+      issue_count: grade.issues.length,
+      warning_count: grade.warnings.length,
+    },
+    'submittal-fit: final grade',
+  )
+  log.info(
+    {
+      total_input_tokens: totalInputTokens,
+      total_output_tokens: totalOutputTokens,
+      call_count: callCount,
+    },
+    'submittal-fit: token summary',
+  )
 
   return { result, grade, meta: { model } }
 }

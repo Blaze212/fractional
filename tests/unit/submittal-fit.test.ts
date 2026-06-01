@@ -5,7 +5,11 @@ import {
   extractNumericTokens,
   findUnsupportedNumbers,
 } from '../../supabase/functions/submittal-fit/submittal-fit.ts'
-import type { Deps, SubmittalInput } from '../../supabase/functions/submittal-fit/submittal-fit.ts'
+import type {
+  Deps,
+  SubmittalInput,
+  UsageContext,
+} from '../../supabase/functions/submittal-fit/submittal-fit.ts'
 import type { FitResult } from '../../supabase/functions/submittal-fit/schema.ts'
 import {
   checkBannedPhrases,
@@ -18,6 +22,12 @@ import type { ParsedProfile } from '../../supabase/functions/resume-parse/schema
 import type { AiClient } from '../../supabase/functions/_shared/ai-client.ts'
 import type { LoggerLike } from '../../supabase/functions/_shared/logger.ts'
 
+vi.mock('@supabase/supabase-js', () => ({
+  createClient: vi.fn(() => ({
+    from: vi.fn(() => ({ insert: vi.fn().mockResolvedValue({ error: null }) })),
+  })),
+}))
+
 const silentLogger: LoggerLike = {
   trace: () => {},
   debug: () => {},
@@ -26,6 +36,12 @@ const silentLogger: LoggerLike = {
   error: () => {},
   fatal: () => {},
   child: () => silentLogger,
+}
+
+const mockUsageCtx: UsageContext = {
+  userId: 'test-user',
+  supabaseUrl: 'http://localhost:54321',
+  serviceKey: 'test-service-key',
 }
 
 const mockProfile: ParsedProfile = {
@@ -90,7 +106,7 @@ function makeMockAiClient(
   return {
     completeJson: vi.fn().mockResolvedValue({
       data,
-      tokens: { input: 600, output: 200, model: 'gpt-5.4-mini' },
+      tokens: { input: 600, output: 200, model: 'gpt-5.4-mini', latencyMs: 1000 },
     }),
     ...override,
   }
@@ -112,7 +128,7 @@ function makeGraderClient(
   return {
     completeJson: vi.fn().mockResolvedValue({
       data: graderData,
-      tokens: { input: 400, output: 100, model: 'gpt-5.4' },
+      tokens: { input: 400, output: 100, model: 'gpt-5.4', latencyMs: 800 },
     }),
   }
 }
@@ -408,7 +424,7 @@ describe('runLayer0Checks (Layer 0 combined)', () => {
 describe('runFitGeneration', () => {
   it('returns a grounded result with exactly 3 bullets, a summary, and key qualifications', async () => {
     const deps: Deps = { aiClient: makeMockAiClient() }
-    const { result, meta } = await runFitGeneration(baseInput, deps, silentLogger)
+    const { result, meta } = await runFitGeneration(baseInput, deps, silentLogger, mockUsageCtx)
     expect(result.fit_bullets).toHaveLength(3)
     expect(result.fit_summary).toBeTruthy()
     expect(result.key_qualifications).toHaveLength(3)
@@ -418,13 +434,13 @@ describe('runFitGeneration', () => {
 
   it('returns a grade field alongside result and meta', async () => {
     const deps: Deps = { aiClient: makeMockAiClient() }
-    const { grade } = await runFitGeneration(baseInput, deps, silentLogger)
+    const { grade } = await runFitGeneration(baseInput, deps, silentLogger, mockUsageCtx)
     expect(grade).toMatchObject({ action: 'ship', failure_class: 'none', issues: [], warnings: [] })
   })
 
   it('returns default ship grade when graderDeps is absent', async () => {
     const deps: Deps = { aiClient: makeMockAiClient() }
-    const { grade } = await runFitGeneration(baseInput, deps, silentLogger)
+    const { grade } = await runFitGeneration(baseInput, deps, silentLogger, mockUsageCtx)
     expect(grade.action).toBe('ship')
     expect(grade.failure_class).toBe('none')
   })
@@ -432,7 +448,7 @@ describe('runFitGeneration', () => {
   it('allows zero key qualifications for a poor fit with no supporting points', async () => {
     const noQuals: FitResult = { ...groundedResult, key_qualifications: [] }
     const deps: Deps = { aiClient: makeMockAiClient(noQuals) }
-    const { result } = await runFitGeneration(baseInput, deps, silentLogger)
+    const { result } = await runFitGeneration(baseInput, deps, silentLogger, mockUsageCtx)
     expect(result.key_qualifications).toEqual([])
   })
 
@@ -445,7 +461,9 @@ describe('runFitGeneration', () => {
       })),
     }
     const deps: Deps = { aiClient: makeMockAiClient(tooMany) }
-    await expect(runFitGeneration(baseInput, deps, silentLogger)).rejects.toMatchObject({
+    await expect(
+      runFitGeneration(baseInput, deps, silentLogger, mockUsageCtx),
+    ).rejects.toMatchObject({
       code: 'UNPROCESSABLE_ENTITY',
     })
   })
@@ -461,13 +479,13 @@ describe('runFitGeneration', () => {
     }
     const deps: Deps = { aiClient: makeMockAiClient(hallucinated) }
     // Without graderDeps, numeric hallucinations are not caught — grader is required.
-    const { grade } = await runFitGeneration(baseInput, deps, silentLogger)
+    const { grade } = await runFitGeneration(baseInput, deps, silentLogger, mockUsageCtx)
     expect(grade.action).toBe('ship')
   })
 
   it('passes the submittal schema name and grounding inputs to the AI client', async () => {
     const aiClient = makeMockAiClient()
-    await runFitGeneration(baseInput, { aiClient }, silentLogger)
+    await runFitGeneration(baseInput, { aiClient }, silentLogger, mockUsageCtx)
     expect(aiClient.completeJson).toHaveBeenCalledWith(
       expect.any(String),
       expect.stringContaining('Globex'),
@@ -485,6 +503,7 @@ describe('runFitGeneration', () => {
       { ...baseInput, fit_narrative_style_guide: 'House rule: no exclamation marks.' },
       { aiClient },
       silentLogger,
+      mockUsageCtx,
     )
     const systemPrompt = (aiClient.completeJson as ReturnType<typeof vi.fn>).mock
       .calls[0][0] as string
@@ -493,7 +512,7 @@ describe('runFitGeneration', () => {
 
   it('falls back to the default agency voice when no style guide is provided', async () => {
     const aiClient = makeMockAiClient()
-    await runFitGeneration(baseInput, { aiClient }, silentLogger)
+    await runFitGeneration(baseInput, { aiClient }, silentLogger, mockUsageCtx)
     const systemPrompt = (aiClient.completeJson as ReturnType<typeof vi.fn>).mock
       .calls[0][0] as string
     // Marker unique to the appended default style guide (not the base prompt).
@@ -506,6 +525,7 @@ describe('runFitGeneration', () => {
       { ...baseInput, fit_narrative_style_guide: '   ' },
       { aiClient },
       silentLogger,
+      mockUsageCtx,
     )
     const systemPrompt = (aiClient.completeJson as ReturnType<typeof vi.fn>).mock
       .calls[0][0] as string
@@ -519,7 +539,9 @@ describe('runFitGeneration', () => {
       fit_bullets: groundedResult.fit_bullets.slice(0, 2),
     }
     const deps: Deps = { aiClient: makeMockAiClient(twoBullets) }
-    await expect(runFitGeneration(baseInput, deps, silentLogger)).rejects.toMatchObject({
+    await expect(
+      runFitGeneration(baseInput, deps, silentLogger, mockUsageCtx),
+    ).rejects.toMatchObject({
       code: 'UNPROCESSABLE_ENTITY',
     })
   })
@@ -530,7 +552,9 @@ describe('runFitGeneration', () => {
         completeJson: vi.fn().mockRejectedValue(new Error('OpenAI timeout')),
       }),
     }
-    await expect(runFitGeneration(baseInput, deps, silentLogger)).rejects.toMatchObject({
+    await expect(
+      runFitGeneration(baseInput, deps, silentLogger, mockUsageCtx),
+    ).rejects.toMatchObject({
       code: 'UNPROCESSABLE_ENTITY',
       status: 422,
     })
@@ -545,6 +569,7 @@ describe('runFitGeneration with graderDeps (integration paths)', () => {
       baseInput,
       { aiClient, graderDeps: { graderAiClient } },
       silentLogger,
+      mockUsageCtx,
     )
     // strong fit, no gaps → Layer 2 skipped, direct ship
     expect(grade.action).toBe('ship')
@@ -568,6 +593,7 @@ describe('runFitGeneration with graderDeps (integration paths)', () => {
       baseInput,
       { aiClient, graderDeps: { graderAiClient } },
       silentLogger,
+      mockUsageCtx,
     )
     expect(grade.action).toBe('human_review')
     expect(grade.failure_class).toBe('structural')
@@ -586,11 +612,11 @@ describe('runFitGeneration with graderDeps (integration paths)', () => {
       .fn()
       .mockResolvedValueOnce({
         data: hallucinatedResult,
-        tokens: { input: 600, output: 200, model: 'gpt-5.4-mini' },
+        tokens: { input: 600, output: 200, model: 'gpt-5.4-mini', latencyMs: 1000 },
       })
       .mockResolvedValueOnce({
         data: cleanResult,
-        tokens: { input: 600, output: 200, model: 'gpt-5.4-mini' },
+        tokens: { input: 600, output: 200, model: 'gpt-5.4-mini', latencyMs: 1000 },
       })
     aiClient.completeJson = completeJsonFn
 
@@ -604,7 +630,7 @@ describe('runFitGeneration with graderDeps (integration paths)', () => {
           hallucinated_claims: ['Invented employer XYZ'],
           failure_class: 'hallucination',
         },
-        tokens: { input: 400, output: 100, model: 'gpt-5.4' },
+        tokens: { input: 400, output: 100, model: 'gpt-5.4', latencyMs: 800 },
       })
       .mockResolvedValueOnce({
         data: {
@@ -613,7 +639,7 @@ describe('runFitGeneration with graderDeps (integration paths)', () => {
           hallucinated_claims: [],
           failure_class: 'none',
         },
-        tokens: { input: 400, output: 100, model: 'gpt-5.4' },
+        tokens: { input: 400, output: 100, model: 'gpt-5.4', latencyMs: 800 },
       })
     const graderAiClient: AiClient = { completeJson: graderCompleteJsonFn }
 
@@ -621,6 +647,7 @@ describe('runFitGeneration with graderDeps (integration paths)', () => {
       baseInput,
       { aiClient, graderDeps: { graderAiClient } },
       silentLogger,
+      mockUsageCtx,
     )
     expect(grade.action).toBe('ship')
     expect(result.fit_bullets).toHaveLength(3)
@@ -643,7 +670,7 @@ describe('runFitGeneration with graderDeps (integration paths)', () => {
           hallucinated_claims: ['Still hallucinating after retry'],
           failure_class: 'hallucination',
         },
-        tokens: { input: 400, output: 100, model: 'gpt-5.4' },
+        tokens: { input: 400, output: 100, model: 'gpt-5.4', latencyMs: 800 },
       }),
     }
 
@@ -651,6 +678,7 @@ describe('runFitGeneration with graderDeps (integration paths)', () => {
       baseInput,
       { aiClient, graderDeps: { graderAiClient } },
       silentLogger,
+      mockUsageCtx,
     )
     expect(grade.action).toBe('human_review')
     expect(grade.failure_class).toBe('hallucination')
@@ -671,6 +699,7 @@ describe('runFitGeneration with graderDeps (integration paths)', () => {
       baseInput,
       { aiClient, graderDeps: { graderAiClient } },
       silentLogger,
+      mockUsageCtx,
     )
     expect(grade.action).toBe('human_review')
     expect(grade.warnings).toContain('Grader call failed; manual review required')
@@ -681,7 +710,7 @@ describe('gradeFit (direct grader function)', () => {
   it('returns ship immediately for clean strong result without calling grader LLM', async () => {
     const graderAiClient = makeGraderClient()
     const deps: GraderDeps = { graderAiClient }
-    const grade = await gradeFit(baseInput, groundedResult, deps, silentLogger)
+    const grade = await gradeFit(baseInput, groundedResult, deps, silentLogger, mockUsageCtx)
     expect(grade.action).toBe('ship')
     expect(graderAiClient.completeJson).not.toHaveBeenCalled()
   })
@@ -699,7 +728,7 @@ describe('gradeFit (direct grader function)', () => {
       failure_class: 'structural',
     })
     const deps: GraderDeps = { graderAiClient }
-    const grade = await gradeFit(baseInput, nonStrong, deps, silentLogger)
+    const grade = await gradeFit(baseInput, nonStrong, deps, silentLogger, mockUsageCtx)
     expect(graderAiClient.completeJson).toHaveBeenCalledOnce()
     expect(grade.action).toBe('human_review')
     expect(grade.failure_class).toBe('structural')
@@ -717,7 +746,7 @@ describe('gradeFit (direct grader function)', () => {
       failure_class: 'hallucination',
     })
     const deps: GraderDeps = { graderAiClient }
-    const grade = await gradeFit(baseInput, hallucinated, deps, silentLogger)
+    const grade = await gradeFit(baseInput, hallucinated, deps, silentLogger, mockUsageCtx)
     expect(graderAiClient.completeJson).toHaveBeenCalledOnce()
     expect(grade.action).toBe('regenerate')
     expect(grade.failure_class).toBe('hallucination')
@@ -736,7 +765,7 @@ describe('gradeFit (direct grader function)', () => {
       failure_class: 'none',
     })
     const deps: GraderDeps = { graderAiClient }
-    const grade = await gradeFit(baseInput, moderate, deps, silentLogger)
+    const grade = await gradeFit(baseInput, moderate, deps, silentLogger, mockUsageCtx)
     expect(grade.action).toBe('ship')
     expect(grade.failure_class).toBe('none')
     expect(grade.issues).toHaveLength(0)
@@ -757,7 +786,7 @@ describe('gradeFit (direct grader function)', () => {
       failure_class: 'none',
     })
     const deps: GraderDeps = { graderAiClient }
-    const grade = await gradeFit(baseInput, moderate, deps, silentLogger)
+    const grade = await gradeFit(baseInput, moderate, deps, silentLogger, mockUsageCtx)
     expect(grade.action).toBe('ship')
     expect(grade.warnings).toHaveLength(3)
   })
@@ -775,7 +804,7 @@ describe('gradeFit (direct grader function)', () => {
       failure_class: 'none',
     })
     const deps: GraderDeps = { graderAiClient }
-    const grade = await gradeFit(baseInput, moderate, deps, silentLogger)
+    const grade = await gradeFit(baseInput, moderate, deps, silentLogger, mockUsageCtx)
     expect(grade.action).not.toBe('human_review')
   })
 })

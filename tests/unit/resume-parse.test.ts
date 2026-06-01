@@ -3,10 +3,16 @@ import {
   validateResumeText,
   runParsing,
 } from '../../supabase/functions/resume-parse/resume-parse.ts'
-import type { Deps } from '../../supabase/functions/resume-parse/resume-parse.ts'
+import type { Deps, UsageContext } from '../../supabase/functions/resume-parse/resume-parse.ts'
 import type { ParsedProfile } from '../../supabase/functions/resume-parse/schema.ts'
 import type { AiClient } from '../../supabase/functions/_shared/ai-client.ts'
 import type { LoggerLike } from '../../supabase/functions/_shared/logger.ts'
+
+vi.mock('@supabase/supabase-js', () => ({
+  createClient: vi.fn(() => ({
+    from: vi.fn(() => ({ insert: vi.fn().mockResolvedValue({ error: null }) })),
+  })),
+}))
 
 const silentLogger: LoggerLike = {
   trace: () => {},
@@ -16,6 +22,12 @@ const silentLogger: LoggerLike = {
   error: () => {},
   fatal: () => {},
   child: () => silentLogger,
+}
+
+const mockUsageCtx: UsageContext = {
+  userId: 'test-user',
+  supabaseUrl: 'http://localhost:54321',
+  serviceKey: 'test-service-key',
 }
 
 const mockProfile: ParsedProfile = {
@@ -60,7 +72,7 @@ function makeMockAiClient(override?: Partial<AiClient>): AiClient {
   return {
     completeJson: vi.fn().mockResolvedValue({
       data: mockProfile,
-      tokens: { input: 500, output: 300, model: 'gpt-5.4-mini' },
+      tokens: { input: 500, output: 300, model: 'gpt-5.4-mini', latencyMs: 1000 },
     }),
     ...override,
   }
@@ -104,7 +116,12 @@ describe('validateResumeText', () => {
 describe('runParsing', () => {
   it('returns profile and meta on successful LLM call', async () => {
     const deps: Deps = { aiClient: makeMockAiClient() }
-    const { profile, meta } = await runParsing('Jane Smith CFO...', deps, silentLogger)
+    const { profile, meta } = await runParsing(
+      'Jane Smith CFO...',
+      deps,
+      silentLogger,
+      mockUsageCtx,
+    )
 
     expect(profile.name).toBe('Jane Smith')
     expect(profile.selected_experience).toHaveLength(1)
@@ -116,7 +133,7 @@ describe('runParsing', () => {
   it('calls completeJson with correct schema name', async () => {
     const aiClient = makeMockAiClient()
     const deps: Deps = { aiClient }
-    await runParsing('Some resume text', deps, silentLogger)
+    await runParsing('Some resume text', deps, silentLogger, mockUsageCtx)
 
     expect(aiClient.completeJson).toHaveBeenCalledWith(
       expect.any(String),
@@ -133,15 +150,17 @@ describe('runParsing', () => {
       }),
     }
 
-    await expect(runParsing('Some resume', deps, silentLogger)).rejects.toMatchObject({
-      code: 'UNPROCESSABLE_ENTITY',
-      status: 422,
-    })
+    await expect(runParsing('Some resume', deps, silentLogger, mockUsageCtx)).rejects.toMatchObject(
+      {
+        code: 'UNPROCESSABLE_ENTITY',
+        status: 422,
+      },
+    )
   })
 
   it('selected_experience and other_experience are present in response', async () => {
     const deps: Deps = { aiClient: makeMockAiClient() }
-    const { profile } = await runParsing('resume text', deps, silentLogger)
+    const { profile } = await runParsing('resume text', deps, silentLogger, mockUsageCtx)
 
     expect(Array.isArray(profile.selected_experience)).toBe(true)
     expect(Array.isArray(profile.other_experience)).toBe(true)
@@ -153,7 +172,7 @@ describe('runParsing', () => {
     const aiClient = makeMockAiClient()
     const deps: Deps = { aiClient }
     const resumeText = 'My unique resume content 12345'
-    await runParsing(resumeText, deps, silentLogger)
+    await runParsing(resumeText, deps, silentLogger, mockUsageCtx)
 
     const callArgs = (aiClient.completeJson as ReturnType<typeof vi.fn>).mock.calls[0]
     expect(callArgs[1]).toContain(resumeText)
