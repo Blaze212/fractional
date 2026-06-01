@@ -397,6 +397,35 @@ describe('GradeBanner', () => {
     expect(screen.getByRole('button', { name: /Regenerate/i })).toBeInTheDocument()
   })
 
+  it('caps displayed issues at 3 and shows overflow count', async () => {
+    const grade: FitGrade = {
+      action: 'human_review',
+      failure_class: 'structural',
+      issues: ['Issue 1', 'Issue 2', 'Issue 3', 'Issue 4', 'Issue 5'],
+      warnings: [],
+    }
+    await generateAndWait(grade)
+    expect(screen.getByText('Issue 1')).toBeInTheDocument()
+    expect(screen.getByText('Issue 2')).toBeInTheDocument()
+    expect(screen.getByText('Issue 3')).toBeInTheDocument()
+    expect(screen.queryByText('Issue 4')).not.toBeInTheDocument()
+    expect(screen.getByText('…and 2 more')).toBeInTheDocument()
+  })
+
+  it('caps displayed warnings at 3 and shows overflow count', async () => {
+    const grade: FitGrade = {
+      action: 'ship',
+      failure_class: 'none',
+      issues: [],
+      warnings: ['W1', 'W2', 'W3', 'W4'],
+    }
+    await generateAndWait(grade)
+    expect(screen.getByText('W1')).toBeInTheDocument()
+    expect(screen.getByText('W3')).toBeInTheDocument()
+    expect(screen.queryByText('W4')).not.toBeInTheDocument()
+    expect(screen.getByText('…and 1 more')).toBeInTheDocument()
+  })
+
   it('Regenerate button re-fires the generate flow', async () => {
     const grade: FitGrade = {
       action: 'human_review',

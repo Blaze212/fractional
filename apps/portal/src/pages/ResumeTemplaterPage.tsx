@@ -149,29 +149,42 @@ function GradeBanner({
   if (!grade) return null
   if (grade.action === 'ship' && grade.warnings.length === 0) return null
 
+  const MAX_VISIBLE = 3
+
   if (grade.action === 'ship') {
+    const visible = grade.warnings.slice(0, MAX_VISIBLE)
+    const overflow = grade.warnings.length - MAX_VISIBLE
     return (
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800">
         <p className="text-sm font-semibold">Review before sending</p>
         <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
-          {grade.warnings.map((w, i) => (
+          {visible.map((w, i) => (
             <li key={i}>{w}</li>
           ))}
         </ul>
+        {overflow > 0 && <p className="mt-1 pl-5 text-xs opacity-70">…and {overflow} more</p>}
       </div>
     )
   }
+
+  const visibleIssues = grade.issues.slice(0, MAX_VISIBLE)
+  const issueOverflow = grade.issues.length - MAX_VISIBLE
 
   if (grade.action === 'human_review' && grade.failure_class === 'hallucination') {
     return (
       <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">
         <p className="text-sm font-semibold">Content could not be verified</p>
         {grade.issues.length > 0 && (
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
-            {grade.issues.map((issue, i) => (
-              <li key={i}>{issue}</li>
-            ))}
-          </ul>
+          <>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+              {visibleIssues.map((issue, i) => (
+                <li key={i}>{issue}</li>
+              ))}
+            </ul>
+            {issueOverflow > 0 && (
+              <p className="mt-1 pl-5 text-xs opacity-70">…and {issueOverflow} more</p>
+            )}
+          </>
         )}
         <button
           type="button"
@@ -189,11 +202,16 @@ function GradeBanner({
     <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 text-orange-800">
       <p className="text-sm font-semibold">This submittal was flagged for human review</p>
       {grade.issues.length > 0 && (
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
-          {grade.issues.map((issue, i) => (
-            <li key={i}>{issue}</li>
-          ))}
-        </ul>
+        <>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+            {visibleIssues.map((issue, i) => (
+              <li key={i}>{issue}</li>
+            ))}
+          </ul>
+          {issueOverflow > 0 && (
+            <p className="mt-1 pl-5 text-xs opacity-70">…and {issueOverflow} more</p>
+          )}
+        </>
       )}
     </div>
   )

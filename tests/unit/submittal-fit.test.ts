@@ -696,4 +696,60 @@ describe('gradeFit (direct grader function)', () => {
     expect(grade.action).toBe('regenerate')
     expect(grade.failure_class).toBe('hallucination')
   })
+
+  it('returns ship with warnings when grader finds only gaps (failure_class none)', async () => {
+    const moderate: FitResult = {
+      ...groundedResult,
+      fit_level: 'moderate',
+      internal_assessment: { gaps: ['No Kafka experience'] },
+    }
+    const graderAiClient = makeGraderClient({
+      independent_fit_level: 'moderate',
+      under_reported_gaps: ['No Kafka experience', 'No Spring Boot'],
+      hallucinated_claims: [],
+      failure_class: 'none',
+    })
+    const deps: GraderDeps = { graderAiClient }
+    const grade = await gradeFit(baseInput, moderate, deps, silentLogger)
+    expect(grade.action).toBe('ship')
+    expect(grade.failure_class).toBe('none')
+    expect(grade.issues).toHaveLength(0)
+    expect(grade.warnings).toContain('No Kafka experience')
+    expect(grade.warnings).toContain('No Spring Boot')
+  })
+
+  it('caps warnings at 3 even when grader returns more than 3 gaps', async () => {
+    const moderate: FitResult = {
+      ...groundedResult,
+      fit_level: 'moderate',
+      internal_assessment: { gaps: [] },
+    }
+    const graderAiClient = makeGraderClient({
+      independent_fit_level: 'moderate',
+      under_reported_gaps: ['Gap 1', 'Gap 2', 'Gap 3', 'Gap 4', 'Gap 5'],
+      hallucinated_claims: [],
+      failure_class: 'none',
+    })
+    const deps: GraderDeps = { graderAiClient }
+    const grade = await gradeFit(baseInput, moderate, deps, silentLogger)
+    expect(grade.action).toBe('ship')
+    expect(grade.warnings).toHaveLength(3)
+  })
+
+  it('does not escalate to human_review/structural for gaps alone (failure_class none)', async () => {
+    const moderate: FitResult = {
+      ...groundedResult,
+      fit_level: 'moderate',
+      internal_assessment: { gaps: ['Some gap'] },
+    }
+    const graderAiClient = makeGraderClient({
+      independent_fit_level: 'moderate',
+      under_reported_gaps: ['Missing Spring Boot', 'No Kafka'],
+      hallucinated_claims: [],
+      failure_class: 'none',
+    })
+    const deps: GraderDeps = { graderAiClient }
+    const grade = await gradeFit(baseInput, moderate, deps, silentLogger)
+    expect(grade.action).not.toBe('human_review')
+  })
 })

@@ -114,25 +114,32 @@ const GRADER_OUTPUT_SCHEMA: JsonSchema = {
 }
 
 function buildGraderSystemPrompt(): string {
-  return `You are a skeptical recruiting auditor. Your job is to independently verify whether a candidate submittal narrative is honest and factually grounded.
+  return `You are a factual-grounding auditor for candidate submittals. Your job is to catch fabricated facts — not to penalise reasonable professional inferences.
 
 You will be given:
 1. A job description (JD)
 2. A candidate profile (the only source of candidate facts)
-3. A generated submittal narrative with self-assessment fields
+3. A generated submittal narrative
 
-Your task — in order:
-1. BEFORE reading the generator's must_have_coverage, independently derive the JD's 3–7 must-have requirements from the JD alone.
-2. Score each must-have against the candidate profile independently. Note any gaps the generator under-reported.
-3. Assign your own independent fit_level using this rubric:
+Your task in order:
+1. Independently derive the 3–5 must-have requirements from the JD.
+2. Score each against the candidate profile and assign your own fit_level:
    - strong: meets ≥80% of must-haves, no fatal gaps
    - moderate: meets some must-haves, 1–2 meaningful gaps
    - weak: misses multiple must-haves, partial overlap only
    - not_recommended: lacks core must-haves
-4. Check every employer, title, tool, and non-numeric claim in the narrative against the profile. Flag anything that cannot be verified from the profile.
-5. Classify: if there are hallucinated claims → "hallucination"; if the narrative misrepresents fit (wrong level) → "structural"; if clean → "none".
-
-Be adversarial. Your goal is to catch dishonesty, not to validate the generator's claims.`
+3. Identify up to 3 concrete gaps between the JD must-haves and the profile. Focus on genuinely missing skills, frameworks, or experience areas — not stylistic concerns.
+4. Check for TRUE fabrications only. A claim is a hallucination ONLY when the underlying fact is absent from the profile entirely:
+   - FABRICATION: a specific employer, degree, certification, or project not found anywhere in the profile
+   - FABRICATION: a numeric metric (dollar figure, percentage, headcount) that does not appear anywhere in the profile
+   - NOT A FABRICATION: characterising depth of a skill that IS listed (e.g. "strong Python experience" when Python is in the tools list)
+   - NOT A FABRICATION: inferring leadership, architecture, or backend experience from role descriptions that support it
+   - NOT A FABRICATION: reasonable professional language around a skill or achievement grounded in the profile
+   Report at most 3 fabrications with high confidence. When in doubt, omit.
+5. Set failure_class:
+   - "hallucination" — only when step 4 found at least one genuinely fabricated fact
+   - "structural" — when the narrative significantly overstates the fit level (e.g. presents a weak candidate as strong with no supporting evidence)
+   - "none" — gaps or overstatements present, but no fabrication and no material fit misrepresentation`
 }
 
 function buildGraderPrompt(input: SubmittalInput, result: FitResult): string {
@@ -201,30 +208,45 @@ export async function gradeFit(
     }
   }
 
-  const allIssues: string[] = [
-    ...layer0Issues,
-    ...graderOutput.hallucinated_claims.map((c) => `Hallucinated claim: ${c}`),
-    ...graderOutput.under_reported_gaps.map((g) => `Under-reported gap: ${g}`),
-  ]
-
   const hasHallucination =
     layer0Numeric.length > 0 ||
     graderOutput.hallucinated_claims.length > 0 ||
     graderOutput.failure_class === 'hallucination'
 
-  const hasStructural =
-    layer0Structural.length > 0 ||
-    graderOutput.under_reported_gaps.length > 0 ||
-    graderOutput.failure_class === 'structural'
+  // Structural only when the grader explicitly flags fit misrepresentation or
+  // Layer 0 deterministic checks fire — NOT just because gaps were found.
+  const hasStructural = layer0Structural.length > 0 || graderOutput.failure_class === 'structural'
 
   if (!hasHallucination && !hasStructural) {
-    return { action: 'ship', failure_class: 'none', issues: [], warnings: [] }
+    // Gaps only — surface as soft amber warnings, no confirmation required.
+    return {
+      action: 'ship',
+      failure_class: 'none',
+      issues: [],
+      warnings: graderOutput.under_reported_gaps.slice(0, 3),
+    }
   }
 
   if (hasHallucination) {
-    return { action: 'regenerate', failure_class: 'hallucination', issues: allIssues, warnings: [] }
+    return {
+      action: 'regenerate',
+      failure_class: 'hallucination',
+      issues: [
+        ...layer0Issues,
+        ...graderOutput.hallucinated_claims.slice(0, 3).map((c) => `Hallucinated claim: ${c}`),
+      ],
+      warnings: [],
+    }
   }
 
-  // Structural issues (weak fit, missing must-haves) — don't retry.
-  return { action: 'human_review', failure_class: 'structural', issues: allIssues, warnings: [] }
+  // Structural: fit level significantly misrepresented — flag for human review.
+  return {
+    action: 'human_review',
+    failure_class: 'structural',
+    issues: [
+      ...layer0Structural,
+      ...graderOutput.under_reported_gaps.slice(0, 3).map((g) => `Gap: ${g}`),
+    ],
+    warnings: [],
+  }
 }
