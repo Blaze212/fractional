@@ -4,11 +4,18 @@ import { UnprocessableEntityException } from '../_shared/errors.ts'
 import type { ParsedProfile } from '../resume-parse/schema.ts'
 import { FIT_RESULT_SCHEMA } from './schema.ts'
 import type { FitResult } from './schema.ts'
+import type { FitGrade, GraderDeps } from './fit-grader.ts'
+import { gradeFit } from './fit-grader.ts'
 import { buildSubmittalSystemPrompt } from './system-prompt.ts'
 import { buildSubmittalPrompt } from './prompt.ts'
+import { extractNumericTokens, profileFactText, findUnsupportedNumbers } from './grounding.ts'
+
+// Re-export grounding utilities so existing callers (tests, eval harness) keep working.
+export { extractNumericTokens, profileFactText, findUnsupportedNumbers }
 
 export interface Deps {
   aiClient: AiClient
+  graderDeps?: GraderDeps
 }
 
 export interface SubmittalInput {
@@ -93,56 +100,18 @@ export function validateSubmittalInput(
   }
 }
 
-// Normalize text for numeric-grounding comparison: lowercase, drop $, commas, spaces.
-function normalizeForNumbers(text: string): string {
-  return text.toLowerCase().replace(/[$,\s]/g, '')
-}
-
-// Extract numeric tokens (with an optional trailing unit) from a piece of text,
-// e.g. "$8M", "50m", "30%", "15+". Used to detect fabricated figures.
-export function extractNumericTokens(text: string): string[] {
-  const matches =
-    text.toLowerCase().match(/\$?\d[\d,.]*\s?(?:%|k|m|b|bn|x|million|billion)?/g) ?? []
-  return matches
-    .map((m) => normalizeForNumbers(m).replace(/[.+]+$/, ''))
-    .filter((m) => /\d/.test(m))
-}
-
-export function profileFactText(profile: ParsedProfile): string {
-  return normalizeForNumbers(JSON.stringify(profile))
-}
-
-// Returns the list of numeric tokens that appear in the generated fit output but
-// not anywhere in the candidate profile — i.e. likely hallucinated figures.
-export function findUnsupportedNumbers(output: FitResult, profile: ParsedProfile): string[] {
-  const haystack = profileFactText(profile)
-  const texts = [
-    output.fit_summary,
-    ...output.fit_bullets.map((b) => b.text),
-    ...output.key_qualifications.map((b) => b.text),
-  ]
-  const unsupported = new Set<string>()
-  for (const text of texts) {
-    for (const token of extractNumericTokens(text)) {
-      if (!haystack.includes(token)) unsupported.add(token)
-    }
-  }
-  return [...unsupported]
-}
-
-export async function runFitGeneration(
+async function callGenerator(
   input: SubmittalInput,
-  deps: Deps,
+  aiClient: AiClient,
   log: LoggerLike,
-): Promise<{ result: FitResult; meta: { model: string } }> {
+): Promise<{ result: FitResult; model: string }> {
   log.info(
     { client: input.client_name, role: input.role_title, jd_char_count: input.jd_text.length },
-    'submittal-fit: starting LLM call',
+    'submittal-fit: generator call starting',
   )
-
   let res: { data: FitResult; tokens: { input: number; output: number; model?: string } }
   try {
-    res = await deps.aiClient.completeJson<FitResult>(
+    res = await aiClient.completeJson<FitResult>(
       buildSubmittalSystemPrompt(input.fit_narrative_style_guide),
       buildSubmittalPrompt(input),
       'submittal_fit',
@@ -156,6 +125,8 @@ export async function runFitGeneration(
   }
 
   const result = res.data
+
+  // Shape validation — these are contract violations, always throw.
   if (!result || !Array.isArray(result.fit_bullets) || result.fit_bullets.length !== 3) {
     throw new UnprocessableEntityException({
       message: 'Fit generation must return exactly 3 bullets',
@@ -170,18 +141,64 @@ export async function runFitGeneration(
     })
   }
 
-  const unsupported = findUnsupportedNumbers(result, input.parsed_profile)
-  if (unsupported.length > 0) {
-    log.warn({ unsupported }, 'submittal-fit: ungrounded figures detected in fit output')
-    throw new UnprocessableEntityException({
-      message: `Generated fit narrative contained figures not present in the resume: ${unsupported.join(', ')}. Please regenerate.`,
-    })
+  return { result, model: res.tokens.model ?? 'unknown' }
+}
+
+const DEFAULT_SHIP_GRADE: FitGrade = {
+  action: 'ship',
+  failure_class: 'none',
+  issues: [],
+  warnings: [],
+}
+
+export async function runFitGeneration(
+  input: SubmittalInput,
+  deps: Deps,
+  log: LoggerLike,
+): Promise<{ result: FitResult; grade: FitGrade; meta: { model: string } }> {
+  const { result, model } = await callGenerator(input, deps.aiClient, log)
+
+  log.info('submittal-fit: generator call complete')
+
+  // No grader injected — return default ship grade (Phase 1 / grader-disabled path).
+  if (!deps.graderDeps) {
+    return { result, grade: DEFAULT_SHIP_GRADE, meta: { model } }
   }
 
-  log.info(
-    { input_tokens: res.tokens.input, output_tokens: res.tokens.output },
-    'submittal-fit: LLM call complete',
-  )
+  // Phase 2: run grader with conditional Layer 2 and auto-regenerate on hallucination.
+  let grade = await gradeFit(input, result, deps.graderDeps, log)
 
-  return { result, meta: { model: res.tokens.model ?? 'unknown' } }
+  if (grade.action === 'regenerate') {
+    log.warn({ issues: grade.issues }, 'submittal-fit: hallucination detected — auto-regenerating')
+    try {
+      const { result: retryResult, model: retryModel } = await callGenerator(
+        input,
+        deps.aiClient,
+        log,
+      )
+      const retryGrade = await gradeFit(input, retryResult, deps.graderDeps, log)
+      if (retryGrade.action === 'regenerate') {
+        // Second attempt still hallucinating — fail safe, never throw.
+        grade = {
+          action: 'human_review',
+          failure_class: 'hallucination',
+          issues: retryGrade.issues,
+          warnings: ['Auto-regeneration did not resolve hallucination'],
+        }
+      } else {
+        return { result: retryResult, grade: retryGrade, meta: { model: retryModel } }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      log.warn({ err: msg }, 'submittal-fit: auto-regeneration failed')
+      grade = {
+        action: 'human_review',
+        failure_class: 'hallucination',
+        issues: grade.issues,
+        warnings: ['Auto-regeneration failed; manual review required'],
+      }
+    }
+  }
+
+  return { result, grade, meta: { model } }
 }

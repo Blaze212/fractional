@@ -1,0 +1,72 @@
+description: 'Structural mismatch — engineer with Agile exposure but no Scrum cert against a cert-required JD; grader should return human_review with structural class'
+
+expected_grade_action: human_review
+
+vars:
+  client_name: GPU Infrastructure Startup
+  role_title: Fractional Scrum Master
+  jd_text: |
+    GPU infrastructure startup providing high-performance, single-tenant GPU infrastructure for AI teams.
+
+    Looking for a fractional Scrum Master to support a cross-functional team by facilitating Agile ceremonies, removing impediments, and coaching on Scrum best practices.
+
+    Requirements:
+    - PSM I or II (Scrum.org) or CSM certified — REQUIRED
+    - 3+ years as a Scrum Master, ideally in startups or distributed remote teams
+    - Experience facilitating ceremonies for engineering, ops, and growth teams
+    - Proficient in Trello for cross-functional board management
+    - Comfortable coaching founders on process adherence
+  parsed_profile:
+    name: Barton Holdridge
+    email: bartonholdridge@gmail.com
+    phone: '817-676-2145'
+    location: 'Dallas, TX'
+    linkedin_url: linkedin.com/in/barton-holdridge
+    current_title: Fractional AI Engineer
+    work_authorization: No Sponsorship Required
+    total_experience: '10+ years'
+    summary: 'Software Engineer with 10+ years building and deploying cloud-native AI and backend systems. Participated in Agile sprint cycles at multiple companies. No Scrum Master certification.'
+    career_highlights:
+      - 'Increased concurrent workflow throughput 10x by redesigning SQL architecture and decomposing services into microservices'
+      - 'Reduced manual claims review effort 70% through AI-driven document processing pipeline'
+      - 'Mentored 4 new engineers by establishing code review cadences and engineering standards'
+    selected_experience:
+      - company: Fractional AI Engineer
+        title: Fractional AI Engineer
+        start_date: '2025-01'
+        end_date: Present
+        responsibilities:
+          - 'Designed and maintained backend APIs, microservices, and async workflows for insurance claims automation'
+          - 'Sole technical decision-maker in a 0-to-1 startup environment'
+        achievements:
+          - 'Reduced manual claims review effort 70% through AI-driven document processing'
+          - 'Increased concurrent workflow throughput 10x through architectural redesign'
+      - company: Lockheed Martin
+        title: Senior Software Engineer
+        start_date: '2017-01'
+        end_date: '2022-01'
+        responsibilities:
+          - 'Collaborated with systems and test teams via Agile sprint cycles'
+          - 'Conducted code reviews and pair programming sessions'
+        achievements:
+          - 'Increased automated test pass rate from 50% to 90% in 8 weeks'
+    other_experience: []
+    education:
+      - institution: University of Dallas
+        degree: Bachelor of Science, Computer Science
+    certifications: []
+    skills:
+      - 'Backend Systems Design'
+      - 'Agile Development'
+      - 'Microservices Architecture'
+      - 'AI/ML Integration'
+    tools:
+      - Python
+      - TypeScript
+      - AWS
+    seniority_level: Senior
+    functional_areas:
+      - Engineering
+    industries:
+      - Insurtech
+      - 'Government Defense'

@@ -1,0 +1,86 @@
+description: 'Strong fit — experienced CFO with SaaS fundraising experience; grader should ship'
+
+expected_grade_action: ship
+
+vars:
+  client_name: SaaS Platform Co
+  role_title: Chief Financial Officer
+  jd_text: |
+    We are a Series B SaaS company seeking an experienced CFO to lead our finance function through our next growth phase and eventual Series C raise.
+
+    Requirements:
+    - 10+ years of finance leadership experience, with CFO or VP Finance title
+    - Proven track record in SaaS or high-growth tech companies
+    - Experience leading a Series B or later fundraise
+    - Strong FP&A, board reporting, and investor relations skills
+    - Experience building and scaling finance teams
+    - CPA or equivalent preferred but not required
+
+    Responsibilities:
+    - Own the P&L, financial strategy, and investor reporting
+    - Lead Series C fundraise process (target: $40-60M)
+    - Partner with CEO and board on strategic decisions
+    - Build and manage a team of 3-5 finance professionals
+  parsed_profile:
+    name: Sarah Chen
+    email: sarah.chen@example.com
+    phone: '+1 555 0200'
+    location: 'San Francisco, CA'
+    linkedin_url: linkedin.com/in/sarahchen-cfo
+    current_title: Chief Financial Officer
+    work_authorization: U.S. Citizen
+    total_experience: '14 years'
+    summary: 'Seasoned CFO with 14 years of progressive finance leadership in SaaS and cloud infrastructure companies. Led two successful Series B fundraises totaling $85M and built finance teams from 2 to 15 professionals. Deep expertise in SaaS metrics, board reporting, and FP&A.'
+    career_highlights:
+      - 'Led $45M Series B raise at CloudScale Inc., engaging 12 institutional investors and closing in 4 months'
+      - 'Built finance function from scratch at two SaaS startups, scaling teams from 2 to 15 professionals'
+      - 'Reduced monthly close cycle from 15 days to 5 days through process automation and ERP optimization'
+    selected_experience:
+      - company: CloudScale Inc.
+        title: Chief Financial Officer
+        start_date: '2020-03'
+        end_date: Present
+        responsibilities:
+          - 'Own all financial operations including FP&A, accounting, treasury, and investor relations'
+          - 'Lead board reporting, investor communications, and strategic financial planning'
+          - 'Manage a team of 8 finance professionals across FP&A, accounting, and ops'
+        achievements:
+          - 'Led $45M Series B raise engaging 12 institutional investors, closing in 4 months'
+          - 'Reduced monthly close cycle from 15 days to 5 days through automation'
+          - 'Improved net revenue retention from 108% to 124% through pricing strategy changes'
+      - company: DataFlow Systems
+        title: VP Finance
+        start_date: '2016-01'
+        end_date: '2020-02'
+        responsibilities:
+          - 'Led all FP&A, board reporting, and investor relations for a 200-person SaaS company'
+          - 'Managed a team of 5 finance professionals'
+        achievements:
+          - 'Led $40M Series B fundraise, completing in 6 months'
+          - 'Built board reporting infrastructure from scratch, reducing prep time 60%'
+    other_experience: []
+    education:
+      - institution: Stanford Graduate School of Business
+        degree: MBA
+    certifications:
+      - provider: AICPA
+        certification: CPA
+    skills:
+      - 'Financial Planning & Analysis'
+      - 'Fundraising & Investor Relations'
+      - 'Board Reporting'
+      - 'SaaS Metrics & KPIs'
+      - 'Team Building & Leadership'
+      - 'Strategic Finance'
+    tools:
+      - 'NetSuite'
+      - 'Salesforce'
+      - 'Excel'
+      - 'Looker'
+    seniority_level: 'C-Level'
+    functional_areas:
+      - Finance
+      - Operations
+    industries:
+      - SaaS
+      - 'Cloud Infrastructure'

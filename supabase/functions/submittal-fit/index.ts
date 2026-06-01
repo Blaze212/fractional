@@ -6,10 +6,18 @@ import type { ParsedProfile } from '../resume-parse/schema.ts'
 import { validateSubmittalInput, runFitGeneration } from './submittal-fit.ts'
 
 const DEFAULT_MODEL = 'gpt-5.4-mini'
+const DEFAULT_GRADER_MODEL = 'gpt-5.4'
 
 function getModel(): string {
   return (
     (typeof Deno !== 'undefined' ? Deno.env.get('SUBMITTAL_FIT_MODEL') : undefined) ?? DEFAULT_MODEL
+  )
+}
+
+function getGraderModel(): string {
+  return (
+    (typeof Deno !== 'undefined' ? Deno.env.get('SUBMITTAL_FIT_GRADER_MODEL') : undefined) ??
+    DEFAULT_GRADER_MODEL
   )
 }
 
@@ -61,14 +69,26 @@ Deno.serve(
     }
 
     const aiClient = new OpenAiResponsesClient(getModel(), log)
+    const graderAiClient = new OpenAiResponsesClient(getGraderModel(), log)
 
     try {
-      const { result, meta } = await runFitGeneration(validation.value, { aiClient }, log)
+      const { result, grade, meta } = await runFitGeneration(
+        validation.value,
+        { aiClient, graderDeps: { graderAiClient } },
+        log,
+      )
       return jsonResponse(
         {
           fit_bullets: result.fit_bullets,
           fit_summary: result.fit_summary,
           key_qualifications: result.key_qualifications,
+          assessment: {
+            fit_level: result.fit_level,
+            jd_must_haves: result.jd_must_haves,
+            must_have_coverage: result.must_have_coverage,
+            gaps: result.internal_assessment.gaps,
+          },
+          grade,
           meta,
         } as Record<string, object | string | number | boolean | null>,
         200,

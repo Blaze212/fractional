@@ -7,6 +7,13 @@ import {
 } from '../../supabase/functions/submittal-fit/submittal-fit.ts'
 import type { Deps, SubmittalInput } from '../../supabase/functions/submittal-fit/submittal-fit.ts'
 import type { FitResult } from '../../supabase/functions/submittal-fit/schema.ts'
+import {
+  checkBannedPhrases,
+  checkCoverageConsistency,
+  runLayer0Checks,
+  gradeFit,
+} from '../../supabase/functions/submittal-fit/fit-grader.ts'
+import type { GraderDeps } from '../../supabase/functions/submittal-fit/fit-grader.ts'
 import type { ParsedProfile } from '../../supabase/functions/resume-parse/schema.ts'
 import type { AiClient } from '../../supabase/functions/_shared/ai-client.ts'
 import type { LoggerLike } from '../../supabase/functions/_shared/logger.ts'
@@ -66,6 +73,14 @@ const groundedResult: FitResult = {
     { text: 'Raised $50M Series C.', source_ref: 'selected_experience[0]' },
     { text: 'Reduced burn by 30%.', source_ref: 'career_highlights[1]' },
   ],
+  jd_must_haves: ['CFO experience', 'Series C+ fundraising', 'SaaS background'],
+  must_have_coverage: [
+    { requirement: 'CFO experience', met: true, evidence: 'selected_experience[0]' },
+    { requirement: 'Series C+ fundraising', met: true, evidence: 'career_highlights[0]' },
+    { requirement: 'SaaS background', met: true, evidence: 'industries' },
+  ],
+  fit_level: 'strong',
+  internal_assessment: { gaps: [] },
 }
 
 function makeMockAiClient(
@@ -78,6 +93,27 @@ function makeMockAiClient(
       tokens: { input: 600, output: 200, model: 'gpt-5.4-mini' },
     }),
     ...override,
+  }
+}
+
+function makeGraderClient(
+  graderData: {
+    independent_fit_level: string
+    under_reported_gaps: string[]
+    hallucinated_claims: string[]
+    failure_class: string
+  } = {
+    independent_fit_level: 'strong',
+    under_reported_gaps: [],
+    hallucinated_claims: [],
+    failure_class: 'none',
+  },
+): AiClient {
+  return {
+    completeJson: vi.fn().mockResolvedValue({
+      data: graderData,
+      tokens: { input: 400, output: 100, model: 'gpt-5.4' },
+    }),
   }
 }
 
@@ -235,6 +271,114 @@ describe('findUnsupportedNumbers (anti-hallucination)', () => {
   })
 })
 
+describe('checkBannedPhrases (Layer 0)', () => {
+  it('returns no issues for a strong fit with no banned phrases', () => {
+    expect(checkBannedPhrases(groundedResult)).toHaveLength(0)
+  })
+
+  it('skips the check entirely for strong fit_level', () => {
+    const withBanned: FitResult = {
+      ...groundedResult,
+      fit_level: 'strong',
+      fit_summary: 'This is an ideal fit for the role.',
+    }
+    expect(checkBannedPhrases(withBanned)).toHaveLength(0)
+  })
+
+  it('flags a banned phrase for non-strong fit_level', () => {
+    const weakWithBanned: FitResult = {
+      ...groundedResult,
+      fit_level: 'moderate',
+      fit_summary: 'This is an ideal fit for the role.',
+    }
+    const issues = checkBannedPhrases(weakWithBanned)
+    expect(issues.length).toBeGreaterThan(0)
+    expect(issues[0]).toContain('ideal fit')
+  })
+
+  it('detects banned phrases in bullets for non-strong fits', () => {
+    const result: FitResult = {
+      ...groundedResult,
+      fit_level: 'weak',
+      fit_bullets: [
+        { text: 'A perfect fit for this role.', source_ref: 'summary' },
+        groundedResult.fit_bullets[1],
+        groundedResult.fit_bullets[2],
+      ],
+    }
+    const issues = checkBannedPhrases(result)
+    expect(issues.some((i) => i.includes('perfect fit'))).toBe(true)
+  })
+})
+
+describe('checkCoverageConsistency (Layer 0)', () => {
+  it('returns no issues when strong fit has all must-haves met', () => {
+    expect(checkCoverageConsistency(groundedResult)).toHaveLength(0)
+  })
+
+  it('returns no issues for non-strong fit_level with unmet must-haves', () => {
+    const moderate: FitResult = {
+      ...groundedResult,
+      fit_level: 'moderate',
+      must_have_coverage: [
+        { requirement: 'CFO experience', met: true, evidence: 'selected_experience[0]' },
+        { requirement: 'Scrum Master cert', met: false, evidence: null },
+      ],
+    }
+    expect(checkCoverageConsistency(moderate)).toHaveLength(0)
+  })
+
+  it('flags strong fit_level when any must-have is unmet', () => {
+    const lying: FitResult = {
+      ...groundedResult,
+      fit_level: 'strong',
+      must_have_coverage: [
+        { requirement: 'CFO experience', met: true, evidence: 'selected_experience[0]' },
+        { requirement: 'Blockchain cert', met: false, evidence: null },
+      ],
+    }
+    const issues = checkCoverageConsistency(lying)
+    expect(issues.length).toBe(1)
+    expect(issues[0]).toContain('strong')
+    expect(issues[0]).toContain('Blockchain cert')
+  })
+})
+
+describe('runLayer0Checks (Layer 0 combined)', () => {
+  it('returns no issues for a clean grounded result', () => {
+    expect(runLayer0Checks(groundedResult, mockProfile)).toHaveLength(0)
+  })
+
+  it('returns numeric grounding issue for fabricated figure', () => {
+    const hallucinated: FitResult = {
+      ...groundedResult,
+      fit_summary: 'Drove $999M in revenue last year.',
+    }
+    const issues = runLayer0Checks(hallucinated, mockProfile)
+    expect(issues.some((i) => i.includes('Ungrounded numeric'))).toBe(true)
+  })
+
+  it('returns banned-phrase issue for moderate result with hype', () => {
+    const hype: FitResult = {
+      ...groundedResult,
+      fit_level: 'moderate',
+      fit_summary: 'A uniquely qualified candidate for this role.',
+    }
+    const issues = runLayer0Checks(hype, mockProfile)
+    expect(issues.some((i) => i.includes('uniquely qualified'))).toBe(true)
+  })
+
+  it('returns coverage consistency issue for sycophantic strong claim', () => {
+    const lying: FitResult = {
+      ...groundedResult,
+      fit_level: 'strong',
+      must_have_coverage: [{ requirement: 'PSM certification', met: false, evidence: null }],
+    }
+    const issues = runLayer0Checks(lying, mockProfile)
+    expect(issues.some((i) => i.includes('strong') && i.includes('PSM'))).toBe(true)
+  })
+})
+
 describe('runFitGeneration', () => {
   it('returns a grounded result with exactly 3 bullets, a summary, and key qualifications', async () => {
     const deps: Deps = { aiClient: makeMockAiClient() }
@@ -244,6 +388,19 @@ describe('runFitGeneration', () => {
     expect(result.key_qualifications).toHaveLength(3)
     expect(result.key_qualifications[0].source_ref).toBe('selected_experience[0]')
     expect(meta.model).toBe('gpt-5.4-mini')
+  })
+
+  it('returns a grade field alongside result and meta', async () => {
+    const deps: Deps = { aiClient: makeMockAiClient() }
+    const { grade } = await runFitGeneration(baseInput, deps, silentLogger)
+    expect(grade).toMatchObject({ action: 'ship', failure_class: 'none', issues: [], warnings: [] })
+  })
+
+  it('returns default ship grade when graderDeps is absent', async () => {
+    const deps: Deps = { aiClient: makeMockAiClient() }
+    const { grade } = await runFitGeneration(baseInput, deps, silentLogger)
+    expect(grade.action).toBe('ship')
+    expect(grade.failure_class).toBe('none')
   })
 
   it('allows zero key qualifications for a poor fit with no supporting points', async () => {
@@ -267,7 +424,7 @@ describe('runFitGeneration', () => {
     })
   })
 
-  it('flags an ungrounded figure that appears only in a key qualification', async () => {
+  it('does not detect ungrounded figures without graderDeps (grader-only check)', async () => {
     const hallucinated: FitResult = {
       ...groundedResult,
       key_qualifications: [
@@ -277,9 +434,9 @@ describe('runFitGeneration', () => {
       ],
     }
     const deps: Deps = { aiClient: makeMockAiClient(hallucinated) }
-    await expect(runFitGeneration(baseInput, deps, silentLogger)).rejects.toMatchObject({
-      code: 'UNPROCESSABLE_ENTITY',
-    })
+    // Without graderDeps, numeric hallucinations are not caught — grader is required.
+    const { grade } = await runFitGeneration(baseInput, deps, silentLogger)
+    expect(grade.action).toBe('ship')
   })
 
   it('passes the submittal schema name and grounding inputs to the AI client', async () => {
@@ -341,21 +498,6 @@ describe('runFitGeneration', () => {
     })
   })
 
-  it('throws when the output contains a figure absent from the input profile', async () => {
-    const hallucinated: FitResult = {
-      ...groundedResult,
-      fit_bullets: [
-        { text: 'Closed $8M in net-new ARR.', source_ref: 'selected_experience[0]' },
-        groundedResult.fit_bullets[1],
-        groundedResult.fit_bullets[2],
-      ],
-    }
-    const deps: Deps = { aiClient: makeMockAiClient(hallucinated) }
-    await expect(runFitGeneration(baseInput, deps, silentLogger)).rejects.toMatchObject({
-      code: 'UNPROCESSABLE_ENTITY',
-    })
-  })
-
   it('wraps an AI client failure as UnprocessableEntity', async () => {
     const deps: Deps = {
       aiClient: makeMockAiClient(groundedResult, {
@@ -366,5 +508,192 @@ describe('runFitGeneration', () => {
       code: 'UNPROCESSABLE_ENTITY',
       status: 422,
     })
+  })
+})
+
+describe('runFitGeneration with graderDeps (integration paths)', () => {
+  it('returns ship grade when grader reports clean output', async () => {
+    const aiClient = makeMockAiClient()
+    const graderAiClient = makeGraderClient()
+    const { grade } = await runFitGeneration(
+      baseInput,
+      { aiClient, graderDeps: { graderAiClient } },
+      silentLogger,
+    )
+    // strong fit, no gaps → Layer 2 skipped, direct ship
+    expect(grade.action).toBe('ship')
+    expect(grade.failure_class).toBe('none')
+  })
+
+  it('returns human_review with structural class for weak-fit candidate', async () => {
+    const weakResult: FitResult = {
+      ...groundedResult,
+      fit_level: 'weak',
+      internal_assessment: { gaps: ['Missing core certification'] },
+    }
+    const aiClient = makeMockAiClient(weakResult)
+    const graderAiClient = makeGraderClient({
+      independent_fit_level: 'weak',
+      under_reported_gaps: ['No SaaS experience'],
+      hallucinated_claims: [],
+      failure_class: 'structural',
+    })
+    const { grade } = await runFitGeneration(
+      baseInput,
+      { aiClient, graderDeps: { graderAiClient } },
+      silentLogger,
+    )
+    expect(grade.action).toBe('human_review')
+    expect(grade.failure_class).toBe('structural')
+    expect(grade.issues.length).toBeGreaterThan(0)
+  })
+
+  it('auto-regenerates once on hallucination and returns ship when retry is clean', async () => {
+    const hallucinatedResult: FitResult = {
+      ...groundedResult,
+      fit_level: 'moderate',
+      internal_assessment: { gaps: ['Minor gap'] },
+    }
+    const cleanResult = groundedResult
+    const aiClient = makeMockAiClient()
+    const completeJsonFn = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: hallucinatedResult,
+        tokens: { input: 600, output: 200, model: 'gpt-5.4-mini' },
+      })
+      .mockResolvedValueOnce({
+        data: cleanResult,
+        tokens: { input: 600, output: 200, model: 'gpt-5.4-mini' },
+      })
+    aiClient.completeJson = completeJsonFn
+
+    // Grader: first call says hallucination, second call says clean
+    const graderCompleteJsonFn = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: {
+          independent_fit_level: 'moderate',
+          under_reported_gaps: [],
+          hallucinated_claims: ['Invented employer XYZ'],
+          failure_class: 'hallucination',
+        },
+        tokens: { input: 400, output: 100, model: 'gpt-5.4' },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          independent_fit_level: 'strong',
+          under_reported_gaps: [],
+          hallucinated_claims: [],
+          failure_class: 'none',
+        },
+        tokens: { input: 400, output: 100, model: 'gpt-5.4' },
+      })
+    const graderAiClient: AiClient = { completeJson: graderCompleteJsonFn }
+
+    const { result, grade } = await runFitGeneration(
+      baseInput,
+      { aiClient, graderDeps: { graderAiClient } },
+      silentLogger,
+    )
+    expect(grade.action).toBe('ship')
+    expect(result.fit_bullets).toHaveLength(3)
+    expect(completeJsonFn).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns human_review with hallucination class when retry also fails', async () => {
+    const hallucinatedResult: FitResult = {
+      ...groundedResult,
+      fit_level: 'moderate',
+      internal_assessment: { gaps: ['Minor gap'] },
+    }
+    const aiClient = makeMockAiClient(hallucinatedResult)
+
+    const graderAiClient: AiClient = {
+      completeJson: vi.fn().mockResolvedValue({
+        data: {
+          independent_fit_level: 'moderate',
+          under_reported_gaps: [],
+          hallucinated_claims: ['Still hallucinating after retry'],
+          failure_class: 'hallucination',
+        },
+        tokens: { input: 400, output: 100, model: 'gpt-5.4' },
+      }),
+    }
+
+    const { grade } = await runFitGeneration(
+      baseInput,
+      { aiClient, graderDeps: { graderAiClient } },
+      silentLogger,
+    )
+    expect(grade.action).toBe('human_review')
+    expect(grade.failure_class).toBe('hallucination')
+  })
+
+  it('fails safe to human_review when grader LLM call throws', async () => {
+    // Use a non-strong result so the risk gate trips and grader LLM is actually called.
+    const weakResult: FitResult = {
+      ...groundedResult,
+      fit_level: 'weak',
+      internal_assessment: { gaps: ['Missing required cert'] },
+    }
+    const aiClient = makeMockAiClient(weakResult)
+    const graderAiClient: AiClient = {
+      completeJson: vi.fn().mockRejectedValue(new Error('Grader network timeout')),
+    }
+    const { grade } = await runFitGeneration(
+      baseInput,
+      { aiClient, graderDeps: { graderAiClient } },
+      silentLogger,
+    )
+    expect(grade.action).toBe('human_review')
+    expect(grade.warnings).toContain('Grader call failed; manual review required')
+  })
+})
+
+describe('gradeFit (direct grader function)', () => {
+  it('returns ship immediately for clean strong result without calling grader LLM', async () => {
+    const graderAiClient = makeGraderClient()
+    const deps: GraderDeps = { graderAiClient }
+    const grade = await gradeFit(baseInput, groundedResult, deps, silentLogger)
+    expect(grade.action).toBe('ship')
+    expect(graderAiClient.completeJson).not.toHaveBeenCalled()
+  })
+
+  it('calls grader LLM for non-strong fit_level', async () => {
+    const nonStrong: FitResult = {
+      ...groundedResult,
+      fit_level: 'moderate',
+      internal_assessment: { gaps: ['Gap A'] },
+    }
+    const graderAiClient = makeGraderClient({
+      independent_fit_level: 'moderate',
+      under_reported_gaps: [],
+      hallucinated_claims: [],
+      failure_class: 'structural',
+    })
+    const deps: GraderDeps = { graderAiClient }
+    const grade = await gradeFit(baseInput, nonStrong, deps, silentLogger)
+    expect(graderAiClient.completeJson).toHaveBeenCalledOnce()
+    expect(grade.action).toBe('human_review')
+    expect(grade.failure_class).toBe('structural')
+  })
+
+  it('calls grader LLM when Layer 0 finds a numeric issue', async () => {
+    const hallucinated: FitResult = {
+      ...groundedResult,
+      fit_summary: 'Drove $999M in revenue.',
+    }
+    const graderAiClient = makeGraderClient({
+      independent_fit_level: 'strong',
+      under_reported_gaps: [],
+      hallucinated_claims: ['$999M figure not in profile'],
+      failure_class: 'hallucination',
+    })
+    const deps: GraderDeps = { graderAiClient }
+    const grade = await gradeFit(baseInput, hallucinated, deps, silentLogger)
+    expect(graderAiClient.completeJson).toHaveBeenCalledOnce()
+    expect(grade.action).toBe('regenerate')
+    expect(grade.failure_class).toBe('hallucination')
   })
 })

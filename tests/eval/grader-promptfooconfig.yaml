@@ -1,0 +1,53 @@
+# Promptfoo eval suite for the submittal-fit GRADER.
+#
+# Measures precision/recall on grade.action: 'ship' | 'regenerate' | 'human_review'.
+# Run with: pnpm eval:grader   (loads OPENAI_API_KEY from supabase/.env)
+# Not wired into CI — hits the real OpenAI API and costs tokens.
+#
+# Fixtures are labeled with expected_grade_action; assertions check the match.
+# After the run, view results with `npx promptfoo view` to see per-fixture
+# pass/fail and named scores.
+
+description: submittal-fit grader eval (precision/recall on gate action)
+
+providers:
+  - id: file://grader-provider.ts
+    label: submittal-fit-grader
+
+prompts:
+  - 'Grade the submittal fit narrative for the supplied candidate and role.'
+
+tests:
+  - file://grader-fixtures/strong-cfo-saas.yaml
+  - file://grader-fixtures/structural-scrum-master.yaml
+
+defaultTest:
+  assert:
+    # Core grader precision check: grade.action must match the fixture label.
+    - type: javascript
+      value: |
+        const expected = context.vars.expected_grade_action
+        const actual = output.grade?.action
+        if (!expected) return true  // no label → skip
+        const pass = actual === expected
+        if (!pass) {
+          return {
+            pass: false,
+            score: 0,
+            reason: `Expected grade.action="${expected}" but got "${actual}". Issues: ${JSON.stringify(output.grade?.issues ?? [])}`,
+          }
+        }
+        return { pass: true, score: 1, reason: `grade.action="${actual}" matched expected` }
+
+    # Structural sanity: grade envelope must always be present.
+    - type: javascript
+      value: |
+        return typeof output.grade === 'object' &&
+               ['ship', 'regenerate', 'human_review'].includes(output.grade.action) &&
+               ['none', 'hallucination', 'structural'].includes(output.grade.failure_class) &&
+               Array.isArray(output.grade.issues) &&
+               Array.isArray(output.grade.warnings)
+
+    # Generator output still present (backward-compatible client-facing fields).
+    - type: javascript
+      value: "output.fit_bullets?.length === 3 && typeof output.fit_summary === 'string'"
