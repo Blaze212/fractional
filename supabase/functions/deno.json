@@ -1,0 +1,18 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2",
+    "openai": "npm:openai@4",
+    "pino": "npm:pino@9.9.5"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "useUnknownInCatchVariables": false
+  },
+  "exclude": ["**/tests/**"],
+  "tasks": {
+    "typecheck": "deno check **/*.ts"
+  }
+}
