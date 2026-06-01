@@ -111,7 +111,7 @@ export default function UpdatePasswordPage() {
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-brand">Set New Password</h1>
+          <h1 className="text-brand text-2xl font-bold">Set New Password</h1>
           <p className="mt-1 text-sm text-slate-500">
             Choose a strong password so you can sign in anytime.
           </p>
@@ -136,7 +136,7 @@ export default function UpdatePasswordPage() {
             </p>
             <Link
               to="/reset-password"
-              className="inline-block w-full rounded-lg bg-brand px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-brand-light"
+              className="bg-brand hover:bg-brand-light inline-block w-full rounded-lg px-4 py-2.5 text-center text-sm font-semibold text-white"
             >
               Request new reset link →
             </Link>
@@ -145,8 +145,7 @@ export default function UpdatePasswordPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {userEmail && (
               <p className="text-sm text-slate-500">
-                Setting password for{' '}
-                <span className="font-medium text-slate-900">{userEmail}</span>
+                Setting password for <span className="font-medium text-slate-900">{userEmail}</span>
               </p>
             )}
             <PasswordInput
@@ -175,7 +174,7 @@ export default function UpdatePasswordPage() {
             <button
               type="submit"
               disabled={submitting || hasSession === null}
-              className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-light disabled:opacity-50"
+              className="bg-brand hover:bg-brand-light w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
             >
               {submitting ? 'Updating…' : 'Update Password →'}
             </button>

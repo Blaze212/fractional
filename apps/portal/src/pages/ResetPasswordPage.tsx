@@ -25,14 +25,14 @@ export default function ResetPasswordPage() {
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-brand">Reset Password</h1>
+          <h1 className="text-brand text-2xl font-bold">Reset Password</h1>
           <p className="mt-1 text-sm text-slate-500">
             Enter your email and we&apos;ll send a reset link.
           </p>
         </div>
 
         {submitted ? (
-          <div className="rounded-lg bg-brand-muted p-4 text-sm text-brand">
+          <div className="bg-brand-muted text-brand rounded-lg p-4 text-sm">
             If an account exists for that email, you&apos;ll receive a reset link shortly.
           </div>
         ) : (
@@ -44,12 +44,12 @@ export default function ResetPasswordPage() {
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
-              className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+              className="focus:border-brand focus:ring-brand w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-1"
             />
             <button
               type="submit"
               disabled={submitting}
-              className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-light disabled:opacity-50"
+              className="bg-brand hover:bg-brand-light w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
             >
               {submitting ? 'Sending…' : 'Send Reset Link →'}
             </button>

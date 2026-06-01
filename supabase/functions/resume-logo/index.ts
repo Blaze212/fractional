@@ -11,10 +11,15 @@ import {
 const BUCKET = () =>
   (typeof Deno !== 'undefined' ? Deno.env.get('RESUME_LOGO_BUCKET') : undefined) ?? 'resume-logos'
 const MAX_MB = () =>
-  parseInt((typeof Deno !== 'undefined' ? Deno.env.get('RESUME_LOGO_MAX_MB') : undefined) ?? '2', 10)
+  parseInt(
+    (typeof Deno !== 'undefined' ? Deno.env.get('RESUME_LOGO_MAX_MB') : undefined) ?? '2',
+    10,
+  )
 const SIGNED_URL_TTL = () =>
   parseInt(
-    (typeof Deno !== 'undefined' ? Deno.env.get('RESUME_LOGO_SIGNED_URL_TTL_SECONDS') : undefined) ?? '120',
+    (typeof Deno !== 'undefined'
+      ? Deno.env.get('RESUME_LOGO_SIGNED_URL_TTL_SECONDS')
+      : undefined) ?? '120',
     10,
   )
 const MAX_DIMENSION_PX = 2000
@@ -54,7 +59,11 @@ async function handleGet(req: Request, userId: string): Promise<Response> {
   if (error) {
     const err = new InternalServiceException({ message: 'Failed to fetch logo metadata' })
     logError(err, 'resume-logo GET: db error', { userId }, log)
-    return jsonResponse(errorBody(err) as Record<string, object | string | number | boolean | null>, err.status, req)
+    return jsonResponse(
+      errorBody(err) as Record<string, object | string | number | boolean | null>,
+      err.status,
+      req,
+    )
   }
 
   if (!meta) {
@@ -70,7 +79,11 @@ async function handleGet(req: Request, userId: string): Promise<Response> {
   if (urlError || !signedUrl) {
     const err = new InternalServiceException({ message: 'Failed to generate signed URL' })
     logError(err, 'resume-logo GET: signed URL error', { userId }, log)
-    return jsonResponse(errorBody(err) as Record<string, object | string | number | boolean | null>, err.status, req)
+    return jsonResponse(
+      errorBody(err) as Record<string, object | string | number | boolean | null>,
+      err.status,
+      req,
+    )
   }
 
   log.info({ storagePath: logoMeta.storage_path }, 'resume-logo GET: returning logo')
@@ -97,13 +110,21 @@ async function handlePost(req: Request, userId: string): Promise<Response> {
     formData = await req.formData()
   } catch {
     const err = new ValidationException({ message: 'Request must be multipart/form-data' })
-    return jsonResponse(errorBody(err) as Record<string, object | string | number | boolean | null>, err.status, req)
+    return jsonResponse(
+      errorBody(err) as Record<string, object | string | number | boolean | null>,
+      err.status,
+      req,
+    )
   }
 
   const fileEntry = formData.get('file')
   if (!(fileEntry instanceof File)) {
     const err = new ValidationException({ message: 'file field is required' })
-    return jsonResponse(errorBody(err) as Record<string, object | string | number | boolean | null>, err.status, req)
+    return jsonResponse(
+      errorBody(err) as Record<string, object | string | number | boolean | null>,
+      err.status,
+      req,
+    )
   }
 
   const mimeType = fileEntry.type
@@ -111,7 +132,11 @@ async function handlePost(req: Request, userId: string): Promise<Response> {
     const err = new ValidationException({
       message: `Unsupported file type: ${mimeType}. Only image/png and image/jpeg are allowed.`,
     })
-    return jsonResponse(errorBody(err) as Record<string, object | string | number | boolean | null>, err.status, req)
+    return jsonResponse(
+      errorBody(err) as Record<string, object | string | number | boolean | null>,
+      err.status,
+      req,
+    )
   }
 
   const maxBytes = MAX_MB() * 1024 * 1024
@@ -119,7 +144,11 @@ async function handlePost(req: Request, userId: string): Promise<Response> {
     const err = new ValidationException({
       message: `File exceeds ${MAX_MB()} MB limit (received ${fileEntry.size} bytes)`,
     })
-    return jsonResponse(errorBody(err) as Record<string, object | string | number | boolean | null>, err.status, req)
+    return jsonResponse(
+      errorBody(err) as Record<string, object | string | number | boolean | null>,
+      err.status,
+      req,
+    )
   }
 
   const widthRaw = formData.get('width')
@@ -128,15 +157,25 @@ async function handlePost(req: Request, userId: string): Promise<Response> {
   const heightPx = typeof heightRaw === 'string' ? parseInt(heightRaw, 10) : NaN
 
   if (!Number.isFinite(widthPx) || !Number.isFinite(heightPx) || widthPx <= 0 || heightPx <= 0) {
-    const err = new ValidationException({ message: 'width and height fields are required positive integers' })
-    return jsonResponse(errorBody(err) as Record<string, object | string | number | boolean | null>, err.status, req)
+    const err = new ValidationException({
+      message: 'width and height fields are required positive integers',
+    })
+    return jsonResponse(
+      errorBody(err) as Record<string, object | string | number | boolean | null>,
+      err.status,
+      req,
+    )
   }
 
   if (widthPx > MAX_DIMENSION_PX || heightPx > MAX_DIMENSION_PX) {
     const err = new ValidationException({
       message: `Image dimensions exceed ${MAX_DIMENSION_PX}px cap`,
     })
-    return jsonResponse(errorBody(err) as Record<string, object | string | number | boolean | null>, err.status, req)
+    return jsonResponse(
+      errorBody(err) as Record<string, object | string | number | boolean | null>,
+      err.status,
+      req,
+    )
   }
 
   const ext = mimeType === 'image/png' ? 'png' : 'jpg'
@@ -152,7 +191,11 @@ async function handlePost(req: Request, userId: string): Promise<Response> {
   if (uploadError) {
     const err = new InternalServiceException({ message: 'Failed to upload logo' })
     logError(err, 'resume-logo POST: upload error', { userId }, log)
-    return jsonResponse(errorBody(err) as Record<string, object | string | number | boolean | null>, err.status, req)
+    return jsonResponse(
+      errorBody(err) as Record<string, object | string | number | boolean | null>,
+      err.status,
+      req,
+    )
   }
 
   const adminClient = createAdminClient()
@@ -172,10 +215,17 @@ async function handlePost(req: Request, userId: string): Promise<Response> {
   if (upsertError) {
     const err = new InternalServiceException({ message: 'Failed to save logo metadata' })
     logError(err, 'resume-logo POST: upsert error', { userId }, log)
-    return jsonResponse(errorBody(err) as Record<string, object | string | number | boolean | null>, err.status, req)
+    return jsonResponse(
+      errorBody(err) as Record<string, object | string | number | boolean | null>,
+      err.status,
+      req,
+    )
   }
 
-  log.info({ storagePath, mimeType, widthPx, heightPx, size: fileEntry.size }, 'resume-logo POST: uploaded')
+  log.info(
+    { storagePath, mimeType, widthPx, heightPx, size: fileEntry.size },
+    'resume-logo POST: uploaded',
+  )
   return jsonResponse({ ok: true, storage_path: storagePath }, 200, req)
 }
 
@@ -192,12 +242,20 @@ async function handleDelete(req: Request, userId: string): Promise<Response> {
   if (fetchError) {
     const err = new InternalServiceException({ message: 'Failed to fetch logo metadata' })
     logError(err, 'resume-logo DELETE: fetch error', { userId }, log)
-    return jsonResponse(errorBody(err) as Record<string, object | string | number | boolean | null>, err.status, req)
+    return jsonResponse(
+      errorBody(err) as Record<string, object | string | number | boolean | null>,
+      err.status,
+      req,
+    )
   }
 
   if (!meta) {
     const err = new ResourceNotFoundException({ message: 'No logo configured' })
-    return jsonResponse(errorBody(err) as Record<string, object | string | number | boolean | null>, err.status, req)
+    return jsonResponse(
+      errorBody(err) as Record<string, object | string | number | boolean | null>,
+      err.status,
+      req,
+    )
   }
 
   const logoMeta = meta as { storage_path: string }
@@ -209,7 +267,11 @@ async function handleDelete(req: Request, userId: string): Promise<Response> {
   if (removeError) {
     const err = new InternalServiceException({ message: 'Failed to remove logo from storage' })
     logError(err, 'resume-logo DELETE: remove error', { userId }, log)
-    return jsonResponse(errorBody(err) as Record<string, object | string | number | boolean | null>, err.status, req)
+    return jsonResponse(
+      errorBody(err) as Record<string, object | string | number | boolean | null>,
+      err.status,
+      req,
+    )
   }
 
   const { error: deleteError } = await adminClient
@@ -220,7 +282,11 @@ async function handleDelete(req: Request, userId: string): Promise<Response> {
   if (deleteError) {
     const err = new InternalServiceException({ message: 'Failed to delete logo metadata' })
     logError(err, 'resume-logo DELETE: delete meta error', { userId }, log)
-    return jsonResponse(errorBody(err) as Record<string, object | string | number | boolean | null>, err.status, req)
+    return jsonResponse(
+      errorBody(err) as Record<string, object | string | number | boolean | null>,
+      err.status,
+      req,
+    )
   }
 
   log.info({ storagePath: logoMeta.storage_path }, 'resume-logo DELETE: removed')
@@ -235,9 +301,12 @@ Deno.serve(
     if (method === 'POST') return handlePost(req, userId)
     if (method === 'DELETE') return handleDelete(req, userId)
 
-    return new Response(JSON.stringify({ error: { code: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' } }), {
-      status: 405,
-      headers: { ...corsHeadersFor(req), 'Content-Type': 'application/json' },
-    })
+    return new Response(
+      JSON.stringify({ error: { code: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' } }),
+      {
+        status: 405,
+        headers: { ...corsHeadersFor(req), 'Content-Type': 'application/json' },
+      },
+    )
   }),
 )

@@ -48,13 +48,22 @@ describe('LoginPage', () => {
   it('shows generic error on failed login — no enumeration info', async () => {
     vi.mocked(supabase.auth.signInWithPassword).mockResolvedValue({
       data: { user: null, session: null },
-      error: { message: 'Invalid login credentials', status: 400, name: 'AuthApiError', code: 'invalid_credentials' },
+      error: {
+        message: 'Invalid login credentials',
+        status: 400,
+        name: 'AuthApiError',
+        code: 'invalid_credentials',
+      },
     } as ReturnType<typeof supabase.auth.signInWithPassword> extends Promise<infer R> ? R : never)
 
     renderLogin()
 
-    fireEvent.change(screen.getByPlaceholderText('Email'), { target: { value: 'user@example.com' } })
-    fireEvent.change(screen.getByPlaceholderText('Password'), { target: { value: 'wrongpassword' } })
+    fireEvent.change(screen.getByPlaceholderText('Email'), {
+      target: { value: 'user@example.com' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('Password'), {
+      target: { value: 'wrongpassword' },
+    })
     fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
 
     await waitFor(() => {

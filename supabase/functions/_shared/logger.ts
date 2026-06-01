@@ -71,10 +71,7 @@ function wrapLogger(
   current: pino.Logger,
   cumulativeBindings: Record<string, unknown> = {},
 ): LoggerLike {
-  const emit = (
-    level: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal',
-    args: LogArgs,
-  ) => {
+  const emit = (level: 'trace' | 'debug' | 'info' | 'warn' | 'error' | 'fatal', args: LogArgs) => {
     current[level](...(args as Parameters<pino.Logger[typeof level]>))
     if (!mirrorToConsole) return
     consoleMethodForLevel(level)(toSingleLine(level, args, cumulativeBindings))

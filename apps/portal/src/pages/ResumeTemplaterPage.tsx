@@ -30,7 +30,7 @@ function ProgressBar({ elapsed }: { elapsed: number }) {
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-200">
         <div
-          className="h-full rounded-full bg-brand transition-all duration-1000"
+          className="bg-brand h-full rounded-full transition-all duration-1000"
           style={{ width: `${progress}%` }}
         />
       </div>
@@ -39,8 +39,7 @@ function ProgressBar({ elapsed }: { elapsed: number }) {
 }
 
 function ProfileSummary({ profile }: { profile: ParsedProfile }) {
-  const roleCount =
-    profile.selected_experience.length + profile.other_experience.length
+  const roleCount = profile.selected_experience.length + profile.other_experience.length
   const topCompanies = profile.selected_experience
     .slice(0, 3)
     .map((e) => e.company)
@@ -52,14 +51,17 @@ function ProfileSummary({ profile }: { profile: ParsedProfile }) {
       <div>
         <h2 className="text-xl font-bold text-slate-900">{profile.name ?? 'Unknown'}</h2>
         {profile.seniority_level && (
-          <span className="mt-1 inline-block rounded-full bg-brand-muted px-3 py-0.5 text-xs font-semibold text-brand">
+          <span className="bg-brand-muted text-brand mt-1 inline-block rounded-full px-3 py-0.5 text-xs font-semibold">
             {profile.seniority_level}
           </span>
         )}
       </div>
 
       {profile.summary && (
-        <p className="text-sm leading-relaxed text-slate-600">{profile.summary.slice(0, 300)}{profile.summary.length > 300 ? '…' : ''}</p>
+        <p className="text-sm leading-relaxed text-slate-600">
+          {profile.summary.slice(0, 300)}
+          {profile.summary.length > 300 ? '…' : ''}
+        </p>
       )}
 
       <div className="grid grid-cols-2 gap-4 text-sm text-slate-600">
@@ -109,13 +111,14 @@ function LogoUploader({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   async function fetchLogo() {
-    const { data: { session } } = await supabase.auth.getSession()
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
     if (!session) return
 
-    const res = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resume-logo`,
-      { headers: { Authorization: `Bearer ${session.access_token}` } },
-    )
+    const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resume-logo`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
     if (res.ok) {
       const json = (await res.json()) as { logo: LogoInfo }
       onLogoChange(json.logo)
@@ -155,17 +158,16 @@ function LogoUploader({
       form.append('width', String(dimensions.width))
       form.append('height', String(dimensions.height))
 
-      const { data: { session } } = await supabase.auth.getSession()
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
       if (!session) throw new Error('Not authenticated')
 
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resume-logo`,
-        {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${session.access_token}` },
-          body: form,
-        },
-      )
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resume-logo`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        body: form,
+      })
 
       if (!res.ok) {
         const err = (await res.json()) as { error?: { message?: string } }
@@ -185,16 +187,15 @@ function LogoUploader({
     setError(null)
     setUploading(true)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
       if (!session) throw new Error('Not authenticated')
 
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resume-logo`,
-        {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        },
-      )
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resume-logo`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
       if (!res.ok) throw new Error('Remove failed')
       onLogoChange(null)
     } catch (err) {
@@ -227,7 +228,7 @@ function LogoUploader({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={disabled || uploading}
-              className="text-sm text-brand hover:underline disabled:opacity-50"
+              className="text-brand text-sm hover:underline disabled:opacity-50"
             >
               Replace
             </button>
@@ -237,7 +238,7 @@ function LogoUploader({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled || uploading}
-            className="rounded-lg border border-dashed border-slate-300 px-4 py-2 text-sm text-slate-500 hover:border-brand hover:text-brand disabled:opacity-50"
+            className="hover:border-brand hover:text-brand rounded-lg border border-dashed border-slate-300 px-4 py-2 text-sm text-slate-500 disabled:opacity-50"
           >
             {uploading ? 'Uploading…' : '+ Add logo (PNG/JPEG, max 2 MB)'}
           </button>
@@ -289,20 +290,19 @@ export default function ResumeTemplaterPage() {
     }, 1000)
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
       if (!session) throw new Error('Not authenticated')
 
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resume-parse`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ resume_text: resumeText }),
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resume-parse`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
         },
-      )
+        body: JSON.stringify({ resume_text: resumeText }),
+      })
 
       const json = (await res.json()) as { profile?: ParsedProfile; error?: { message?: string } }
 
@@ -316,9 +316,7 @@ export default function ResumeTemplaterPage() {
     } catch (err) {
       stopTimer()
       setErrorMessage(
-        err instanceof Error
-          ? err.message
-          : 'Something went wrong. Please try again.',
+        err instanceof Error ? err.message : 'Something went wrong. Please try again.',
       )
       setPageState('error')
     }
@@ -353,9 +351,7 @@ export default function ResumeTemplaterPage() {
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
-      setErrorMessage(
-        err instanceof Error ? err.message : 'Export failed. Please try again.',
-      )
+      setErrorMessage(err instanceof Error ? err.message : 'Export failed. Please try again.')
       setPageState('error')
     } finally {
       setExporting(false)
@@ -375,7 +371,7 @@ export default function ResumeTemplaterPage() {
       {/* Header */}
       <header className="border-b border-slate-200 bg-white px-6 py-4">
         <div className="mx-auto flex max-w-3xl items-center justify-between">
-          <h1 className="text-lg font-bold text-brand">Fractional Portal</h1>
+          <h1 className="text-brand text-lg font-bold">Fractional Portal</h1>
           <button
             type="button"
             onClick={() => supabase.auth.signOut()}
@@ -406,7 +402,7 @@ export default function ResumeTemplaterPage() {
                 placeholder="Paste resume here"
                 rows={16}
                 disabled={isGenerating}
-                className="w-full resize-y rounded-xl border border-slate-300 p-4 text-sm leading-relaxed focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand disabled:opacity-50"
+                className="focus:border-brand focus:ring-brand w-full resize-y rounded-xl border border-slate-300 p-4 text-sm leading-relaxed focus:outline-none focus:ring-1 disabled:opacity-50"
               />
             </div>
 
@@ -421,7 +417,7 @@ export default function ResumeTemplaterPage() {
                 type="button"
                 onClick={handleGenerate}
                 disabled={!resumeText.trim() || isGenerating}
-                className="rounded-lg bg-brand px-6 py-2.5 text-sm font-semibold text-white hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-40"
+                className="bg-brand hover:bg-brand-light rounded-lg px-6 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Generate
               </button>
@@ -442,7 +438,7 @@ export default function ResumeTemplaterPage() {
         {pageState === 'generating' && (
           <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-brand border-t-transparent" />
+              <div className="border-brand h-5 w-5 animate-spin rounded-full border-2 border-t-transparent" />
               <span className="text-sm font-medium text-slate-700">
                 Estimated completion: {ESTIMATE_SECONDS} seconds
               </span>
@@ -461,7 +457,7 @@ export default function ResumeTemplaterPage() {
                 type="button"
                 onClick={handleExport}
                 disabled={exporting}
-                className="rounded-lg bg-brand px-6 py-2.5 text-sm font-semibold text-white hover:bg-brand-light disabled:opacity-50"
+                className="bg-brand hover:bg-brand-light rounded-lg px-6 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
               >
                 {exporting ? 'Exporting…' : 'Export .docx'}
               </button>

@@ -170,16 +170,16 @@ image-module selection (licensing), and null-logo handling.
 
 ## Edge Cases & Risk
 
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| No logo configured at export | H | M | Module handles null / transparent fallback; tag renders empty, export still succeeds |
-| Oversized or huge-dimension upload | M | M | Enforce size/dimension caps → `400`; `getSize()` caps render width |
-| Unsupported format (SVG, GIF, HEIC) | M | M | Allowlist PNG/JPEG only → `400` |
-| User A reads/writes user B's logo | L | H | All ops scoped to `userId` in-function; storage RLS on `{userId}/` prefix |
-| Signed URL leaks / long-lived | L | M | Short TTL (`~120s`), minted per-request for owner only |
-| Image-module licensing (paid official module) | M | M | Evaluate open module; record choice in ADR |
-| Aspect-ratio distortion in header | M | L | Preserve ratio in `getSize()`, cap width only |
-| Stale logo after replace (cache) | L | L | Overwrite same path + bust via `updated_at`/fresh signed URL |
+| Risk                                          | Likelihood | Impact | Mitigation                                                                           |
+| --------------------------------------------- | ---------- | ------ | ------------------------------------------------------------------------------------ |
+| No logo configured at export                  | H          | M      | Module handles null / transparent fallback; tag renders empty, export still succeeds |
+| Oversized or huge-dimension upload            | M          | M      | Enforce size/dimension caps → `400`; `getSize()` caps render width                   |
+| Unsupported format (SVG, GIF, HEIC)           | M          | M      | Allowlist PNG/JPEG only → `400`                                                      |
+| User A reads/writes user B's logo             | L          | H      | All ops scoped to `userId` in-function; storage RLS on `{userId}/` prefix            |
+| Signed URL leaks / long-lived                 | L          | M      | Short TTL (`~120s`), minted per-request for owner only                               |
+| Image-module licensing (paid official module) | M          | M      | Evaluate open module; record choice in ADR                                           |
+| Aspect-ratio distortion in header             | M          | L      | Preserve ratio in `getSize()`, cap width only                                        |
+| Stale logo after replace (cache)              | L          | L      | Overwrite same path + bust via `updated_at`/fresh signed URL                         |
 
 ## Acceptance Criteria
 

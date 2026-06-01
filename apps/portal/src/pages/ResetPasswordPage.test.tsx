@@ -39,9 +39,7 @@ describe('ResetPasswordPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /send reset link/i }))
 
     await waitFor(() => {
-      expect(
-        screen.getByText(/if an account exists/i),
-      ).toBeInTheDocument()
+      expect(screen.getByText(/if an account exists/i)).toBeInTheDocument()
     })
   })
 

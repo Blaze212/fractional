@@ -79,66 +79,67 @@ LLM must not fabricate.
 ```ts
 interface ParsedProfile {
   // Header / contact (template: name, headerLine, and per-field hyperlinks)
-  name: string | null;
-  email: string | null;
-  phone: string | null;
-  location: string | null;
-  linkedin_url: string | null;
+  name: string | null
+  email: string | null
+  phone: string | null
+  location: string | null
+  linkedin_url: string | null
 
   // Summary (template splits into two paragraphs at export time)
-  summary: string | null;
+  summary: string | null
 
   // Career highlights (template: careerHighlights bullets)
-  career_highlights: string[];
+  career_highlights: string[]
 
   // Primary roles, rendered with responsibilities + achievements
-  selected_experience: SelectedExperience[];
+  selected_experience: SelectedExperience[]
 
   // Secondary roles, rendered as company/title/dates only
-  other_experience: OtherExperience[];
+  other_experience: OtherExperience[]
 
   // Education + certifications (template merges these into one section)
-  education: Education[];
-  certifications: Certification[];
+  education: Education[]
+  certifications: Certification[]
 
   // Template: skillsLine / toolsLine (comma-joined at export)
-  skills: string[];
-  tools: string[];
+  skills: string[]
+  tools: string[]
 
   // Fractional-specific — NOT on the template; for future exec matching
-  seniority_level: string | null;   // e.g. "C-Level", "VP", "Director"
-  functional_areas: string[];       // e.g. ["Finance", "Operations"]
-  industries: string[];             // e.g. ["SaaS", "Fintech"]
+  seniority_level: string | null // e.g. "C-Level", "VP", "Director"
+  functional_areas: string[] // e.g. ["Finance", "Operations"]
+  industries: string[] // e.g. ["SaaS", "Fintech"]
 }
 
 interface SelectedExperience {
-  company: string | null;
-  title: string | null;
-  start_date: string | null;        // "YYYY-MM"
-  end_date: string | null;          // "YYYY-MM" | "Present" | null
-  responsibilities: string[];
-  achievements: string[];
+  company: string | null
+  title: string | null
+  start_date: string | null // "YYYY-MM"
+  end_date: string | null // "YYYY-MM" | "Present" | null
+  responsibilities: string[]
+  achievements: string[]
 }
 
 interface OtherExperience {
-  company: string | null;
-  title: string | null;
-  start_date: string | null;        // "YYYY-MM"
-  end_date: string | null;          // "YYYY-MM" | "Present" | null
+  company: string | null
+  title: string | null
+  start_date: string | null // "YYYY-MM"
+  end_date: string | null // "YYYY-MM" | "Present" | null
 }
 
 interface Education {
-  institution: string | null;
-  degree: string | null;
+  institution: string | null
+  degree: string | null
 }
 
 interface Certification {
-  provider: string | null;
-  certification: string | null;
+  provider: string | null
+  certification: string | null
 }
 ```
 
 Notes on the template mapping (handled in spec 002's export, not here):
+
 - `headerLine` = `phone | email | location | linkedin_url` (joined at export).
 - `sponsorship` is a fixed constant added at export — not parsed.
 - `summary` is split into two paragraphs at export.
@@ -169,15 +170,15 @@ choice, and the template-aligned schema (incl. the selected/other split).
 
 ## Edge Cases & Risk
 
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| Empty / whitespace-only `resume_text` | M | L | Validate after trim → `400` before any LLM call |
-| Oversized input inflating tokens/cost | M | M | Enforce `RESUME_PARSE_MAX_CHARS` → `400` |
-| LLM returns malformed / non-schema output | L | M | Structured-output JSON schema + validation → `422` on failure |
-| LLM fabricates fields not in source | M | M | Prompt forbids fabrication; nulls/empties for missing data |
-| Bad selected/other split (all roles "selected") | M | L | Prompt caps detailed roles; rest → `other_experience` |
-| PII leaking into logs / error bodies | L | H | Log metadata only; never include resume text in logs or errors |
-| OpenAI provider outage / timeout | L | M | Map to `500` with generic message; set request timeout |
+| Risk                                            | Likelihood | Impact | Mitigation                                                     |
+| ----------------------------------------------- | ---------- | ------ | -------------------------------------------------------------- |
+| Empty / whitespace-only `resume_text`           | M          | L      | Validate after trim → `400` before any LLM call                |
+| Oversized input inflating tokens/cost           | M          | M      | Enforce `RESUME_PARSE_MAX_CHARS` → `400`                       |
+| LLM returns malformed / non-schema output       | L          | M      | Structured-output JSON schema + validation → `422` on failure  |
+| LLM fabricates fields not in source             | M          | M      | Prompt forbids fabrication; nulls/empties for missing data     |
+| Bad selected/other split (all roles "selected") | M          | L      | Prompt caps detailed roles; rest → `other_experience`          |
+| PII leaking into logs / error bodies            | L          | H      | Log metadata only; never include resume text in logs or errors |
+| OpenAI provider outage / timeout                | L          | M      | Map to `500` with generic message; set request timeout         |
 
 ## Acceptance Criteria
 

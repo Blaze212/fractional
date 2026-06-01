@@ -33,7 +33,7 @@ These are the current Supabase-recommended patterns for an email/password SPA;
 the implementation below conforms to them.
 
 - **Client config:** `createClient(url, anonKey, { auth: { flowType: 'pkce',
-  persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })`.
+persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })`.
   **PKCE** is recommended for browser SPAs and makes the recovery link robust.
 - **Login:** `supabase.auth.signInWithPassword({ email, password })`.
 - **Reset request:** `supabase.auth.resetPasswordForEmail(email, { redirectTo })`
@@ -70,8 +70,8 @@ implements this pattern — reuse it as the reference and close the gaps in §Ga
   shared `packages/ui` for this greenfield repo; build the few primitives
   (Button, Input) inline.
 - **`lib/supabase.ts`** — `createClient(url, anonKey, { auth: { flowType:
-  'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl:
-  true } })`. **Improvement over CS:** the CS client passes **no auth options**
+'pkce', persistSession: true, autoRefreshToken: true, detectSessionInUrl:
+true } })`. **Improvement over CS:** the CS client passes **no auth options**
   (default flow); set these explicitly here. Env: `VITE_SUPABASE_URL`,
   `VITE_SUPABASE_ANON_KEY`.
 - **`contexts/AuthContext.tsx`** — provider exposing `session`, `user`,
@@ -188,15 +188,15 @@ Concrete **improvements** to make in fractional (best practice ⇒ CS gap):
 
 ## Edge Cases & Risk
 
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| User enumeration via error copy/timing | M | M | Generic messages on login + reset |
-| Reset `redirectTo` not allow-listed → broken link | M | H | Configure dashboard allow-list + Site URL; document in runbook |
-| Recovery link expired / reused | M | M | Detect missing recovery session → "request a new link" |
-| Credential stuffing / reset spam | M | M | Supabase built-in auth/email rate limits |
-| Weak / breached passwords | M | M | Leaked-password protection + min length + strength UI |
-| Token theft via XSS (localStorage) | L | H | Strict CSP, dependency hygiene, HTTPS |
-| Stale session after password change | L | L | Sign out after `updateUser`, route to login |
+| Risk                                              | Likelihood | Impact | Mitigation                                                     |
+| ------------------------------------------------- | ---------- | ------ | -------------------------------------------------------------- |
+| User enumeration via error copy/timing            | M          | M      | Generic messages on login + reset                              |
+| Reset `redirectTo` not allow-listed → broken link | M          | H      | Configure dashboard allow-list + Site URL; document in runbook |
+| Recovery link expired / reused                    | M          | M      | Detect missing recovery session → "request a new link"         |
+| Credential stuffing / reset spam                  | M          | M      | Supabase built-in auth/email rate limits                       |
+| Weak / breached passwords                         | M          | M      | Leaked-password protection + min length + strength UI          |
+| Token theft via XSS (localStorage)                | L          | H      | Strict CSP, dependency hygiene, HTTPS                          |
+| Stale session after password change               | L          | L      | Sign out after `updateUser`, route to login                    |
 
 ## Acceptance Criteria
 

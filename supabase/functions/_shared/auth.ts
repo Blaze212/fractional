@@ -1,5 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
-import { AccessDeniedException, InternalServiceException, errorBody, normalizeError } from './errors.ts'
+import {
+  AccessDeniedException,
+  InternalServiceException,
+  errorBody,
+  normalizeError,
+} from './errors.ts'
 import { logger } from './logger.ts'
 import { loadSupabaseUserEnv } from './env.ts'
 
@@ -30,7 +35,10 @@ export function corsHeadersFor(req: Request): Record<string, string> {
   }
 }
 
-function jsonResponse(body: Record<string, object | string | number | boolean | null>, status: number): Response {
+function jsonResponse(
+  body: Record<string, object | string | number | boolean | null>,
+  status: number,
+): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
@@ -50,7 +58,10 @@ function withRequestCors(req: Request, response: Response): Response {
 }
 
 function jsonErrorResponse(error: AppException): Response {
-  return jsonResponse(errorBody(error) as Record<string, object | string | number | boolean | null>, error.status)
+  return jsonResponse(
+    errorBody(error) as Record<string, object | string | number | boolean | null>,
+    error.status,
+  )
 }
 
 import type { AppException } from './errors.ts'
@@ -123,9 +134,7 @@ export function createAdminClient() {
   const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = {
     SUPABASE_URL: Deno.env.get('SUPABASE_URL') ?? '',
     SUPABASE_SERVICE_ROLE_KEY:
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ||
-      Deno.env.get('SERVICE_ROLE_KEY') ||
-      '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SERVICE_ROLE_KEY') || '',
   }
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 }

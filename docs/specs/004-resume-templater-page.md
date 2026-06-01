@@ -42,11 +42,11 @@ Single page, four states:
 1. **Idle (input)**
    - **Company logo uploader** (inline; spec 002): upload PNG/JPEG, preview the
      current logo, replace, remove. Optional — export works without it.
-   - **Resume text area** with placeholder *"Paste resume here"*.
+   - **Resume text area** with placeholder _"Paste resume here"_.
    - **Generate** button — disabled until the text area is non-empty.
 2. **Generating (loading)**
    - On **Generate**: show a **progress bar + spinner** with the label
-     *"Estimated completion: 60 seconds"* (animated countdown/progress; see Notes).
+     _"Estimated completion: 60 seconds"_ (animated countdown/progress; see Notes).
    - Calls `resume-parse` (spec 001) with the pasted text.
    - Inputs disabled while in flight.
 3. **Success (result)**
@@ -123,14 +123,14 @@ This page is the capstone; build the others first. Recommended order:
 
 ## Edge Cases & Risk
 
-| Risk | Likelihood | Impact | Mitigation |
-|---|---|---|---|
-| Parse slower than the 60s estimate | M | L | Estimate is soft; keep spinner + "still working…", don't fail at 60s |
-| Empty / junk pasted text | M | L | Disable Generate when empty; surface 001's `400` as a friendly error |
-| Parse error / LLM failure | M | M | Error state with retry; preserve pasted text + logo |
-| Export clicked with no logo | M | L | Tag renders empty; export still succeeds (spec 002) |
-| User edits text after generating | L | L | Changing input invalidates the summary → return to Idle / require re-generate |
-| Double-click Generate | L | L | Disable button while in flight |
+| Risk                               | Likelihood | Impact | Mitigation                                                                    |
+| ---------------------------------- | ---------- | ------ | ----------------------------------------------------------------------------- |
+| Parse slower than the 60s estimate | M          | L      | Estimate is soft; keep spinner + "still working…", don't fail at 60s          |
+| Empty / junk pasted text           | M          | L      | Disable Generate when empty; surface 001's `400` as a friendly error          |
+| Parse error / LLM failure          | M          | M      | Error state with retry; preserve pasted text + logo                           |
+| Export clicked with no logo        | M          | L      | Tag renders empty; export still succeeds (spec 002)                           |
+| User edits text after generating   | L          | L      | Changing input invalidates the summary → return to Idle / require re-generate |
+| Double-click Generate              | L          | L      | Disable button while in flight                                                |
 
 ## Acceptance Criteria
 

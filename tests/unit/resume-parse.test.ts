@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
-import { validateResumeText, runParsing } from '../../supabase/functions/resume-parse/resume-parse.ts'
+import {
+  validateResumeText,
+  runParsing,
+} from '../../supabase/functions/resume-parse/resume-parse.ts'
 import type { Deps } from '../../supabase/functions/resume-parse/resume-parse.ts'
 import type { ParsedProfile } from '../../supabase/functions/resume-parse/schema.ts'
 import type { AiClient } from '../../supabase/functions/_shared/ai-client.ts'
@@ -50,11 +53,14 @@ const mockProfile: ParsedProfile = {
   industries: ['SaaS', 'Fintech'],
 }
 
-function makeMockAiClient(
-  override?: Partial<AiClient>,
-): AiClient {
+function makeMockAiClient(override?: Partial<AiClient>): AiClient {
   return {
-    completeJson: vi.fn().mockResolvedValue({ data: mockProfile, tokens: { input: 500, output: 300, model: 'gpt-5.4-mini' } }),
+    completeJson: vi
+      .fn()
+      .mockResolvedValue({
+        data: mockProfile,
+        tokens: { input: 500, output: 300, model: 'gpt-5.4-mini' },
+      }),
     ...override,
   }
 }

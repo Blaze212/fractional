@@ -50,7 +50,20 @@ function formatDate(d: string | null | undefined): string {
   // YYYY-MM → "Mon YYYY"
   const match = /^(\d{4})-(\d{2})$/.exec(d)
   if (!match) return d
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ]
   const month = months[parseInt(match[2], 10) - 1] ?? ''
   return `${month} ${match[1]}`
 }
@@ -67,12 +80,9 @@ export function mapParsedProfileToRenderData(
   profile: ParsedProfile,
   logoBytes: Uint8Array | null,
 ): RenderData {
-  const headerParts = [
-    profile.phone,
-    profile.email,
-    profile.location,
-    profile.linkedin_url,
-  ].filter(Boolean)
+  const headerParts = [profile.phone, profile.email, profile.location, profile.linkedin_url].filter(
+    Boolean,
+  )
 
   const [summary1 = '', summary2 = ''] = (profile.summary ?? '').split('\n\n')
 
@@ -121,7 +131,7 @@ export async function exportResume(
     getImage(tagValue: Uint8Array) {
       return tagValue
     },
-    getSize(img: Uint8Array, tagValue: Uint8Array, tagName: string) {
+    getSize(img: Uint8Array, _tagValue: Uint8Array, tagName: string) {
       if (tagName === 'company_logo') {
         const logoWidth = HEADER_WIDTH_PX
         // Use natural dimensions from renderData if available; otherwise square

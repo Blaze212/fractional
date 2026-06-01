@@ -37,7 +37,7 @@ export default function LoginPage() {
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand border-t-transparent" />
+        <div className="border-brand h-8 w-8 animate-spin rounded-full border-4 border-t-transparent" />
       </div>
     )
   }
@@ -46,7 +46,7 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-brand">Fractional Portal</h1>
+          <h1 className="text-brand text-2xl font-bold">Fractional Portal</h1>
           <p className="mt-1 text-sm text-slate-500">Sign in to your account</p>
         </div>
 
@@ -58,7 +58,7 @@ export default function LoginPage() {
             onChange={(e) => setEmail(e.target.value)}
             required
             autoComplete="email"
-            className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
+            className="focus:border-brand focus:ring-brand w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:outline-none focus:ring-1"
           />
           <PasswordInput
             placeholder="Password"
@@ -73,7 +73,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-lg bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-light disabled:opacity-50"
+            className="bg-brand hover:bg-brand-light w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
           >
             {submitting ? 'Signing in…' : 'Sign In →'}
           </button>

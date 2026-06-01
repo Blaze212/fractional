@@ -1,7 +1,15 @@
 import OpenAI from 'openai'
 import type { LoggerLike } from './logger.ts'
 
-export type JsonSchema = Record<string, Record<string, string | number | boolean | object | null>>
+type JsonSchemaValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonSchemaValue[]
+  | { [k: string]: JsonSchemaValue }
+
+export type JsonSchema = { [k: string]: JsonSchemaValue }
 
 export type TokenUsage = {
   input: number
@@ -73,7 +81,10 @@ export class OpenAiResponsesClient implements AiClient {
       model: this.model,
     }
 
-    this.log.debug({ model: this.model, inputTokens: tokens.input, outputTokens: tokens.output }, 'ai-client: response received')
+    this.log.debug(
+      { model: this.model, inputTokens: tokens.input, outputTokens: tokens.output },
+      'ai-client: response received',
+    )
     return { data, tokens }
   }
 }

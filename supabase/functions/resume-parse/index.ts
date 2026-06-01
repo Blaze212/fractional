@@ -7,7 +7,9 @@ import { validateResumeText, runParsing } from './resume-parse.ts'
 const DEFAULT_MODEL = 'gpt-5.4-mini'
 
 function getModel(): string {
-  return (typeof Deno !== 'undefined' ? Deno.env.get('RESUME_PARSE_MODEL') : undefined) ?? DEFAULT_MODEL
+  return (
+    (typeof Deno !== 'undefined' ? Deno.env.get('RESUME_PARSE_MODEL') : undefined) ?? DEFAULT_MODEL
+  )
 }
 
 function jsonResponse(
@@ -31,21 +33,33 @@ Deno.serve(
     } catch {
       const err = new ValidationException({ message: 'Request body must be valid JSON' })
       log.warn({ code: err.code }, 'resume-parse: invalid JSON body')
-      return jsonResponse(errorBody(err) as Record<string, object | string | number | boolean | null>, err.status, req)
+      return jsonResponse(
+        errorBody(err) as Record<string, object | string | number | boolean | null>,
+        err.status,
+        req,
+      )
     }
 
     const validation = validateResumeText(body['resume_text'])
     if (!validation.ok) {
       const err = new ValidationException({ message: validation.message })
       log.warn({ code: err.code }, 'resume-parse: validation failed')
-      return jsonResponse(errorBody(err) as Record<string, object | string | number | boolean | null>, err.status, req)
+      return jsonResponse(
+        errorBody(err) as Record<string, object | string | number | boolean | null>,
+        err.status,
+        req,
+      )
     }
 
     const aiClient = new OpenAiResponsesClient(getModel(), log)
 
     try {
       const { profile, meta } = await runParsing(validation.text, { aiClient }, log)
-      return jsonResponse({ profile, meta } as Record<string, object | string | number | boolean | null>, 200, req)
+      return jsonResponse(
+        { profile, meta } as Record<string, object | string | number | boolean | null>,
+        200,
+        req,
+      )
     } catch (err) {
       const normalized = logError(
         err instanceof Error ? err : new Error(String(err)),

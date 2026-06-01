@@ -16,7 +16,13 @@ vi.mock('../lib/supabase', () => ({
 
 vi.mock('../lib/resumeExport', () => ({
   mapParsedProfileToRenderData: vi.fn((profile: ParsedProfile) => ({ name: profile.name })),
-  exportResume: vi.fn().mockResolvedValue(new Blob(['docx-bytes'], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' })),
+  exportResume: vi
+    .fn()
+    .mockResolvedValue(
+      new Blob(['docx-bytes'], {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+    ),
 }))
 
 const mockProfile: ParsedProfile = {

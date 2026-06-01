@@ -7,3 +7,5 @@ dist
 .DS_Store
 coverage
 .turbo
+.claude/
+workspace

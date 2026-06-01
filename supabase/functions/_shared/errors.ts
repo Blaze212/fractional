@@ -19,12 +19,7 @@ export class AppException extends Error {
   readonly status: number
   readonly sourceError?: Error | null
 
-  constructor(
-    name: string,
-    code: AppErrorCode,
-    status: number,
-    options: AppExceptionOptions = {},
-  ) {
+  constructor(name: string, code: AppErrorCode, status: number, options: AppExceptionOptions = {}) {
     super(options.message)
     this.name = name
     this.code = code
@@ -99,9 +94,9 @@ export function normalizeError(error: Error | AppException): AppException {
   return new InternalServiceException({ message })
 }
 
-export function errorBody(
-  error: AppException | Error,
-): { error: { code: AppErrorCode; message: string } } {
+export function errorBody(error: AppException | Error): {
+  error: { code: AppErrorCode; message: string }
+} {
   const normalized = normalizeError(error)
   return { error: { code: normalized.code, message: normalized.message ?? 'Internal error' } }
 }

@@ -165,7 +165,10 @@ describe('resume-logo: mock storage operations', () => {
 
   it('mockStorage.upload is called for POST', async () => {
     mockStorage.upload.mockResolvedValue({ error: null })
-    await mockStorage.upload('user-1/logo.png', new ArrayBuffer(100), { contentType: 'image/png', upsert: true })
+    await mockStorage.upload('user-1/logo.png', new ArrayBuffer(100), {
+      contentType: 'image/png',
+      upsert: true,
+    })
     expect(mockStorage.upload).toHaveBeenCalledWith(
       'user-1/logo.png',
       expect.any(ArrayBuffer),
