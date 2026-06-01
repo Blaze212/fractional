@@ -11,7 +11,7 @@ async function getToken(): Promise<string> {
 }
 
 export function LogoUploader({ disabled = false }: { disabled?: boolean }) {
-  const { logo, setLogo, refreshLogo } = useAgencyLogo()
+  const { logo, clearLogo, refreshLogo } = useAgencyLogo()
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -72,7 +72,7 @@ export function LogoUploader({ disabled = false }: { disabled?: boolean }) {
         headers: { Authorization: `Bearer ${await getToken()}` },
       })
       if (!res.ok) throw new Error('Remove failed')
-      setLogo(null)
+      clearLogo()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Remove failed')
     } finally {
@@ -87,7 +87,7 @@ export function LogoUploader({ disabled = false }: { disabled?: boolean }) {
         {logo ? (
           <>
             <img
-              src={logo.signed_url}
+              src={logo.url}
               alt="Agency logo"
               className="h-12 max-w-[120px] rounded border border-slate-200 object-contain"
             />

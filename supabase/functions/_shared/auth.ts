@@ -11,6 +11,7 @@ import { loadSupabaseUserEnv } from './env.ts'
 const CORS_ALLOW_HEADERS = 'authorization, x-client-info, apikey, content-type'
 const ALLOWED_ORIGINS = [
   'https://app.fractional.io',
+  'http://localhost:5183',
   'http://localhost:5173',
   'http://localhost:4173',
 ]

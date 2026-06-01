@@ -32,6 +32,9 @@ export interface ParsedProfile {
   phone: string | null
   location: string | null
   linkedin_url: string | null
+  current_title: string | null
+  work_authorization: string | null
+  total_experience: string | null
   summary: string | null
   career_highlights: string[]
   selected_experience: SelectedExperience[]
@@ -101,6 +104,9 @@ export const PARSED_PROFILE_SCHEMA: JsonSchema = {
     phone: nullable('string'),
     location: nullable('string'),
     linkedin_url: nullable('string'),
+    current_title: nullable('string'),
+    work_authorization: nullable('string'),
+    total_experience: nullable('string'),
     summary: nullable('string'),
     career_highlights: { type: 'array', items: { type: 'string' } },
     selected_experience: { type: 'array', items: selectedExperienceItem },
@@ -119,6 +125,9 @@ export const PARSED_PROFILE_SCHEMA: JsonSchema = {
     'phone',
     'location',
     'linkedin_url',
+    'current_title',
+    'work_authorization',
+    'total_experience',
     'summary',
     'career_highlights',
     'selected_experience',

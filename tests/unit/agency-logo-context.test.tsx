@@ -2,14 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, act } from '@testing-library/react'
 
 import { AgencyLogoProvider, useAgencyLogo } from '../../apps/portal/src/contexts/AgencyLogoContext'
-import type { LogoInfo } from '../../apps/portal/src/lib/agencyLogo'
+import type { CachedLogo } from '../../apps/portal/src/lib/agencyLogo'
 
-type AuthCb = (
-  event: string,
-  session: { access_token: string; user: { id: string } } | null,
-) => void
+type AuthCb = (event: string, session: { user: { id: string } } | null) => void
 const authCallbacks: AuthCb[] = []
-const getSessionMock = vi.fn()
+const loadAgencyLogo = vi.fn()
 
 vi.mock('../../apps/portal/src/lib/supabase', () => ({
   supabase: {
@@ -18,32 +15,31 @@ vi.mock('../../apps/portal/src/lib/supabase', () => ({
         authCallbacks.push(cb)
         return { data: { subscription: { unsubscribe: vi.fn() } } }
       },
-      getSession: () => getSessionMock(),
     },
   },
 }))
 
-const SESSION = { access_token: 'tok', user: { id: 'u1' } }
-const LOGO: NonNullable<LogoInfo> = {
-  signed_url: 'https://example.com/logo.png',
-  mime_type: 'image/png',
-  width_px: 200,
-  height_px: 80,
-  updated_at: '2026-01-01T00:00:00Z',
+vi.mock('../../apps/portal/src/lib/agencyLogo', () => ({
+  loadAgencyLogo: () => loadAgencyLogo(),
+}))
+
+const SESSION = { user: { id: 'u1' } }
+const LOGO: CachedLogo = {
+  url: 'blob:agency-logo',
+  bytes: new Uint8Array([1, 2, 3]),
+  mimeType: 'image/png',
+  widthPx: 200,
+  heightPx: 80,
 }
 
 function LogoProbe() {
   const { logo } = useAgencyLogo()
-  return <span data-testid="logo">{logo?.signed_url ?? 'none'}</span>
-}
-
-function fetchReturning(logo: LogoInfo) {
-  return vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ logo }) })
+  return <span data-testid="logo">{logo?.url ?? 'none'}</span>
 }
 
 beforeEach(() => {
   authCallbacks.length = 0
-  getSessionMock.mockResolvedValue({ data: { session: SESSION } })
+  loadAgencyLogo.mockResolvedValue(LOGO)
 })
 
 afterEach(() => {
@@ -51,50 +47,43 @@ afterEach(() => {
 })
 
 describe('AgencyLogoProvider', () => {
-  it('fetches and exposes the agency logo for a signed-in user', async () => {
-    global.fetch = fetchReturning(LOGO)
-
+  it('loads and exposes the cached agency logo', async () => {
     render(
       <AgencyLogoProvider>
         <LogoProbe />
       </AgencyLogoProvider>,
     )
 
-    await waitFor(() =>
-      expect(screen.getByTestId('logo')).toHaveTextContent('https://example.com/logo.png'),
-    )
+    await waitFor(() => expect(screen.getByTestId('logo')).toHaveTextContent('blob:agency-logo'))
   })
 
-  it('exposes no logo when there is no session and never calls the logo endpoint', async () => {
-    getSessionMock.mockResolvedValue({ data: { session: null } })
-    global.fetch = fetchReturning(LOGO)
+  it('clears the logo and revokes its object URL on sign-out', async () => {
+    const revoke = vi.spyOn(URL, 'revokeObjectURL')
 
     render(
       <AgencyLogoProvider>
         <LogoProbe />
       </AgencyLogoProvider>,
     )
-
-    await waitFor(() => expect(screen.getByTestId('logo')).toHaveTextContent('none'))
-    expect(global.fetch).not.toHaveBeenCalled()
-  })
-
-  it('clears the logo on sign-out', async () => {
-    global.fetch = fetchReturning(LOGO)
-
-    render(
-      <AgencyLogoProvider>
-        <LogoProbe />
-      </AgencyLogoProvider>,
-    )
-
-    await waitFor(() =>
-      expect(screen.getByTestId('logo')).toHaveTextContent('https://example.com/logo.png'),
-    )
+    await waitFor(() => expect(screen.getByTestId('logo')).toHaveTextContent('blob:agency-logo'))
 
     await act(async () => {
       for (const cb of authCallbacks) cb('SIGNED_OUT', null)
     })
+
+    await waitFor(() => expect(screen.getByTestId('logo')).toHaveTextContent('none'))
+    expect(revoke).toHaveBeenCalledWith('blob:agency-logo')
+    revoke.mockRestore()
+  })
+
+  it('exposes no logo when none is set', async () => {
+    loadAgencyLogo.mockResolvedValue(null)
+
+    render(
+      <AgencyLogoProvider>
+        <LogoProbe />
+      </AgencyLogoProvider>,
+    )
 
     await waitFor(() => expect(screen.getByTestId('logo')).toHaveTextContent('none'))
   })

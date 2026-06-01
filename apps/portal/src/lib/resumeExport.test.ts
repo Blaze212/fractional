@@ -8,6 +8,9 @@ const baseProfile: ParsedProfile = {
   phone: '+1 555 0100',
   location: 'New York, NY',
   linkedin_url: 'https://linkedin.com/in/janesmith',
+  current_title: 'CFO',
+  work_authorization: 'U.S. Citizen',
+  total_experience: '15 years',
   summary: 'Paragraph one.\n\nParagraph two.',
   career_highlights: ['Led $50M raise', 'Cut burn by 30%'],
   selected_experience: [

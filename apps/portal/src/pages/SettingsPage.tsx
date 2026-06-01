@@ -1,9 +1,8 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 import { useAgencyConfig, applyBrandCssVars } from '../contexts/AgencyConfigContext'
 import type { AgencyConfig } from '../lib/agencyConfig'
 import { AGENCY_CONFIG } from '../lib/agencyConfig'
-import { AgencyLogoMark } from '../components/AgencyLogoMark'
+import { AppHeader } from '../components/AppHeader'
 import { LogoUploader } from '../components/LogoUploader'
 
 // Fields that are stored in config but not yet rendered anywhere in the app.
@@ -143,22 +142,11 @@ export default function SettingsPage() {
 
   return (
     <div className="bg-brand-muted min-h-screen">
-      <header className="border-b border-slate-200 bg-white px-6 py-4">
-        <div className="mx-auto flex max-w-2xl items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link to="/resume-templater" className="text-sm text-slate-400 hover:text-slate-600">
-              ← Back
-            </Link>
-            <h1 className="text-brand text-lg font-bold">Settings</h1>
-          </div>
-          <AgencyLogoMark
-            imgClassName="h-7 w-auto max-w-[140px] object-contain"
-            fallbackClassName="text-brand-secondary text-sm font-medium"
-          />
-        </div>
-      </header>
+      <AppHeader maxWidthClass="max-w-2xl" />
 
       <main className="mx-auto max-w-2xl space-y-10 px-4 py-10">
+        <h1 className="text-brand text-2xl font-bold">Settings</h1>
+
         {/* Identity */}
         <section className="space-y-4">
           <SectionHeading>Agency Identity</SectionHeading>

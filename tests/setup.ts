@@ -1,5 +1,14 @@
 import '@testing-library/jest-dom'
 
+// jsdom doesn't implement object URLs; provide no-op stubs so components that
+// cache blobs as object URLs work (tests can spy on these).
+if (typeof URL.createObjectURL !== 'function') {
+  URL.createObjectURL = () => 'blob:mock'
+}
+if (typeof URL.revokeObjectURL !== 'function') {
+  URL.revokeObjectURL = () => {}
+}
+
 // Node's experimental `--localstorage-file` global shadows jsdom's Web Storage
 // with an incomplete object lacking getItem/setItem. Replace it with a simple
 // Map-backed implementation so components relying on localStorage behave.

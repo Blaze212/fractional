@@ -8,7 +8,17 @@ export type LogoInfo = {
   updated_at: string
 } | null
 
-export async function fetchAgencyLogo(): Promise<LogoInfo> {
+// The logo downloaded once and held in memory: `url` is a blob object URL for
+// rendering (no expiry, valid for the session) and `bytes` are reused on export.
+export type CachedLogo = {
+  url: string
+  bytes: Uint8Array
+  mimeType: string
+  widthPx: number
+  heightPx: number
+}
+
+async function fetchLogoMeta(): Promise<LogoInfo> {
   const {
     data: { session },
   } = await supabase.auth.getSession()
@@ -21,4 +31,25 @@ export async function fetchAgencyLogo(): Promise<LogoInfo> {
 
   const json = (await res.json()) as { logo: LogoInfo }
   return json.logo
+}
+
+// Resolve the logo's (short-lived) signed URL, download the bytes immediately,
+// and cache them as a blob object URL so nothing later depends on the signed
+// URL still being valid.
+export async function loadAgencyLogo(): Promise<CachedLogo | null> {
+  const meta = await fetchLogoMeta()
+  if (!meta) return null
+
+  const res = await fetch(meta.signed_url)
+  if (!res.ok) return null
+
+  const blob = await res.blob()
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  return {
+    url: URL.createObjectURL(blob),
+    bytes,
+    mimeType: meta.mime_type,
+    widthPx: meta.width_px,
+    heightPx: meta.height_px,
+  }
 }

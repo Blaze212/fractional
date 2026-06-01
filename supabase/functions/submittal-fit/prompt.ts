@@ -6,6 +6,8 @@ function serializeProfile(profile: ParsedProfile): string {
 
   lines.push(`name: ${profile.name ?? ''}`)
   lines.push(`seniority_level: ${profile.seniority_level ?? ''}`)
+  if (profile.current_title) lines.push(`current_title: ${profile.current_title}`)
+  if (profile.total_experience) lines.push(`total_experience: ${profile.total_experience}`)
   if (profile.summary) lines.push(`summary: ${profile.summary}`)
 
   profile.career_highlights.forEach((h, i) => {

@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import type { LogoInfo } from '../lib/agencyLogo'
+import type { CachedLogo } from '../lib/agencyLogo'
 
-const setLogo = vi.fn()
+const clearLogo = vi.fn()
 const refreshLogo = vi.fn()
-let logoValue: LogoInfo = null
+let logoValue: CachedLogo | null = null
 
 vi.mock('../contexts/AgencyLogoContext', () => ({
-  useAgencyLogo: () => ({ logo: logoValue, setLogo, refreshLogo, loading: false }),
+  useAgencyLogo: () => ({ logo: logoValue, clearLogo, refreshLogo, loading: false }),
 }))
 
 vi.mock('../lib/supabase', () => ({
@@ -20,17 +20,17 @@ vi.mock('../lib/supabase', () => ({
 
 import { LogoUploader } from './LogoUploader'
 
-const logo: NonNullable<LogoInfo> = {
-  signed_url: 'https://example.com/logo.png',
-  mime_type: 'image/png',
-  width_px: 200,
-  height_px: 80,
-  updated_at: '2026-01-01T00:00:00Z',
+const logo: CachedLogo = {
+  url: 'blob:agency-logo',
+  bytes: new Uint8Array([1, 2, 3]),
+  mimeType: 'image/png',
+  widthPx: 200,
+  heightPx: 80,
 }
 
 beforeEach(() => {
   logoValue = null
-  setLogo.mockClear()
+  clearLogo.mockClear()
   refreshLogo.mockClear()
   global.fetch = vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) })
 })
@@ -45,10 +45,7 @@ describe('LogoUploader', () => {
   it('shows the current logo with Remove and Replace actions when a logo is set', () => {
     logoValue = logo
     render(<LogoUploader />)
-    expect(screen.getByRole('img', { name: /Agency logo/i })).toHaveAttribute(
-      'src',
-      logo.signed_url,
-    )
+    expect(screen.getByRole('img', { name: /Agency logo/i })).toHaveAttribute('src', logo.url)
     expect(screen.getByRole('button', { name: /Remove/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Replace/i })).toBeInTheDocument()
   })
@@ -59,7 +56,7 @@ describe('LogoUploader', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Remove/i }))
 
-    await waitFor(() => expect(setLogo).toHaveBeenCalledWith(null))
+    await waitFor(() => expect(clearLogo).toHaveBeenCalled())
     const [url, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
     expect(String(url)).toContain('resume-logo')
     expect(init.method).toBe('DELETE')

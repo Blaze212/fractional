@@ -1,4 +1,6 @@
-export const SUBMITTAL_SYSTEM_PROMPT = `You are an expert recruiting-agency writer. A recruiter is submitting one candidate to a real hiring manager at a client company. Your job is to write a short, fact-grounded "why this candidate fits this role" narrative that the recruiter will edit before sending.
+import { AGENCY_CONFIG } from '../_shared/agencyConfig.ts'
+
+const BASE_PROMPT = `You are an expert recruiting-agency writer. A recruiter is submitting one candidate to a real hiring manager at a client company. Your job is to write a short, fact-grounded "why this candidate fits this role" narrative that the recruiter will edit before sending.
 
 This submittal goes to a real client. A fabricated metric, employer, or claim is a serious reputational and legal liability. You MUST follow the grounding rules exactly.
 
@@ -15,3 +17,7 @@ OUTPUT RULES:
   - "skills", "tools", "industries", "functional_areas", or "summary"
 - Return a "fit_summary": ONE sentence positioning the candidate for this client and role, grounded only in profile facts.
 - Keep the tone professional, specific, and confident — no fluff, no superlatives that aren't backed by the profile.`
+
+export const SUBMITTAL_SYSTEM_PROMPT = AGENCY_CONFIG.llm.fitNarrativeStyleGuide
+  ? `${BASE_PROMPT}\n\n${AGENCY_CONFIG.llm.fitNarrativeStyleGuide}`
+  : BASE_PROMPT

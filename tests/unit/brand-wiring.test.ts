@@ -14,6 +14,7 @@ function read(relativeToRepoRoot: string): string {
 
 const settings = read('apps/portal/src/pages/SettingsPage.tsx')
 const templater = read('apps/portal/src/pages/ResumeTemplaterPage.tsx')
+const appHeader = read('apps/portal/src/components/AppHeader.tsx')
 
 describe('brand color wiring', () => {
   it('uses the muted brand color as a page background on both pages', () => {
@@ -21,8 +22,7 @@ describe('brand color wiring', () => {
     expect(templater).toContain('bg-brand-muted')
   })
 
-  it('uses the secondary brand color for secondary text on both pages', () => {
-    expect(settings).toContain('text-brand-secondary')
+  it('uses the secondary brand color for secondary text', () => {
     expect(templater).toContain('text-brand-secondary')
   })
 
@@ -37,12 +37,16 @@ describe('brand color wiring', () => {
   })
 })
 
-describe('agency logo in headers', () => {
-  it('renders the AgencyLogoMark in both page headers instead of the raw agency name', () => {
-    expect(settings).toContain('<AgencyLogoMark')
-    expect(templater).toContain('<AgencyLogoMark')
+describe('unified header', () => {
+  it('uses the shared AppHeader on both pages', () => {
+    expect(settings).toContain('<AppHeader')
+    expect(templater).toContain('<AppHeader')
     // The templater header no longer hard-codes the name as an <h1>.
     expect(templater).not.toContain('>{config.identity.name}</h1>')
+  })
+
+  it('renders the agency logo mark inside the shared header', () => {
+    expect(appHeader).toContain('<AgencyLogoMark')
   })
 
   it('hosts the logo uploader on the settings page, not the templater page', () => {

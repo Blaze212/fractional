@@ -3,6 +3,7 @@ import Docxtemplater from 'docxtemplater'
 import type { ParsedProfile } from './resumeTypes'
 import { injectLogo, logoEmu } from './docxLogo'
 import type { LogoDimensions } from './docxLogo'
+import { AGENCY_CONFIG } from './agencyConfig'
 
 export type { LogoDimensions } from './docxLogo'
 
@@ -94,7 +95,7 @@ export function mapParsedProfileToRenderData(
     company_logo: logoBytes,
     name: profile.name ?? '',
     headerLine: headerParts.join('  |  '),
-    sponsorship: 'Authorized to work in the US without sponsorship',
+    sponsorship: AGENCY_CONFIG.export.sponsorshipText,
     showSummary: !!summaryParagraph1,
     summaryParagraph1,
     summaryParagraph2,

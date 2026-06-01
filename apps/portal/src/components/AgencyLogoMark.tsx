@@ -13,8 +13,8 @@ export function AgencyLogoMark({
   const { config } = useAgencyConfig()
   const { logo } = useAgencyLogo()
 
-  if (logo?.signed_url) {
-    return <img src={logo.signed_url} alt={config.identity.name} className={imgClassName} />
+  if (logo?.url) {
+    return <img src={logo.url} alt={config.identity.name} className={imgClassName} />
   }
 
   return <span className={fallbackClassName}>{config.identity.name}</span>

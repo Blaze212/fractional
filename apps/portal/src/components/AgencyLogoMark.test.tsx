@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import type { LogoInfo } from '../lib/agencyLogo'
+import type { CachedLogo } from '../lib/agencyLogo'
 
 const configValue = {
   config: { identity: { name: 'Aligned Recruitment' } },
 }
-let logoValue: { logo: LogoInfo } = { logo: null }
+let logoValue: { logo: CachedLogo | null } = { logo: null }
 
 vi.mock('../contexts/AgencyConfigContext', () => ({
   useAgencyConfig: () => configValue,
@@ -16,12 +16,12 @@ vi.mock('../contexts/AgencyLogoContext', () => ({
 
 import { AgencyLogoMark } from './AgencyLogoMark'
 
-const logo: NonNullable<LogoInfo> = {
-  signed_url: 'https://example.com/logo.png',
-  mime_type: 'image/png',
-  width_px: 200,
-  height_px: 80,
-  updated_at: '2026-01-01T00:00:00Z',
+const logo: CachedLogo = {
+  url: 'blob:agency-logo',
+  bytes: new Uint8Array([1, 2, 3]),
+  mimeType: 'image/png',
+  widthPx: 200,
+  heightPx: 80,
 }
 
 describe('AgencyLogoMark', () => {
@@ -29,7 +29,7 @@ describe('AgencyLogoMark', () => {
     logoValue = { logo }
     render(<AgencyLogoMark />)
     const img = screen.getByRole('img', { name: 'Aligned Recruitment' })
-    expect(img).toHaveAttribute('src', 'https://example.com/logo.png')
+    expect(img).toHaveAttribute('src', 'blob:agency-logo')
     expect(screen.queryByText('Aligned Recruitment')).not.toBeInTheDocument()
   })
 

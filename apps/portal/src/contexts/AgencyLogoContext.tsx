@@ -1,25 +1,35 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { fetchAgencyLogo } from '../lib/agencyLogo'
-import type { LogoInfo } from '../lib/agencyLogo'
+import { loadAgencyLogo } from '../lib/agencyLogo'
+import type { CachedLogo } from '../lib/agencyLogo'
 
 interface AgencyLogoContextValue {
-  logo: LogoInfo
+  logo: CachedLogo | null
   loading: boolean
-  setLogo: (logo: LogoInfo) => void
   refreshLogo: () => Promise<void>
+  clearLogo: () => void
 }
 
 const AgencyLogoContext = createContext<AgencyLogoContextValue | null>(null)
 
 export function AgencyLogoProvider({ children }: { children: React.ReactNode }) {
-  const [logo, setLogo] = useState<LogoInfo>(null)
+  const [logo, setLogo] = useState<CachedLogo | null>(null)
   const [loading, setLoading] = useState(true)
+  const currentUrl = useRef<string | null>(null)
+
+  // Swap in a new cached logo, revoking the previous object URL to avoid leaks.
+  const apply = useCallback((next: CachedLogo | null) => {
+    if (currentUrl.current) URL.revokeObjectURL(currentUrl.current)
+    currentUrl.current = next?.url ?? null
+    setLogo(next)
+  }, [])
 
   const refreshLogo = useCallback(async () => {
-    setLogo(await fetchAgencyLogo())
+    apply(await loadAgencyLogo())
     setLoading(false)
-  }, [])
+  }, [apply])
+
+  const clearLogo = useCallback(() => apply(null), [apply])
 
   useEffect(() => {
     void refreshLogo()
@@ -30,16 +40,19 @@ export function AgencyLogoProvider({ children }: { children: React.ReactNode }) 
       if (session?.user) {
         void refreshLogo()
       } else {
-        setLogo(null)
+        apply(null)
         setLoading(false)
       }
     })
 
-    return () => subscription.unsubscribe()
-  }, [refreshLogo])
+    return () => {
+      subscription.unsubscribe()
+      if (currentUrl.current) URL.revokeObjectURL(currentUrl.current)
+    }
+  }, [refreshLogo, apply])
 
   return (
-    <AgencyLogoContext.Provider value={{ logo, loading, setLogo, refreshLogo }}>
+    <AgencyLogoContext.Provider value={{ logo, loading, refreshLogo, clearLogo }}>
       {children}
     </AgencyLogoContext.Provider>
   )

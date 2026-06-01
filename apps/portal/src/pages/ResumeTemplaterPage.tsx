@@ -1,12 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { ParsedProfile } from '../lib/resumeTypes'
 import { mapToSubmittalRenderData, exportSubmittal } from '../lib/submittalExport'
 import type { FitBullet, SubmittalFields } from '../lib/submittalExport'
 import { useAgencyConfig } from '../contexts/AgencyConfigContext'
 import { useAgencyLogo } from '../contexts/AgencyLogoContext'
-import { AgencyLogoMark } from '../components/AgencyLogoMark'
+import { AppHeader } from '../components/AppHeader'
+import { AutoResizeTextarea } from '../components/AutoResizeTextarea'
 
 type PageState = 'idle' | 'generating' | 'success' | 'error'
 type Stage = 'parsing' | 'fit'
@@ -195,16 +195,14 @@ export default function ResumeTemplaterPage() {
       if (!templateRes.ok) throw new Error('Failed to load submittal template')
       const templateBuffer = await templateRes.arrayBuffer()
 
-      let submittalLogo: { bytes: Uint8Array; dims: { widthPx: number; heightPx: number } } | null =
-        null
-      if (logo?.signed_url) {
-        const logoRes = await fetch(logo.signed_url)
-        if (!logoRes.ok) throw new Error(`Failed to fetch logo (${logoRes.status})`)
-        submittalLogo = {
-          bytes: new Uint8Array(await logoRes.arrayBuffer()),
-          dims: { widthPx: logo.width_px, heightPx: logo.height_px },
-        }
-      }
+      // Reuse the logo bytes cached by AgencyLogoContext — no network fetch, so
+      // nothing depends on a signed URL still being valid at export time.
+      const submittalLogo: {
+        bytes: Uint8Array
+        dims: { widthPx: number; heightPx: number }
+      } | null = logo
+        ? { bytes: logo.bytes, dims: { widthPx: logo.widthPx, heightPx: logo.heightPx } }
+        : null
 
       const fields: SubmittalFields = {
         clientName,
@@ -249,25 +247,11 @@ export default function ResumeTemplaterPage() {
 
   return (
     <div className="bg-brand-muted min-h-screen">
-      <header className="border-b border-slate-200 bg-white px-6 py-4">
-        <div className="mx-auto flex max-w-3xl items-center justify-between">
-          <AgencyLogoMark />
-          <nav className="flex items-center gap-4">
-            <Link to="/settings" className="text-sm text-slate-500 hover:text-slate-700">
-              Settings
-            </Link>
-            <button
-              type="button"
-              onClick={() => supabase.auth.signOut()}
-              className="text-sm text-slate-500 hover:text-slate-700"
-            >
-              Sign out
-            </button>
-          </nav>
-        </div>
-      </header>
+      <AppHeader maxWidthClass="max-w-3xl" />
 
       <main className="mx-auto max-w-3xl space-y-8 px-4 py-10">
+        <h1 className="text-brand text-2xl font-bold">Resume Submittal Templater</h1>
+
         {showInputs && (
           <div className="space-y-5">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -403,12 +387,12 @@ export default function ResumeTemplaterPage() {
               <label htmlFor="fit-summary" className="block text-sm font-semibold text-slate-800">
                 Fit Summary
               </label>
-              <textarea
+              <AutoResizeTextarea
                 id="fit-summary"
                 value={fitSummary}
                 onChange={(e) => setFitSummary(e.target.value)}
                 rows={2}
-                className="focus:border-brand focus:ring-brand w-full resize-y rounded-lg border border-slate-300 p-3 text-sm focus:outline-none focus:ring-1"
+                className="focus:border-brand focus:ring-brand w-full rounded-lg border border-slate-300 p-3 text-sm focus:outline-none focus:ring-1"
               />
             </div>
 
@@ -418,12 +402,12 @@ export default function ResumeTemplaterPage() {
               </h3>
               {fitBullets.map((bullet, i) => (
                 <div key={i} className="space-y-1">
-                  <textarea
+                  <AutoResizeTextarea
                     aria-label={`Fit bullet ${i + 1}`}
                     value={bullet.text}
                     onChange={(e) => updateBullet(i, e.target.value)}
                     rows={2}
-                    className="focus:border-brand focus:ring-brand w-full resize-y rounded-lg border border-slate-300 p-3 text-sm focus:outline-none focus:ring-1"
+                    className="focus:border-brand focus:ring-brand w-full rounded-lg border border-slate-300 p-3 text-sm focus:outline-none focus:ring-1"
                   />
                   <p className="text-xs text-slate-400">Source: {bullet.source_ref}</p>
                 </div>
@@ -437,13 +421,13 @@ export default function ResumeTemplaterPage() {
               >
                 Compensation &amp; Logistics
               </label>
-              <textarea
+              <AutoResizeTextarea
                 id="comp-logistics"
                 value={compLogistics}
                 onChange={(e) => setCompLogistics(e.target.value)}
                 placeholder="Target comp, availability, work authorization, location…"
                 rows={3}
-                className="focus:border-brand focus:ring-brand w-full resize-y rounded-lg border border-slate-300 p-3 text-sm focus:outline-none focus:ring-1"
+                className="focus:border-brand focus:ring-brand w-full rounded-lg border border-slate-300 p-3 text-sm focus:outline-none focus:ring-1"
               />
             </div>
 
@@ -454,13 +438,13 @@ export default function ResumeTemplaterPage() {
               >
                 Recruiter Notes
               </label>
-              <textarea
+              <AutoResizeTextarea
                 id="recruiter-notes"
                 value={recruiterNotes}
                 onChange={(e) => setRecruiterNotes(e.target.value)}
                 placeholder="Anything else the hiring manager should know…"
                 rows={3}
-                className="focus:border-brand focus:ring-brand w-full resize-y rounded-lg border border-slate-300 p-3 text-sm focus:outline-none focus:ring-1"
+                className="focus:border-brand focus:ring-brand w-full rounded-lg border border-slate-300 p-3 text-sm focus:outline-none focus:ring-1"
               />
             </div>
 

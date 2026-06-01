@@ -19,6 +19,9 @@ const profile: ParsedProfile = {
   phone: '+1 555 0100',
   location: 'New York, NY',
   linkedin_url: 'https://linkedin.com/in/janesmith',
+  current_title: 'Chief Financial Officer, SaaS',
+  work_authorization: 'U.S. Citizen',
+  total_experience: '11 years (7 in finance, 4 in ops)',
   summary: 'Experienced CFO.',
   career_highlights: ['Led $50M Series C', 'Reduced burn by 30%'],
   selected_experience: [
@@ -72,8 +75,16 @@ describe('mapToSubmittalRenderData', () => {
     expect(rd.client_name).toBe('Globex')
     expect(rd.role_title).toBe('Chief Financial Officer')
     expect(rd.candidate_name).toBe('Jane Smith')
-    expect(rd.candidate_seniority).toBe('C-Level')
-    expect(rd.candidate_titles).toContain('CFO at Acme Corp')
+    expect(rd.current_title).toBe('Chief Financial Officer, SaaS')
+    expect(rd.candidate_location).toBe('New York, NY')
+    expect(rd.work_authorization).toBe('U.S. Citizen')
+    expect(rd.total_experience).toBe('11 years (7 in finance, 4 in ops)')
+  })
+
+  it('falls back to the most recent role title when current_title is null', () => {
+    const rd = mapToSubmittalRenderData({ ...profile, current_title: null }, fields)
+    expect(rd.current_title).toBe('CFO')
+    expect(rd.show_current_title).toBe(true)
   })
 
   it('sets show flags from optional field presence', () => {
@@ -109,6 +120,10 @@ describe('exportSubmittal', () => {
     expect(xml).toContain('Chief Financial Officer')
     expect(xml).toContain('REQ-123')
     expect(xml).toContain('Jane Smith')
+    // candidate snapshot prefers current title / location / work auth / total experience
+    expect(xml).toContain('Current Title: Chief Financial Officer, SaaS')
+    expect(xml).toContain('Work Authorization: U.S. Citizen')
+    expect(xml).toContain('Total Experience: 11 years')
     expect(xml).toContain('Raised a $50M Series C.')
     expect(xml).toContain('Reduced burn by 30%.')
     expect(xml).toContain('Target $300k base')

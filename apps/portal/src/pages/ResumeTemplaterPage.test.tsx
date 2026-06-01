@@ -139,6 +139,11 @@ describe('ResumeTemplaterPage (submittal)', () => {
     setupFetchMock()
   })
 
+  it('renders the page title', () => {
+    renderPage()
+    expect(screen.getByRole('heading', { name: 'Resume Submittal Templater' })).toBeInTheDocument()
+  })
+
   it('renders the submittal inputs and disables Generate until required fields are present', () => {
     renderPage()
     const button = screen.getByRole('button', { name: /Generate Submittal/i })
@@ -215,5 +220,71 @@ describe('ResumeTemplaterPage (submittal)', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Export \.docx/i }))
     await waitFor(() => expect(exportSubmittal).toHaveBeenCalled())
+  })
+
+  it('embeds the cached logo bytes on export without re-fetching it', async () => {
+    const logo = {
+      signed_url: 'https://storage.example/logo.png?token=once',
+      mime_type: 'image/png',
+      width_px: 200,
+      height_px: 80,
+      updated_at: '2026-01-01T00:00:00Z',
+    }
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      const u = String(url)
+      if (u.includes('resume-logo')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ logo }) })
+      }
+      if (u.includes('resume-parse')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ profile: mockProfile }) })
+      }
+      if (u.includes('submittal-fit')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ fit_bullets: mockBullets, fit_summary: 'Summary.' }),
+        })
+      }
+      // submittal template (arrayBuffer) + the one-time logo bytes download (blob)
+      return Promise.resolve({
+        ok: true,
+        arrayBuffer: () => Promise.resolve(new ArrayBuffer(50)),
+        blob: () =>
+          Promise.resolve({ arrayBuffer: () => Promise.resolve(new Uint8Array([1, 2, 3]).buffer) }),
+      })
+    })
+
+    renderPage()
+    // Wait for the cached logo to load into the header before exporting.
+    await waitFor(() =>
+      expect(screen.getByRole('img', { name: /Aligned Recruitment/i })).toBeInTheDocument(),
+    )
+    fillRequiredInputs()
+    fireEvent.click(screen.getByRole('button', { name: /Generate Submittal/i }))
+    await waitFor(() => expect(screen.getByLabelText(/Fit Summary/i)).toBeInTheDocument())
+
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: vi.fn(() => 'blob:mock'),
+      configurable: true,
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), configurable: true })
+    HTMLAnchorElement.prototype.click = vi.fn()
+
+    const logoFetchesBefore = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.filter((c) =>
+      String(c[0]).includes('resume-logo'),
+    ).length
+
+    fireEvent.click(screen.getByRole('button', { name: /Export \.docx/i }))
+    await waitFor(() => expect(exportSubmittal).toHaveBeenCalled())
+
+    // Export reuses the cached bytes — it does not re-hit the logo endpoint.
+    const logoFetchesAfter = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.filter((c) =>
+      String(c[0]).includes('resume-logo'),
+    ).length
+    expect(logoFetchesAfter).toBe(logoFetchesBefore)
+
+    const calls = (exportSubmittal as ReturnType<typeof vi.fn>).mock.calls
+    const logoArg = calls[calls.length - 1][2]
+    expect(logoArg).not.toBeNull()
+    expect(logoArg.dims).toEqual({ widthPx: 200, heightPx: 80 })
   })
 })

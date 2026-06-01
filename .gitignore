@@ -3,6 +3,8 @@ dist
 .env
 .env.local
 .env.*.local
+supabase/.env
+supabase/.env.local
 *.log
 .DS_Store
 coverage

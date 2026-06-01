@@ -24,6 +24,9 @@ const mockProfile: ParsedProfile = {
   phone: '+1 555 0100',
   location: 'New York, NY',
   linkedin_url: 'https://linkedin.com/in/janesmith',
+  current_title: 'Chief Financial Officer',
+  work_authorization: 'U.S. Citizen',
+  total_experience: '15 years (CFO and VP Finance)',
   summary: 'Experienced CFO with 15+ years in SaaS finance.',
   career_highlights: ['Led $50M Series C', 'Reduced burn by 30%'],
   selected_experience: [

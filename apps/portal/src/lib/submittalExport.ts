@@ -33,8 +33,14 @@ export type SubmittalRenderData = {
   show_hiring_manager: boolean
   hiring_manager: string
   candidate_name: string
-  candidate_seniority: string
-  candidate_titles: string
+  show_current_title: boolean
+  current_title: string
+  show_candidate_location: boolean
+  candidate_location: string
+  show_work_authorization: boolean
+  work_authorization: string
+  show_total_experience: boolean
+  total_experience: string
   fit_summary: string
   fit_bullets: { text: string }[]
   key_qualifications: { text: string }[]
@@ -47,12 +53,8 @@ export type SubmittalRenderData = {
 
 export type SubmittalLogo = { bytes: Uint8Array; dims: LogoDimensions }
 
-function candidateTitles(profile: ParsedProfile): string {
-  return profile.selected_experience
-    .slice(0, 3)
-    .map((e) => [e.title, e.company].filter(Boolean).join(' at '))
-    .filter(Boolean)
-    .join('  ·  ')
+function currentTitle(profile: ParsedProfile): string {
+  return profile.current_title ?? profile.selected_experience[0]?.title ?? ''
 }
 
 export function mapToSubmittalRenderData(
@@ -72,8 +74,14 @@ export function mapToSubmittalRenderData(
     show_hiring_manager: !!fields.hiringManager.trim(),
     hiring_manager: fields.hiringManager.trim(),
     candidate_name: profile.name ?? 'Candidate',
-    candidate_seniority: profile.seniority_level ?? '',
-    candidate_titles: candidateTitles(profile),
+    show_current_title: !!currentTitle(profile),
+    current_title: currentTitle(profile),
+    show_candidate_location: !!(profile.location ?? '').trim(),
+    candidate_location: profile.location ?? '',
+    show_work_authorization: !!(profile.work_authorization ?? '').trim(),
+    work_authorization: profile.work_authorization ?? '',
+    show_total_experience: !!(profile.total_experience ?? '').trim(),
+    total_experience: profile.total_experience ?? '',
     fit_summary: fields.fitSummary,
     fit_bullets: fields.fitBullets.map((b) => ({ text: b.text })),
     key_qualifications: keyQualificationsSource.map((text) => ({ text })),

@@ -33,6 +33,9 @@ export interface ParsedProfile {
   phone: string | null
   location: string | null
   linkedin_url: string | null
+  current_title: string | null
+  work_authorization: string | null
+  total_experience: string | null
   summary: string | null
   career_highlights: string[]
   selected_experience: SelectedExperience[]
