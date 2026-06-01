@@ -15,6 +15,7 @@ export type TokenUsage = {
   input: number
   output: number
   model?: string
+  latencyMs: number
 }
 
 export interface AiClient {
@@ -45,6 +46,7 @@ export class OpenAiResponsesClient implements AiClient {
   ): Promise<{ data: T; tokens: TokenUsage }> {
     this.log.debug({ model: this.model, schemaName }, 'ai-client: sending Responses API request')
 
+    const start = performance.now()
     // deno-lint-ignore no-explicit-any
     const response = await (this.client as any).responses.create({
       model: this.model,
@@ -73,16 +75,18 @@ export class OpenAiResponsesClient implements AiClient {
       throw new Error(`${this.model}: failed to parse JSON from OpenAI response`)
     }
 
+    const latencyMs = Math.round(performance.now() - start)
     // deno-lint-ignore no-explicit-any
     const u = (response as any).usage
     const tokens: TokenUsage = {
       input: (u?.input_tokens as number | undefined) ?? 0,
       output: (u?.output_tokens as number | undefined) ?? 0,
       model: this.model,
+      latencyMs,
     }
 
     this.log.debug(
-      { model: this.model, inputTokens: tokens.input, outputTokens: tokens.output },
+      { model: this.model, inputTokens: tokens.input, outputTokens: tokens.output, latencyMs },
       'ai-client: response received',
     )
     return { data, tokens }
