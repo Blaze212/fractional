@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import type { ParsedProfile } from '../lib/resumeTypes'
+import type { FitBullet } from '../lib/submittalExport'
 
 vi.mock('../lib/supabase', () => ({
   supabase: {
@@ -14,16 +15,18 @@ vi.mock('../lib/supabase', () => ({
   },
 }))
 
-vi.mock('../lib/resumeExport', () => ({
-  mapParsedProfileToRenderData: vi.fn((profile: ParsedProfile) => ({ name: profile.name })),
-  exportResume: vi
-    .fn()
-    .mockResolvedValue(
+vi.mock('../lib/submittalExport', () => ({
+  mapToSubmittalRenderData: vi.fn((profile: ParsedProfile) => ({ candidate_name: profile.name })),
+  exportSubmittal: vi.fn(
+    () =>
       new Blob(['docx-bytes'], {
         type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       }),
-    ),
+  ),
 }))
+
+import ResumeTemplaterPage from './ResumeTemplaterPage'
+import { exportSubmittal } from '../lib/submittalExport'
 
 const mockProfile: ParsedProfile = {
   name: 'Jane Smith',
@@ -44,42 +47,56 @@ const mockProfile: ParsedProfile = {
     },
   ],
   other_experience: [],
-  education: [{ institution: 'Harvard', degree: 'MBA' }],
+  education: [],
   certifications: [],
-  skills: ['Financial planning', 'M&A'],
-  tools: ['NetSuite', 'Excel'],
+  skills: ['Financial planning'],
+  tools: ['NetSuite'],
   seniority_level: 'C-Level',
   functional_areas: ['Finance'],
   industries: ['SaaS'],
 }
 
-function setupFetchMock(overrides: Partial<{ logoResponse: object; parseResponse: object }> = {}) {
-  const logoResponse = overrides.logoResponse ?? { logo: null }
+const mockBullets: FitBullet[] = [
+  { text: 'Raised a $50M Series C.', source_ref: 'selected_experience[0]' },
+  { text: 'Strong SaaS finance leadership.', source_ref: 'industries' },
+  { text: 'Led the finance organization.', source_ref: 'career_highlights[0]' },
+]
+
+type FetchOverrides = {
+  parseResponse?: object
+  parseOk?: boolean
+  fitResponse?: object
+  fitOk?: boolean
+}
+
+function setupFetchMock(overrides: FetchOverrides = {}) {
   const parseResponse = overrides.parseResponse ?? { profile: mockProfile }
+  const fitResponse = overrides.fitResponse ?? {
+    fit_bullets: mockBullets,
+    fit_summary: 'A C-Level SaaS leader.',
+  }
 
   global.fetch = vi.fn().mockImplementation((url: string) => {
     if (String(url).includes('resume-logo')) {
-      return Promise.resolve({
-        ok: true,
-        json: () => Promise.resolve(logoResponse),
-      })
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ logo: null }) })
     }
     if (String(url).includes('resume-parse')) {
       return Promise.resolve({
-        ok: true,
+        ok: overrides.parseOk ?? true,
         json: () => Promise.resolve(parseResponse),
       })
     }
-    // template.docx
-    return Promise.resolve({
-      ok: true,
-      arrayBuffer: () => Promise.resolve(new ArrayBuffer(100)),
-    })
+    if (String(url).includes('submittal-fit')) {
+      return Promise.resolve({
+        ok: overrides.fitOk ?? true,
+        json: () => Promise.resolve(fitResponse),
+      })
+    }
+    return Promise.resolve({ ok: true, arrayBuffer: () => Promise.resolve(new ArrayBuffer(100)) })
   })
 }
 
-async function renderPage() {
-  const { default: ResumeTemplaterPage } = await import('./ResumeTemplaterPage')
+function renderPage() {
   return render(
     <MemoryRouter>
       <ResumeTemplaterPage />
@@ -87,121 +104,93 @@ async function renderPage() {
   )
 }
 
-describe('ResumeTemplaterPage', () => {
+function fillRequiredInputs() {
+  fireEvent.change(screen.getByLabelText(/Client \/ Company/i), { target: { value: 'Globex' } })
+  fireEvent.change(screen.getByLabelText(/Role Title/i), { target: { value: 'CFO' } })
+  fireEvent.change(screen.getByLabelText(/Job Description/i), {
+    target: { value: 'We need a CFO.' },
+  })
+  fireEvent.change(screen.getByLabelText(/Candidate Résumé/i), {
+    target: { value: 'Jane Smith CFO at Acme' },
+  })
+}
+
+describe('ResumeTemplaterPage (submittal)', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
     setupFetchMock()
   })
 
-  it('renders textarea with placeholder and disabled Generate button', async () => {
-    await renderPage()
-    expect(screen.getByPlaceholderText('Paste resume here')).toBeInTheDocument()
-    const btn = screen.getByRole('button', { name: /generate/i })
-    expect(btn).toBeDisabled()
+  it('renders the submittal inputs and disables Generate until required fields are present', () => {
+    renderPage()
+    const button = screen.getByRole('button', { name: /Generate Submittal/i })
+    expect(button).toBeDisabled()
   })
 
-  it('enables Generate button when text area is non-empty', async () => {
-    await renderPage()
-    fireEvent.change(screen.getByPlaceholderText('Paste resume here'), {
-      target: { value: 'Jane Smith CFO resume text' },
-    })
-    expect(screen.getByRole('button', { name: /generate/i })).not.toBeDisabled()
+  it('enables Generate only when client, role, JD and résumé are all present', () => {
+    renderPage()
+    const button = screen.getByRole('button', { name: /Generate Submittal/i })
+    fireEvent.change(screen.getByLabelText(/Client \/ Company/i), { target: { value: 'Globex' } })
+    fireEvent.change(screen.getByLabelText(/Role Title/i), { target: { value: 'CFO' } })
+    fireEvent.change(screen.getByLabelText(/Job Description/i), { target: { value: 'JD' } })
+    expect(button).toBeDisabled()
+    fireEvent.change(screen.getByLabelText(/Candidate Résumé/i), { target: { value: 'resume' } })
+    expect(button).toBeEnabled()
   })
 
-  it('shows progress bar while generating', async () => {
-    await renderPage()
-    // Make parse hang so we can observe generating state
-    setupFetchMock({
-      parseResponse: undefined,
-    })
-    global.fetch = vi.fn().mockImplementation((url: string) => {
-      if (String(url).includes('resume-logo')) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ logo: null }) })
-      }
-      // parse hangs indefinitely
-      return new Promise(() => {})
-    })
+  it('calls resume-parse then submittal-fit and shows the editable result', async () => {
+    renderPage()
+    fillRequiredInputs()
+    fireEvent.click(screen.getByRole('button', { name: /Generate Submittal/i }))
 
-    fireEvent.change(screen.getByPlaceholderText('Paste resume here'), {
-      target: { value: 'Some resume' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /generate/i }))
+    await waitFor(() => expect(screen.getByLabelText(/Fit Summary/i)).toBeInTheDocument())
 
-    await waitFor(() => {
-      expect(screen.getByText(/estimated completion/i)).toBeInTheDocument()
-    })
+    const calledUrls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.map((c) =>
+      String(c[0]),
+    )
+    expect(calledUrls.some((u) => u.includes('resume-parse'))).toBe(true)
+    expect(calledUrls.some((u) => u.includes('submittal-fit'))).toBe(true)
+    expect((screen.getByLabelText(/Fit Summary/i) as HTMLTextAreaElement).value).toBe(
+      'A C-Level SaaS leader.',
+    )
+    expect(screen.getByLabelText(/Fit bullet 1/i)).toBeInTheDocument()
+    expect(screen.getByText(/selected_experience\[0\]/)).toBeInTheDocument()
   })
 
-  it('shows profile summary on success', async () => {
-    setupFetchMock({ parseResponse: { profile: mockProfile } })
-    await renderPage()
+  it('allows editing a fit bullet', async () => {
+    renderPage()
+    fillRequiredInputs()
+    fireEvent.click(screen.getByRole('button', { name: /Generate Submittal/i }))
+    await waitFor(() => expect(screen.getByLabelText(/Fit bullet 1/i)).toBeInTheDocument())
 
-    fireEvent.change(screen.getByPlaceholderText('Paste resume here'), {
-      target: { value: 'Jane Smith CFO resume' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /generate/i }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Jane Smith')).toBeInTheDocument()
-    })
-    expect(screen.getByText('C-Level')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /export/i })).toBeInTheDocument()
+    const bullet = screen.getByLabelText(/Fit bullet 1/i) as HTMLTextAreaElement
+    fireEvent.change(bullet, { target: { value: 'Edited bullet text' } })
+    expect(bullet.value).toBe('Edited bullet text')
   })
 
-  it('shows friendly error and retry button on parse failure', async () => {
-    global.fetch = vi.fn().mockImplementation((url: string) => {
-      if (String(url).includes('resume-logo')) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ logo: null }) })
-      }
-      return Promise.resolve({
-        ok: false,
-        json: () => Promise.resolve({ error: { message: 'LLM failed' } }),
-      })
-    })
-    await renderPage()
+  it('shows a friendly error and preserves inputs when fit generation fails', async () => {
+    setupFetchMock({ fitOk: false, fitResponse: { error: { message: 'Fit failed' } } })
+    renderPage()
+    fillRequiredInputs()
+    fireEvent.click(screen.getByRole('button', { name: /Generate Submittal/i }))
 
-    fireEvent.change(screen.getByPlaceholderText('Paste resume here'), {
-      target: { value: 'Jane resume' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /generate/i }))
-
-    await waitFor(() => {
-      expect(screen.getByText(/LLM failed/i)).toBeInTheDocument()
-    })
-    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText(/Fit failed/i)).toBeInTheDocument())
+    expect((screen.getByLabelText(/Client \/ Company/i) as HTMLInputElement).value).toBe('Globex')
+    expect(screen.getByRole('button', { name: /Try Again/i })).toBeInTheDocument()
   })
 
-  it('preserves pasted text after error', async () => {
-    global.fetch = vi.fn().mockImplementation((url: string) => {
-      if (String(url).includes('resume-logo')) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ logo: null }) })
-      }
-      return Promise.resolve({
-        ok: false,
-        json: () => Promise.resolve({ error: { message: 'Error' } }),
-      })
-    })
-    await renderPage()
+  it('exports the submittal via exportSubmittal', async () => {
+    renderPage()
+    fillRequiredInputs()
+    fireEvent.click(screen.getByRole('button', { name: /Generate Submittal/i }))
+    await waitFor(() => expect(screen.getByLabelText(/Fit Summary/i)).toBeInTheDocument())
 
-    const textarea = screen.getByPlaceholderText('Paste resume here')
-    fireEvent.change(textarea, { target: { value: 'My original resume text' } })
-    fireEvent.click(screen.getByRole('button', { name: /generate/i }))
+    const createUrl = vi.fn(() => 'blob:mock')
+    const revokeUrl = vi.fn()
+    Object.defineProperty(URL, 'createObjectURL', { value: createUrl, configurable: true })
+    Object.defineProperty(URL, 'revokeObjectURL', { value: revokeUrl, configurable: true })
+    HTMLAnchorElement.prototype.click = vi.fn()
 
-    await waitFor(() => screen.getByRole('button', { name: /try again/i }))
-
-    expect((textarea as HTMLTextAreaElement).value).toBe('My original resume text')
-  })
-
-  it('shows Export button in success state', async () => {
-    setupFetchMock({ parseResponse: { profile: mockProfile } })
-    await renderPage()
-
-    fireEvent.change(screen.getByPlaceholderText('Paste resume here'), {
-      target: { value: 'Jane Smith CFO resume' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: /generate/i }))
-
-    await waitFor(() => screen.getByRole('button', { name: /export/i }))
-    expect(screen.getByRole('button', { name: /export/i })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Export \.docx/i }))
+    await waitFor(() => expect(exportSubmittal).toHaveBeenCalled())
   })
 })

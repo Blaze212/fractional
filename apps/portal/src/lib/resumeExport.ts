@@ -1,53 +1,43 @@
 import PizZip from 'pizzip'
 import Docxtemplater from 'docxtemplater'
 import type { ParsedProfile } from './resumeTypes'
+import { injectLogo, logoEmu } from './docxLogo'
+import type { LogoDimensions } from './docxLogo'
 
-// @ts-expect-error — docxtemplater-image-module-free has no type declarations
-import ImageModule from 'docxtemplater-image-module-free'
-
-// 1px transparent PNG for the null-logo fallback
-// This ensures {{%company_logo}} renders to nothing rather than throwing
-const TRANSPARENT_1PX_PNG = (() => {
-  const b64 =
-    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
-  const binStr = atob(b64)
-  const arr = new Uint8Array(binStr.length)
-  for (let i = 0; i < binStr.length; i++) arr[i] = binStr.charCodeAt(i)
-  return arr
-})()
-
-const HEADER_WIDTH_PX = 120
+export type { LogoDimensions } from './docxLogo'
 
 export type RenderData = {
-  name: string | null
+  company_logo: Uint8Array
+  name: string
   headerLine: string
-  summary1: string
-  summary2: string
   sponsorship: string
-  careerHighlights: { bullet: string }[]
+  showSummary: boolean
+  summaryParagraph1: string
+  summaryParagraph2: string
+  showCareerHighlights: boolean
+  careerHighlights: { text: string }[]
   selectedExperience: {
     company: string
     title: string
     dates: string
-    responsibilities: { bullet: string }[]
-    achievements: { bullet: string }[]
+    showResponsibilities: boolean
+    responsibilities: { text: string }[]
+    showAchievements: boolean
+    achievements: { text: string }[]
   }[]
-  otherExperience: {
-    company: string
-    title: string
-    dates: string
-  }[]
-  education: { institution: string; degree: string }[]
-  certifications: { provider: string; certification: string }[]
+  showOtherExperience: boolean
+  otherExperience: { text: string }[]
+  showEducationCertifications: boolean
+  education: { text: string }[]
+  certifications: { text: string }[]
+  showSkillsTools: boolean
   skillsLine: string
   toolsLine: string
-  company_logo: Uint8Array
 }
 
 function formatDate(d: string | null | undefined): string {
   if (!d) return ''
   if (d === 'Present') return 'Present'
-  // YYYY-MM → "Mon YYYY"
   const match = /^(\d{4})-(\d{2})$/.exec(d)
   if (!match) return d
   const months = [
@@ -68,7 +58,10 @@ function formatDate(d: string | null | undefined): string {
   return `${month} ${match[1]}`
 }
 
-function formatDateRange(start: string | null | undefined, end: string | null | undefined): string {
+export function formatDateRange(
+  start: string | null | undefined,
+  end: string | null | undefined,
+): string {
   const s = formatDate(start)
   const e = formatDate(end)
   if (s && e) return `${s} – ${e}`
@@ -78,79 +71,80 @@ function formatDateRange(start: string | null | undefined, end: string | null | 
 
 export function mapParsedProfileToRenderData(
   profile: ParsedProfile,
-  logoBytes: Uint8Array | null,
+  logoBytes: Uint8Array,
 ): RenderData {
   const headerParts = [profile.phone, profile.email, profile.location, profile.linkedin_url].filter(
     Boolean,
   )
-
-  const [summary1 = '', summary2 = ''] = (profile.summary ?? '').split('\n\n')
+  const [summaryParagraph1 = '', summaryParagraph2 = ''] = (profile.summary ?? '').split('\n\n')
+  const careerHighlights = profile.career_highlights.map((h) => ({ text: h }))
+  const otherExperience = profile.other_experience.map((exp) => {
+    const parts = [exp.company, exp.title].filter(Boolean).join(' — ')
+    const dates = formatDateRange(exp.start_date, exp.end_date)
+    return { text: dates ? `${parts}  |  ${dates}` : parts }
+  })
+  const education = profile.education.map((e) => ({
+    text: [e.institution, e.degree].filter(Boolean).join(' — '),
+  }))
+  const certifications = profile.certifications.map((c) => ({
+    text: [c.provider, c.certification].filter(Boolean).join(' — '),
+  }))
 
   return {
-    name: profile.name,
+    company_logo: logoBytes,
+    name: profile.name ?? '',
     headerLine: headerParts.join('  |  '),
-    summary1,
-    summary2,
     sponsorship: 'Authorized to work in the US without sponsorship',
-    careerHighlights: profile.career_highlights.map((h) => ({ bullet: h })),
-    selectedExperience: profile.selected_experience.map((exp) => ({
-      company: exp.company ?? '',
-      title: exp.title ?? '',
-      dates: formatDateRange(exp.start_date, exp.end_date),
-      responsibilities: exp.responsibilities.map((r) => ({ bullet: r })),
-      achievements: exp.achievements.map((a) => ({ bullet: a })),
-    })),
-    otherExperience: profile.other_experience.map((exp) => ({
-      company: exp.company ?? '',
-      title: exp.title ?? '',
-      dates: formatDateRange(exp.start_date, exp.end_date),
-    })),
-    education: profile.education.map((e) => ({
-      institution: e.institution ?? '',
-      degree: e.degree ?? '',
-    })),
-    certifications: profile.certifications.map((c) => ({
-      provider: c.provider ?? '',
-      certification: c.certification ?? '',
-    })),
+    showSummary: !!summaryParagraph1,
+    summaryParagraph1,
+    summaryParagraph2,
+    showCareerHighlights: careerHighlights.length > 0,
+    careerHighlights,
+    selectedExperience: profile.selected_experience.map((exp) => {
+      const responsibilities = exp.responsibilities.map((r) => ({ text: r }))
+      const achievements = exp.achievements.map((a) => ({ text: a }))
+      return {
+        company: exp.company ?? '',
+        title: exp.title ?? '',
+        dates: formatDateRange(exp.start_date, exp.end_date),
+        showResponsibilities: responsibilities.length > 0,
+        responsibilities,
+        showAchievements: achievements.length > 0,
+        achievements,
+      }
+    }),
+    showOtherExperience: otherExperience.length > 0,
+    otherExperience,
+    showEducationCertifications: education.length > 0 || certifications.length > 0,
+    education,
+    certifications,
+    showSkillsTools: profile.skills.length > 0 || profile.tools.length > 0,
     skillsLine: profile.skills.join(', '),
     toolsLine: profile.tools.join(', '),
-    company_logo: logoBytes ?? TRANSPARENT_1PX_PNG,
   }
 }
 
 export async function exportResume(
   templateBuffer: ArrayBuffer,
   renderData: RenderData,
+  logoDims: LogoDimensions,
 ): Promise<Blob> {
+  const [logoCx, logoCy] = logoEmu(logoDims)
+
   const zip = new PizZip(templateBuffer)
 
-  const imageModule = new ImageModule({
-    centered: false,
-    fileType: 'docx',
-    getImage(tagValue: Uint8Array) {
-      return tagValue
-    },
-    getSize(img: Uint8Array, _tagValue: Uint8Array, tagName: string) {
-      if (tagName === 'company_logo') {
-        const logoWidth = HEADER_WIDTH_PX
-        // Use natural dimensions from renderData if available; otherwise square
-        const naturalWidth = img.length > 100 ? HEADER_WIDTH_PX : HEADER_WIDTH_PX
-        const ratio = logoWidth / naturalWidth
-        return [logoWidth, Math.round(naturalWidth * ratio)] as [number, number]
-      }
-      return [HEADER_WIDTH_PX, HEADER_WIDTH_PX] as [number, number]
-    },
-  })
+  // Swap placeholder image bytes and update extent — no image module needed
+  injectLogo(zip, renderData.company_logo, logoCx, logoCy)
 
+  // Render text tags (company_logo is no longer a tag in the template)
+  const { company_logo: _logo, ...textData } = renderData
   const doc = new Docxtemplater(zip, {
     paragraphLoop: true,
     linebreaks: true,
     delimiters: { start: '{{', end: '}}' },
-    modules: [imageModule],
   })
 
-  doc.render(renderData)
+  doc.render(textData)
 
   const out = doc.getZip().generate({ type: 'arraybuffer' })
   return new Blob([out], {

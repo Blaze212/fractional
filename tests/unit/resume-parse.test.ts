@@ -55,12 +55,10 @@ const mockProfile: ParsedProfile = {
 
 function makeMockAiClient(override?: Partial<AiClient>): AiClient {
   return {
-    completeJson: vi
-      .fn()
-      .mockResolvedValue({
-        data: mockProfile,
-        tokens: { input: 500, output: 300, model: 'gpt-5.4-mini' },
-      }),
+    completeJson: vi.fn().mockResolvedValue({
+      data: mockProfile,
+      tokens: { input: 500, output: 300, model: 'gpt-5.4-mini' },
+    }),
     ...override,
   }
 }

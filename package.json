@@ -5,6 +5,7 @@
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev:portal": "pnpm --filter portal dev",
+    "dev:functions": "supabase functions serve --env-file supabase/.env",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck && pnpm typecheck:functions",
     "typecheck:functions": "cd supabase/functions && deno check $(find . -name '*.ts' ! -path '*/tests/*')",
@@ -13,7 +14,12 @@
     "test:watch": "vitest --config vitest.config.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "lint": "eslint apps"
+    "lint": "eslint apps",
+    "create-user": "node --import tsx/esm scripts/create-user.ts",
+    "prepare-template": "node --import tsx/esm scripts/prepare-template.ts",
+    "prepare-submittal-template": "node --import tsx/esm scripts/prepare-submittal-template.ts",
+    "test-export": "node --import tsx/esm scripts/test-export.ts",
+    "debug-images": "node --import tsx/esm scripts/debug-images.ts"
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2.49.8",
@@ -32,10 +38,12 @@
     "globals": "^15.15.0",
     "jsdom": "^26.1.0",
     "pino": "^9.9.5",
+    "pizzip": "^3.2.0",
     "prettier": "^3.5.3",
     "prettier-plugin-tailwindcss": "^0.6.12",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "tsx": "4.22.4",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.33.1",
     "vite": "^6.3.5",

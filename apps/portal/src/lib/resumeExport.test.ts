@@ -37,83 +37,88 @@ const baseProfile: ParsedProfile = {
   industries: ['SaaS'],
 }
 
+const STUB_LOGO = new Uint8Array([1, 2, 3])
+
 describe('mapParsedProfileToRenderData', () => {
   it('maps name correctly', () => {
-    const rd = mapParsedProfileToRenderData(baseProfile, null)
+    const rd = mapParsedProfileToRenderData(baseProfile, STUB_LOGO)
     expect(rd.name).toBe('Jane Smith')
   })
 
   it('builds headerLine from phone | email | location | linkedin', () => {
-    const rd = mapParsedProfileToRenderData(baseProfile, null)
+    const rd = mapParsedProfileToRenderData(baseProfile, STUB_LOGO)
     expect(rd.headerLine).toContain('+1 555 0100')
     expect(rd.headerLine).toContain('jane@example.com')
     expect(rd.headerLine).toContain('New York, NY')
     expect(rd.headerLine).toContain('https://linkedin.com/in/janesmith')
   })
 
-  it('splits summary at \\n\\n into summary1 and summary2', () => {
-    const rd = mapParsedProfileToRenderData(baseProfile, null)
-    expect(rd.summary1).toBe('Paragraph one.')
-    expect(rd.summary2).toBe('Paragraph two.')
+  it('splits summary at \\n\\n into summaryParagraph1 and summaryParagraph2', () => {
+    const rd = mapParsedProfileToRenderData(baseProfile, STUB_LOGO)
+    expect(rd.summaryParagraph1).toBe('Paragraph one.')
+    expect(rd.summaryParagraph2).toBe('Paragraph two.')
   })
 
-  it('maps careerHighlights to bullet objects', () => {
-    const rd = mapParsedProfileToRenderData(baseProfile, null)
+  it('maps careerHighlights to text objects', () => {
+    const rd = mapParsedProfileToRenderData(baseProfile, STUB_LOGO)
     expect(rd.careerHighlights).toHaveLength(2)
-    expect(rd.careerHighlights[0]).toEqual({ bullet: 'Led $50M raise' })
+    expect(rd.careerHighlights[0]).toEqual({ text: 'Led $50M raise' })
   })
 
   it('formats YYYY-MM dates to "Mon YYYY"', () => {
-    const rd = mapParsedProfileToRenderData(baseProfile, null)
+    const rd = mapParsedProfileToRenderData(baseProfile, STUB_LOGO)
     const exp = rd.selectedExperience[0]
     expect(exp.dates).toBe('Jan 2020 – Present')
   })
 
-  it('formats other_experience date range', () => {
-    const rd = mapParsedProfileToRenderData(baseProfile, null)
+  it('formats other_experience as combined text with date range', () => {
+    const rd = mapParsedProfileToRenderData(baseProfile, STUB_LOGO)
     const other = rd.otherExperience[0]
-    expect(other.dates).toBe('Jun 2016 – Dec 2019')
+    expect(other.text).toContain('OldCo')
+    expect(other.text).toContain('VP Finance')
+    expect(other.text).toContain('Jun 2016')
+    expect(other.text).toContain('Dec 2019')
   })
 
-  it('maps selectedExperience responsibilities and achievements', () => {
-    const rd = mapParsedProfileToRenderData(baseProfile, null)
-    expect(rd.selectedExperience[0].responsibilities).toEqual([{ bullet: 'Oversaw finance' }])
-    expect(rd.selectedExperience[0].achievements).toEqual([{ bullet: 'Raised Series C' }])
+  it('maps selectedExperience responsibilities and achievements to text objects', () => {
+    const rd = mapParsedProfileToRenderData(baseProfile, STUB_LOGO)
+    expect(rd.selectedExperience[0].responsibilities).toEqual([{ text: 'Oversaw finance' }])
+    expect(rd.selectedExperience[0].achievements).toEqual([{ text: 'Raised Series C' }])
+  })
+
+  it('sets show flags based on content presence', () => {
+    const rd = mapParsedProfileToRenderData(baseProfile, STUB_LOGO)
+    expect(rd.showSummary).toBe(true)
+    expect(rd.showCareerHighlights).toBe(true)
+    expect(rd.showOtherExperience).toBe(true)
+    expect(rd.showEducationCertifications).toBe(true)
+    expect(rd.showSkillsTools).toBe(true)
+    expect(rd.selectedExperience[0].showResponsibilities).toBe(true)
+    expect(rd.selectedExperience[0].showAchievements).toBe(true)
   })
 
   it('joins skills and tools with comma', () => {
-    const rd = mapParsedProfileToRenderData(baseProfile, null)
+    const rd = mapParsedProfileToRenderData(baseProfile, STUB_LOGO)
     expect(rd.skillsLine).toBe('Financial planning, M&A')
     expect(rd.toolsLine).toBe('NetSuite, Excel')
   })
 
-  it('uses 1×1 transparent PNG when no logo provided', () => {
-    const rd = mapParsedProfileToRenderData(baseProfile, null)
-    expect(rd.company_logo).toBeInstanceOf(Uint8Array)
-    expect(rd.company_logo.length).toBeGreaterThan(0)
-  })
-
-  it('uses provided logo bytes when logo is present', () => {
-    const logoBytes = new Uint8Array([1, 2, 3, 4])
-    const rd = mapParsedProfileToRenderData(baseProfile, logoBytes)
-    expect(rd.company_logo).toBe(logoBytes)
-  })
-
   it('adds sponsorship constant', () => {
-    const rd = mapParsedProfileToRenderData(baseProfile, null)
+    const rd = mapParsedProfileToRenderData(baseProfile, STUB_LOGO)
     expect(rd.sponsorship).toContain('Authorized to work in the US')
   })
 
   it('handles null summary gracefully (empty strings)', () => {
     const profile = { ...baseProfile, summary: null }
-    const rd = mapParsedProfileToRenderData(profile, null)
-    expect(rd.summary1).toBe('')
-    expect(rd.summary2).toBe('')
+    const rd = mapParsedProfileToRenderData(profile, STUB_LOGO)
+    expect(rd.summaryParagraph1).toBe('')
+    expect(rd.summaryParagraph2).toBe('')
+    expect(rd.showSummary).toBe(false)
   })
 
   it('handles missing linkedin_url in headerLine', () => {
     const profile = { ...baseProfile, linkedin_url: null }
-    const rd = mapParsedProfileToRenderData(profile, null)
+    const rd = mapParsedProfileToRenderData(profile, STUB_LOGO)
     expect(rd.headerLine).not.toContain('null')
     expect(rd.headerLine).toContain('jane@example.com')
   })
