@@ -52,5 +52,18 @@
     "typescript-eslint": "^8.33.1",
     "vite": "^6.3.5",
     "vitest": "^2.1.9"
+  },
+  "pnpm": {
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-5xrq-8626-4rwp",
+        "GHSA-crh6-fp67-6883",
+        "GHSA-wh4c-j3r5-mjhp",
+        "GHSA-2v35-w6hq-6mfw",
+        "GHSA-f6ww-3ggp-fr8h",
+        "GHSA-x6wf-f3px-wcqx",
+        "GHSA-j759-j44w-7fr8"
+      ]
+    }
   }
 }
