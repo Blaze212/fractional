@@ -11,6 +11,7 @@
     "typecheck:functions": "cd supabase/functions && deno check $(find . -name '*.ts' ! -path '*/tests/*')",
     "test": "vitest run --config vitest.config.ts",
     "test:unit": "vitest run --config vitest.config.ts",
+    "test:unit:coverage": "vitest run --config vitest.config.ts --coverage",
     "test:watch": "vitest --config vitest.config.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
