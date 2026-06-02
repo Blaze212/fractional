@@ -31,7 +31,7 @@ export interface AgencyConfig {
   }
 }
 
-// ─── Aligned Recruitment ─────────────────────────────────────────────────────
+// ─── Recruitment Agency ─────────────────────────────────────────────────────
 // Colors sourced from alignedrecruitment.com Squarespace CSS variables:
 //   --darkAccent-hsl:  201.29, 40.26%, 15.1%  → #172B36 (primary navy)
 //   --accent-hsl:      201.18, 13.93%, 47.84% → #687E8A (steel blue-gray)
@@ -43,7 +43,7 @@ export interface AgencyConfig {
 
 export const AGENCY_CONFIG: AgencyConfig = {
   identity: {
-    name: 'Aligned Recruitment',
+    name: 'Recruitment Agency',
   },
 
   brand: {
@@ -62,7 +62,7 @@ export const AGENCY_CONFIG: AgencyConfig = {
 
   llm: {
     fitNarrativeStyleGuide: `
-Agency voice: Aligned Recruitment. Write in a professional, values-grounded tone that is direct and efficient — no filler phrases, no superlatives unsupported by the profile.
+Agency voice: Recruitment Agency. Write in a professional, values-grounded tone that is direct and efficient — no filler phrases, no superlatives unsupported by the profile.
 
 Style rules:
 - Lead with the candidate's clearest differentiator for this role, then support with specifics.

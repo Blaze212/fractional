@@ -5,7 +5,10 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    flowType: 'pkce',
+    // Email/password only (no OAuth/magic links), and password recovery uses a
+    // `{{ .TokenHash }}` link redeemed via verifyOtp. PKCE emits a browser-bound
+    // `pkce_` token that verifyOtp can't redeem, breaking recovery cross-device.
+    flowType: 'implicit',
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,

@@ -137,7 +137,7 @@ export default function SettingsPage() {
             <TextInput
               value={draft.identity.name}
               onChange={(v) => patch('identity', { name: v })}
-              placeholder="Aligned Recruitment"
+              placeholder="Recruitment Agency"
             />
           </Field>
         </section>
