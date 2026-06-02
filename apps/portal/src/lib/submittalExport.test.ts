@@ -200,8 +200,10 @@ describe('exportSubmittal', () => {
       'Strong culture fit.',
       'Prefers Series B+.',
     ]) {
-      expect(xml).toContain(`•\t${line}`)
+      expect(xml).toContain(line)
     }
+    // Lines render as Word-native list paragraphs (numbering applied), not a literal bullet glyph.
+    expect(xml).toContain('w:numPr')
     expect(xml).not.toContain('{{')
     expect(xml).not.toContain('comp_logistics_items')
     expect(xml).not.toContain('recruiter_notes_items')

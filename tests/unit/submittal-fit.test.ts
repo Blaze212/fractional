@@ -516,7 +516,7 @@ describe('runFitGeneration', () => {
     const systemPrompt = (aiClient.completeJson as ReturnType<typeof vi.fn>).mock
       .calls[0][0] as string
     // Marker unique to the appended default style guide (not the base prompt).
-    expect(systemPrompt).toContain('proven track record')
+    expect(systemPrompt).toContain('AGENCY VOICE:')
   })
 
   it('omits the style guide entirely when an empty string is provided', async () => {
@@ -530,7 +530,7 @@ describe('runFitGeneration', () => {
     const systemPrompt = (aiClient.completeJson as ReturnType<typeof vi.fn>).mock
       .calls[0][0] as string
     // The default style guide must not be appended; its unique marker is absent.
-    expect(systemPrompt).not.toContain('proven track record')
+    expect(systemPrompt).not.toContain('AGENCY VOICE:')
   })
 
   it('throws when the model returns other than 3 bullets', async () => {

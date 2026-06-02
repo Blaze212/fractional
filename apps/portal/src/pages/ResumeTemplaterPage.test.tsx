@@ -172,7 +172,7 @@ describe('ResumeTemplaterPage (submittal)', () => {
 
   it('renders the page title', () => {
     renderPage()
-    expect(screen.getByRole('heading', { name: 'Resume Submittal Templater' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Candidate Submittal' })).toBeInTheDocument()
   })
 
   it('renders the submittal inputs and disables Generate until required fields are present', () => {
