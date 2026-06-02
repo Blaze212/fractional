@@ -11,7 +11,7 @@ vi.mock('../lib/supabase', () => ({
   supabase: {
     auth: {
       getSession: vi.fn().mockResolvedValue({
-        data: { session: { access_token: 'test-token' } },
+        data: { session: { access_token: 'test-token', user: { id: 'test-user' } } },
       }),
       onAuthStateChange: vi
         .fn()
@@ -172,7 +172,7 @@ describe('ResumeTemplaterPage (submittal)', () => {
 
   it('renders the page title', () => {
     renderPage()
-    expect(screen.getByRole('heading', { name: 'Resume Submittal Templater' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Candidate Submittal' })).toBeInTheDocument()
   })
 
   it('renders the submittal inputs and disables Generate until required fields are present', () => {

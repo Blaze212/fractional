@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { loadSupabaseAdminEnv } from './env.ts'
 import type { LoggerLike } from './logger.ts'
 
@@ -11,7 +11,7 @@ interface UsageLimitRow {
 }
 
 async function upsertUsageLimit(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   userId: string,
   tool: string,
   log: LoggerLike,
