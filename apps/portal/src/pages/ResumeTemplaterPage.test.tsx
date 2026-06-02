@@ -11,7 +11,7 @@ vi.mock('../lib/supabase', () => ({
   supabase: {
     auth: {
       getSession: vi.fn().mockResolvedValue({
-        data: { session: { access_token: 'test-token' } },
+        data: { session: { access_token: 'test-token', user: { id: 'test-user' } } },
       }),
       onAuthStateChange: vi
         .fn()
