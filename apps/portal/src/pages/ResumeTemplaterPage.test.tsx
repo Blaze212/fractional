@@ -308,7 +308,7 @@ describe('ResumeTemplaterPage (submittal)', () => {
     renderPage()
     // Wait for the cached logo to load into the header before exporting.
     await waitFor(() =>
-      expect(screen.getByRole('img', { name: /Aligned Recruitment/i })).toBeInTheDocument(),
+      expect(screen.getByRole('img', { name: /Recruitment Agency/i })).toBeInTheDocument(),
     )
     fillRequiredInputs()
     fireEvent.click(screen.getByRole('button', { name: /Generate Submittal/i }))
