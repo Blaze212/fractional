@@ -18,6 +18,7 @@
     "create-user": "node --import tsx/esm scripts/create-user.ts",
     "prepare-template": "node --import tsx/esm scripts/prepare-template.ts",
     "prepare-submittal-template": "node --import tsx/esm scripts/prepare-submittal-template.ts",
+    "patch-submittal-template": "node --import tsx/esm scripts/patch-submittal-template.ts",
     "test-export": "node --import tsx/esm scripts/test-export.ts",
     "debug-images": "node --import tsx/esm scripts/debug-images.ts",
     "eval:submittal": "promptfoo eval --env-file supabase/.env --config tests/eval/promptfooconfig.yaml",

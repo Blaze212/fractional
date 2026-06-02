@@ -314,6 +314,7 @@ export default function ResumeTemplaterPage() {
   const [elapsed, setElapsed] = useState(0)
   const [exporting, setExporting] = useState(false)
   const [confirmExportOpen, setConfirmExportOpen] = useState(false)
+  const [lifetimeRuns, setLifetimeRuns] = useState<number | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const stopTimer = useCallback(() => {
@@ -326,6 +327,21 @@ export default function ResumeTemplaterPage() {
   useEffect(() => {
     return () => stopTimer()
   }, [stopTimer])
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) return
+      supabase
+        .from('usage_limits')
+        .select('lifetime_count')
+        .eq('user_id', session.user.id)
+        .eq('tool', 'submittal_fit')
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) setLifetimeRuns(data.lifetime_count as number)
+        })
+    })
+  }, [])
 
   const canGenerate =
     !!resumeText.trim() && !!jdText.trim() && !!clientName.trim() && !!roleTitle.trim()
@@ -392,6 +408,7 @@ export default function ResumeTemplaterPage() {
       setFitSummary(fitJson.fit_summary)
       setFitGrade(fitJson.grade ?? null)
       setFitAssessment(fitJson.assessment ?? null)
+      setLifetimeRuns((prev) => (prev === null ? 1 : prev + 1))
       setPageState('success')
     } catch (err) {
       stopTimer()
@@ -484,7 +501,19 @@ export default function ResumeTemplaterPage() {
       <AppHeader maxWidthClass="max-w-3xl" />
 
       <main className="mx-auto max-w-3xl space-y-8 px-4 py-10">
-        <h1 className="text-brand text-2xl font-bold">Resume Submittal Templater</h1>
+        <div className="flex flex-wrap items-baseline gap-4">
+          <h1 className="text-brand text-2xl font-bold">Candidate Submittal</h1>
+          {lifetimeRuns !== null && lifetimeRuns > 0 && (
+            <span className="text-sm text-slate-500">
+              <span className="font-semibold text-slate-700">{lifetimeRuns}</span>{' '}
+              {lifetimeRuns === 1 ? 'run' : 'runs'} &middot; ~
+              {lifetimeRuns * 8 < 60
+                ? `${lifetimeRuns * 8} min`
+                : `${((lifetimeRuns * 8) / 60).toFixed(1)} hrs`}{' '}
+              saved
+            </span>
+          )}
+        </div>
 
         {showInputs && (
           <div className="space-y-5">
