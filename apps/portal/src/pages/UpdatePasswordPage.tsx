@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import type { EmailOtpType } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
@@ -22,9 +22,13 @@ export default function UpdatePasswordPage() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
+  // Guards against StrictMode/remount double-invocation consuming the
+  // single-use recovery token twice (the second call always fails).
+  const linkProcessed = useRef(false)
 
   useEffect(() => {
-    let isActive = true
+    if (linkProcessed.current) return
+    linkProcessed.current = true
 
     const tokenHash = searchParams.get('token_hash')
     const type = searchParams.get('type')
@@ -42,10 +46,8 @@ export default function UpdatePasswordPage() {
             type: type as EmailOtpType,
           })
           if (error) {
-            if (isActive) {
-              setError(error.message)
-              setHasSession(false)
-            }
+            setError(error.message)
+            setHasSession(false)
             return
           }
           // Strip params from URL after successful verification
@@ -54,10 +56,8 @@ export default function UpdatePasswordPage() {
           await supabase.auth.signOut()
           const { error } = await supabase.auth.exchangeCodeForSession(code)
           if (error) {
-            if (isActive) {
-              setError(error.message)
-              setHasSession(false)
-            }
+            setError(error.message)
+            setHasSession(false)
             return
           }
           setSearchParams({}, { replace: true })
@@ -67,18 +67,12 @@ export default function UpdatePasswordPage() {
           data: { session },
         } = await supabase.auth.getSession()
 
-        if (isActive) {
-          setHasSession(!!session)
-          if (session?.user?.email) setUserEmail(session.user.email)
-        }
+        setHasSession(!!session)
+        if (session?.user?.email) setUserEmail(session.user.email)
       } catch {
-        if (isActive) setHasSession(false)
+        setHasSession(false)
       }
     })()
-
-    return () => {
-      isActive = false
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // process link params once on mount only
 
