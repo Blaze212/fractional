@@ -4,6 +4,7 @@
   "type": "module",
   "packageManager": "pnpm@9.15.0",
   "scripts": {
+    "prepare": "husky",
     "dev:portal": "pnpm --filter portal dev",
     "dev:functions": "supabase functions serve --env-file supabase/.env",
     "build": "pnpm -r build",
@@ -40,6 +41,7 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
+    "husky": "^9.1.7",
     "jsdom": "^26.1.0",
     "pino": "^9.9.5",
     "pizzip": "^3.2.0",
