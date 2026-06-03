@@ -13,3 +13,9 @@ coverage
 .turbo
 .claude/
 workspace
+
+# Cloudflare / wrangler
+.wrangler/
+.dev.vars
+# pnpm workspace — never commit npm lockfiles (Cloudflare bot generates these)
+package-lock.json
