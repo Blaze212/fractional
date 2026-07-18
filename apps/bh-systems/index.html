@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>bh-systems · AI Reliability &amp; Scale · Barton Holdridge</title>
+  <meta name="description" content="Fractional AI reliability engineer. You shipped the AI; I find the silent failures, make them visible, and own reliability as you scale." />
+  <meta name="theme-color" content="#0a1120" />
+  <script>document.documentElement.className += ' js';</script>
+
+  <meta property="og:title" content="bh-systems · AI Reliability &amp; Scale" />
+  <meta property="og:description" content="I make AI systems survive production and scale." />
+  <meta property="og:type" content="website" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=IBM+Plex+Sans:wght@400;450;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- Booking: all "Book a call" buttons open the Google Calendar link
+       https://calendar.app.google/9HCGPEChEqgXxcAj8 in a new tab. -->
+</head>
+<body>
+<div class="wrap">
+
+  <header id="hdr">
+    <div class="container nav">
+      <a class="brand" href="index.html" aria-label="bh-systems home"><span class="m">/</span><b>bh-systems</b></a>
+      <nav class="nav-links">
+        <a href="#problem">The problem</a>
+        <a href="#offers">What I do</a>
+        <a href="#work">Work</a>
+        <a href="#about">About</a>
+        <span class="nav-sep"></span>
+        <a class="alt" href="creators.html">For creators →</a>
+        <a class="nav-cta" href="https://calendar.app.google/9HCGPEChEqgXxcAj8" target="_blank" rel="noopener">Book a call</a>
+      </nav>
+      <button class="menu-btn" id="menuBtn" aria-label="Jump to what I do">Menu</button>
+    </div>
+  </header>
+
+  <main id="top">
+
+    <!-- HERO -->
+    <section class="hero container">
+      <span class="eyebrow">AI Reliability &amp; Scale · Fractional · Dallas, TX</span>
+      <h1>I make AI systems <span class="hl">survive production.</span></h1>
+      <p class="lede">You shipped the AI. It works in the demo. Then it does strange things in production and nobody's watching. <b>I find the silent failures, make them visible, and own reliability as you scale.</b></p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="https://calendar.app.google/9HCGPEChEqgXxcAj8" target="_blank" rel="noopener">Book a 30-min call <span class="arrow">→</span></a>
+        <a class="btn btn-ghost" href="#work">See the work</a>
+      </div>
+      <p class="hero-sub">10+ years shipping backend + AI systems · AWS · Lockheed Martin · TurboClaim</p>
+
+      <div class="stats reveal">
+        <div class="stat"><div class="num">99.9%+</div><div class="lbl">uptime across 2,500 hosts and 30+ AWS regions</div></div>
+        <div class="stat"><div class="num">$100M+</div><div class="lbl">in insurance claims processed by AI pipelines I built</div></div>
+        <div class="stat"><div class="num">10×</div><div class="lbl">concurrent workflow throughput after re-architecting</div></div>
+        <div class="stat"><div class="num">600%</div><div class="lbl">control-plane TPS increase after clearing bottlenecks</div></div>
+        <div class="stat"><div class="num">0</div><div class="lbl">downtime on security upgrades across 2,500 hosts</div></div>
+        <div class="stat"><div class="num">10+</div><div class="lbl">years shipping production software</div></div>
+      </div>
+    </section>
+
+    <!-- PROBLEM -->
+    <section id="problem" class="container">
+      <div class="sec-head reveal">
+        <span class="eyebrow">The problem you actually have</span>
+        <h2>The demo was the easy part.</h2>
+        <p>Most people who do AI can get a workflow to work once, in a demo. Almost nobody can make it run for every customer, every day, and tell you the moment it breaks instead of failing in the dark.</p>
+      </div>
+
+      <div class="panel reveal">
+        <div class="panel-bar"><span class="label">production.log</span></div>
+        <div class="panel-body">
+          <p>You've already built the AI. Matching, screening, parsing, a GPT-style tool, whatever it is. It works, you shipped it. But you've watched it do strange things in production:</p>
+          <div class="obs"><span class="t">warn</span><span>a screen quietly passes over good candidates</span></div>
+          <div class="obs"><span class="t">warn</span><span>a sync fails and nobody notices until a customer emails</span></div>
+          <div class="obs"><span class="t">warn</span><span>a job hangs for two minutes and you're not sure why</span></div>
+          <p style="margin-top:16px;">The hard part is making it run reliably without you watching it, and knowing the moment it breaks. You don't have an engineer who's scaled production systems, and you're not ready to put a $200K staff engineer on payroll to own it. <b>That's the gap I fill.</b></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- WHAT I DO -->
+    <section id="offers" class="container">
+      <div class="sec-head reveal">
+        <span class="eyebrow">What I do</span>
+        <h2>Start with one workflow. Own the whole system.</h2>
+        <p>I walk into systems that kind of work and make them survive production and scale. It starts with a short, fixed-fee sprint, so you feel the value before any longer commitment.</p>
+      </div>
+
+      <div class="tracks">
+        <div class="track reveal">
+          <div class="tnum">PHASE ONE</div>
+          <h3>Reliability &amp; Scale Audit</h3>
+          <div class="who">4-week fixed-fee sprint</div>
+          <p class="desc">Find where your AI fails quietly, then stop the worst of it inside a month.</p>
+          <ul>
+            <li>Map every AI workflow running in production</li>
+            <li>Find the silent failure points: no retries, no idempotency, no monitoring</li>
+            <li>Instrument your most business-critical workflow so failures actually surface</li>
+            <li>Add retries and recovery so it stops quietly dropping work</li>
+            <li>Hand back a reliability scorecard and a hardening roadmap</li>
+          </ul>
+        </div>
+
+        <div class="track reveal">
+          <div class="tnum">ONGOING</div>
+          <h3>I own reliability as you scale</h3>
+          <div class="who">Monthly retainer</div>
+          <p class="desc">Instrument one workflow and you find the rest are just as fragile. This is the person who keeps them alive.</p>
+          <ul>
+            <li>Harden the backlog of fragile workflows, one by one</li>
+            <li>Build the deployment and observability layer you're missing</li>
+            <li>Load-test the system before you push it to 10× the volume</li>
+            <li>One person accountable when something breaks, so it isn't you</li>
+          </ul>
+        </div>
+      </div>
+      <p class="hero-sub" style="margin-top:22px;">Fees depend on scope. We size it together on the first call.</p>
+    </section>
+
+    <!-- WORK -->
+    <section id="work" class="container">
+      <div class="sec-head reveal">
+        <span class="eyebrow">Selected work</span>
+        <h2>Systems where failure wasn't an option.</h2>
+        <p>Mission-critical defense, hyperscale cloud, and AI processing real money. A few places I've done this before.</p>
+      </div>
+
+      <div class="work">
+        <div class="case reveal">
+          <div class="top"><span class="co">TurboClaim</span><span class="kind">AI · Fractional</span></div>
+          <p>Built and operated an AI-powered claims platform as the sole technical decision-maker. The AI jobs ran for minutes and used to fail silently, so I moved them onto durable Temporal orchestration with retries, idempotency, and recovery.</p>
+          <p class="outcome">Multi-minute AI jobs went from flaky to a <b>95% success rate</b>, on a pipeline handling <b>$100M+</b> in claims.</p>
+        </div>
+
+        <div class="case reveal">
+          <div class="top"><span class="co">Amazon AWS</span><span class="kind">Cloud · Scale</span></div>
+          <p>Built and maintained the AWS SSO Control Plane service, spanning 30+ regions and 2,500+ hosts. I ran security upgrades with staged rollouts and safeguards, and profiled the control plane to clear the bottlenecks that capped throughput.</p>
+          <p class="outcome">Held <b>99.9%+ availability</b>, upgraded 2,500 hosts with <b>zero downtime</b>, and lifted control-plane throughput several times over.</p>
+        </div>
+
+        <div class="case reveal">
+          <div class="top"><span class="co">Lockheed Martin</span><span class="kind">Defense · Full-stack</span></div>
+          <p>Senior engineer on an $80M ground-based radar program, where a missed track isn't an option. I inherited an unpredictable test pipeline, rebuilt it into something the program could trust, and served as primary operator during U.S. Air Force verification events.</p>
+          <p class="outcome">Turned flaky verification into a process the program <b>could rely on</b> under real scrutiny.</p>
+        </div>
+
+        <div class="case reveal">
+          <div class="top"><span class="co">Career Systems</span><span class="kind">Co-owner · Product</span></div>
+          <p>I build the AI tools and internal app members use at Career Systems, so the coaching runs without a human in the loop. Proof I build and run live AI products, day to day.</p>
+          <p class="outcome">A live product real people use every day, built and kept running by <b>one engineer</b>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ABOUT -->
+    <section id="about" class="container">
+      <div class="sec-head reveal">
+        <span class="eyebrow">About</span>
+        <h2>Barton Holdridge</h2>
+      </div>
+      <div class="about-grid">
+        <div class="reveal">
+          <p>I'm a software engineer with 10+ years building cloud-native AI and backend systems, from Fortune 500 scale at Amazon AWS to mission-critical radar at Lockheed Martin to a 0-to-1 AI platform at TurboClaim.</p>
+          <p>The thread through all of it: I take systems that kind of work and make them survive production and scale. <b>Retries, idempotency, monitoring, recovery.</b> The unglamorous work that decides whether your AI is a product or a demo.</p>
+          <p>I take a capped number of fractional engagements so the work stays deep. If your AI is doing strange things in production, or you've hit the ceiling where results still require you personally, that's my zone.</p>
+        </div>
+        <div class="cred reveal">
+          <div class="row"><span class="k">Based</span><span class="v">Dallas, TX</span></div>
+          <div class="row"><span class="k">Focus</span><span class="v">AI reliability &amp; scale</span></div>
+          <div class="row"><span class="k">Stack</span><span class="v">Python · TypeScript · AWS · Temporal</span></div>
+          <div class="row"><span class="k">Also</span><span class="v">Supabase · ECS/RDS · CI/CD · RAG</span></div>
+          <div class="row"><span class="k">Sponsorship</span><span class="v">Not required</span></div>
+          <div class="row"><span class="k">Availability</span><span class="v">Fractional, limited slots</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CROSS-LINK -->
+    <section class="container" style="padding-top:0;">
+      <div class="crosslink reveal">
+        <a href="creators.html">
+          <div>
+            <div class="lead">Run a coaching or community business?</div>
+            <div class="big">I also build self-serve AI for coaches and creators.</div>
+          </div>
+          <span class="go">For creators →</span>
+        </a>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section id="book" class="container">
+      <div class="cta reveal">
+        <span class="eyebrow" style="justify-content:center;">Let's talk</span>
+        <h2>Who's watching your AI <em>when it breaks?</em></h2>
+        <p>Book a 30-minute call. Tell me what your AI does and where it worries you. If I can help, I'll tell you exactly how. If I can't, I'll tell you that too.</p>
+        <div class="cta-btns">
+          <a class="btn btn-primary" href="https://calendar.app.google/9HCGPEChEqgXxcAj8" target="_blank" rel="noopener">Book a call <span class="arrow">→</span></a>
+          <a class="btn btn-ghost" href="mailto:barton@bh-systems.com">Email me directly</a>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <div class="container foot">
+      <div class="brand"><span class="m">/</span><b>bh-systems</b></div>
+      <div class="links">
+        <a href="#offers">What I do</a>
+        <a href="#work">Work</a>
+        <a href="creators.html">For creators</a>
+        <a href="https://linkedin.com/in/barton-holdridge" target="_blank" rel="noopener">LinkedIn</a>
+        <a href="mailto:barton@bh-systems.com">Email</a>
+      </div>
+      <div class="meta">© <span id="yr">2026</span> Barton Holdridge · Dallas, TX</div>
+    </div>
+  </footer>
+
+</div>
+
+<script>
+  var hdr = document.getElementById('hdr');
+  var onScroll = function () { hdr.classList.toggle('scrolled', window.scrollY > 8); };
+  onScroll(); window.addEventListener('scroll', onScroll, { passive: true });
+
+  var reveals = document.querySelectorAll('.reveal');
+  var revealAll = function () { reveals.forEach(function (el) { el.classList.add('in'); }); };
+  if (!('IntersectionObserver' in window)) {
+    revealAll();
+  } else {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
+    }, { threshold: 0.08, rootMargin: '0px 0px -8% 0px' });
+    reveals.forEach(function (el) {
+      if (el.getBoundingClientRect().top < window.innerHeight * 0.92) { el.classList.add('in'); }
+      else { io.observe(el); }
+    });
+    setTimeout(revealAll, 1400);
+  }
+
+  var mb = document.getElementById('menuBtn');
+  if (mb) mb.addEventListener('click', function () { document.getElementById('offers').scrollIntoView({ behavior: 'smooth' }); });
+  document.getElementById('yr').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>
