@@ -1,30 +1,26 @@
 # bh-systems
 
-Marketing site for the fractional AI practice. Static HTML, no build step, no dependencies.
+Marketing site for the fractional AI practice. Static HTML/CSS, no build step.
 
-## Pages
+## Layout
 
-- `index.html` — AI Reliability & Scale (the home / primary buyer).
-- `creators.html` — Self-Serve AI for coaches, course creators, and community founders.
-- `styles.css` — shared theme for both pages (edit once, applies everywhere).
+- `public/` — the deployed site: `index.html` (AI Reliability & Scale, home), `creators.html` (Self-Serve AI for Creators), `styles.css`. **Only this folder is served.**
+- `ui/` — the React component library (design system), synced to Claude Design via design-sync. Not part of the deployed site.
 
-The two pages cross-link in the header and footer.
-
-## Deploy (Cloudflare, same as apps/portal)
+## Deploy (Cloudflare)
 
 ```bash
 cd apps/bh-systems
 npx wrangler deploy
 ```
 
-That serves this folder as a Cloudflare Workers static site named `bh-systems`. Point a custom domain at it in the Cloudflare dashboard when ready.
+Serves `public/` as a Cloudflare Worker named `bh-systems`; wrangler prints the public `*.workers.dev` URL. Add a custom domain later from the Cloudflare dashboard (Workers & Pages → bh-systems → Settings → Domains & Routes).
 
 ## Editing
 
-- **Booking link.** All "Book a call" buttons point at `https://calendar.app.google/9HCGPEChEqgXxcAj8`. To change it, search both HTML files for `calendar.app.google` and replace.
-- **Theme.** Colors, fonts, and spacing live in `styles.css`.
-- **Anything else** (copy, LinkedIn URL) is plain HTML text, edit in place.
+- **Booking link.** All "Book a call" buttons point at `https://calendar.app.google/9HCGPEChEqgXxcAj8`. Search both files under `public/` for `calendar.app.google` to change it.
+- **Copy / LinkedIn URL** — plain HTML in `public/*.html`.
 
 ## Preview locally
 
-Open `index.html` in a browser, or run any static server (e.g. `npx serve .`).
+Open `public/index.html`, or run `npx serve public`.
