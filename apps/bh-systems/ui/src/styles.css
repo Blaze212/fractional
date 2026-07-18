@@ -1,0 +1,313 @@
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=IBM+Plex+Sans:wght@400;450;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+/* ============================================================
+   bh-systems design tokens (Palette A — navy field, royal structure)
+   ============================================================ */
+:root {
+  --bh-bg: #0a1120;
+  --bh-bg-2: #0d1526;
+  --bh-panel: #101a2e;
+  --bh-panel-2: #13203a;
+  --bh-line: rgba(120, 160, 255, 0.14);
+  --bh-line-2: rgba(120, 160, 255, 0.26);
+  --bh-text: #e9eef7;
+  --bh-muted: #9fb0c9;
+  --bh-dim: #6d7f9c;
+  --bh-royal: #3b5bdb;
+  --bh-royal-2: #2a44b0;
+  --bh-ice: #9ec5ff;
+  --bh-on-royal: #f3f7ff;
+
+  --bh-radius: 6px;
+  --bh-serif: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --bh-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --bh-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+
+/* ============================================================
+   Surface — the canvas that carries the theme + blueprint texture.
+   Wrap any composition in <Surface> to get the navy background,
+   base type, and tokens.
+   ============================================================ */
+.bh-surface {
+  position: relative;
+  background: var(--bh-bg);
+  color: var(--bh-text);
+  font-family: var(--bh-sans);
+  font-size: 17px;
+  line-height: 1.62;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+.bh-surface--padded { padding: 40px; }
+.bh-surface::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--bh-royal) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bh-royal) 1px, transparent 1px),
+    linear-gradient(var(--bh-royal) 1px, transparent 1px),
+    linear-gradient(90deg, var(--bh-royal) 1px, transparent 1px);
+  background-size: 128px 128px, 128px 128px, 32px 32px, 32px 32px;
+  opacity: 0.06;
+}
+.bh-surface > * { position: relative; z-index: 1; }
+
+/* ============================================================
+   Eyebrow
+   ============================================================ */
+.bh-eyebrow {
+  font-family: var(--bh-mono);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--bh-ice);
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+.bh-eyebrow::before {
+  content: "";
+  width: 26px;
+  height: 1px;
+  background: var(--bh-ice);
+}
+
+/* ============================================================
+   Button
+   ============================================================ */
+.bh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--bh-mono);
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  padding: 14px 22px;
+  border-radius: var(--bh-radius);
+  cursor: pointer;
+  border: 1px solid transparent;
+  text-decoration: none;
+  transition: transform .16s ease, background .18s ease, border-color .18s ease;
+}
+.bh-btn--primary { background: var(--bh-royal); color: var(--bh-on-royal); }
+.bh-btn--primary:hover { background: #4a68e6; transform: translateY(-2px); }
+.bh-btn--ghost {
+  border-color: var(--bh-line-2);
+  color: var(--bh-text);
+  background: rgba(255, 255, 255, 0.015);
+}
+.bh-btn--ghost:hover { border-color: var(--bh-ice); transform: translateY(-2px); }
+.bh-btn__arrow { transition: transform .16s ease; }
+.bh-btn:hover .bh-btn__arrow { transform: translateX(3px); }
+
+/* ============================================================
+   Stat + StatBand
+   ============================================================ */
+.bh-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--bh-line);
+  border-radius: var(--bh-radius);
+  background: linear-gradient(180deg, var(--bh-panel), var(--bh-bg-2));
+  overflow: hidden;
+}
+.bh-stat {
+  padding: 28px 26px;
+}
+.bh-stats .bh-stat {
+  border-right: 1px solid var(--bh-line);
+  border-bottom: 1px solid var(--bh-line);
+}
+.bh-stats .bh-stat:nth-child(3n) { border-right: none; }
+.bh-stats .bh-stat:nth-last-child(-n+3) { border-bottom: none; }
+.bh-stat__num {
+  font-family: var(--bh-serif);
+  font-size: clamp(30px, 3.4vw, 46px);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--bh-ice);
+}
+.bh-stat__label {
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--bh-muted);
+  line-height: 1.45;
+}
+@media (max-width: 780px) {
+  .bh-stats { grid-template-columns: 1fr; }
+  .bh-stat { border-right: none; }
+}
+
+/* ============================================================
+   Section heading
+   ============================================================ */
+.bh-sechead { max-width: 64ch; }
+.bh-sechead__title {
+  font-family: var(--bh-serif);
+  font-weight: 500;
+  font-size: clamp(30px, 4.2vw, 46px);
+  letter-spacing: -0.015em;
+  line-height: 1.08;
+  margin: 18px 0 0;
+  color: var(--bh-text);
+}
+.bh-sechead__desc {
+  color: var(--bh-muted);
+  margin: 20px 0 0;
+  font-size: 18px;
+}
+
+/* ============================================================
+   LogPanel + LogLine
+   ============================================================ */
+.bh-panel {
+  border: 1px solid var(--bh-line);
+  border-left: 2px solid var(--bh-royal);
+  border-radius: var(--bh-radius);
+  background: var(--bh-panel);
+  overflow: hidden;
+}
+.bh-panel__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--bh-line);
+}
+.bh-panel__label {
+  font-family: var(--bh-mono);
+  font-size: 11.5px;
+  color: var(--bh-dim);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.bh-panel__body { padding: 30px; }
+.bh-panel__body p { margin: 0 0 16px; color: var(--bh-muted); max-width: 68ch; }
+.bh-panel__body p:last-child { margin-bottom: 0; }
+.bh-panel__body b { color: var(--bh-text); font-weight: 600; }
+.bh-obs {
+  font-family: var(--bh-mono);
+  font-size: 13.5px;
+  color: var(--bh-text);
+  display: flex;
+  gap: 12px;
+  margin: 8px 0;
+  align-items: baseline;
+}
+.bh-obs__tag { color: var(--bh-ice); flex: none; }
+
+/* ============================================================
+   OfferCard
+   ============================================================ */
+.bh-track {
+  border: 1px solid var(--bh-line);
+  border-top: 2px solid var(--bh-royal);
+  border-radius: var(--bh-radius);
+  background: linear-gradient(180deg, var(--bh-panel), var(--bh-bg-2));
+  padding: 32px;
+  transition: border-color .2s ease, transform .2s ease;
+}
+.bh-track:hover { border-color: var(--bh-line-2); transform: translateY(-3px); }
+.bh-track__num {
+  font-family: var(--bh-mono);
+  font-size: 11.5px;
+  color: var(--bh-ice);
+  letter-spacing: 0.14em;
+}
+.bh-track__title {
+  font-family: var(--bh-serif);
+  font-weight: 500;
+  font-size: 26px;
+  margin: 14px 0 0;
+  color: var(--bh-text);
+}
+.bh-track__who {
+  color: var(--bh-dim);
+  font-size: 14px;
+  margin-top: 6px;
+  font-family: var(--bh-mono);
+  letter-spacing: 0.02em;
+}
+.bh-track__desc { color: var(--bh-muted); margin: 18px 0 0; font-size: 15.5px; }
+.bh-track__list { list-style: none; padding: 0; margin: 20px 0 0; }
+.bh-track__list li {
+  position: relative;
+  padding-left: 26px;
+  margin: 12px 0;
+  color: var(--bh-muted);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.bh-track__list li::before {
+  content: "→";
+  position: absolute;
+  left: 0;
+  color: var(--bh-ice);
+  font-family: var(--bh-mono);
+}
+
+/* ============================================================
+   CaseCard
+   ============================================================ */
+.bh-case {
+  border: 1px solid var(--bh-line);
+  border-radius: var(--bh-radius);
+  background: var(--bh-panel);
+  padding: 30px;
+  transition: border-color .2s ease, background .2s ease;
+}
+.bh-case:hover { border-color: var(--bh-line-2); background: var(--bh-panel-2); }
+.bh-case__top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.bh-case__co { font-family: var(--bh-serif); font-size: 22px; font-weight: 500; color: var(--bh-text); }
+.bh-case__kind {
+  font-family: var(--bh-mono);
+  font-size: 10.5px;
+  color: var(--bh-dim);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 1px solid var(--bh-line);
+  padding: 5px 10px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.bh-case__body { color: var(--bh-muted); font-size: 15.5px; margin: 16px 0 0; }
+.bh-case__outcome { color: var(--bh-text); font-size: 15.5px; margin: 16px 0 0; }
+.bh-case__outcome b { color: var(--bh-ice); font-weight: 600; }
+
+/* ============================================================
+   CrossLink
+   ============================================================ */
+.bh-crosslink a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  border: 1px solid var(--bh-line);
+  border-left: 2px solid var(--bh-ice);
+  border-radius: var(--bh-radius);
+  background: var(--bh-panel);
+  padding: 26px 30px;
+  text-decoration: none;
+  transition: border-color .2s ease, background .2s ease;
+}
+.bh-crosslink a:hover { border-color: var(--bh-line-2); background: var(--bh-panel-2); }
+.bh-crosslink__lead {
+  font-family: var(--bh-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bh-ice);
+}
+.bh-crosslink__big {
+  font-family: var(--bh-serif);
+  font-size: clamp(20px, 2.6vw, 26px);
+  font-weight: 500;
+  margin-top: 8px;
+  color: var(--bh-text);
+}
+.bh-crosslink__go { font-family: var(--bh-mono); font-size: 13px; color: var(--bh-ice); white-space: nowrap; }

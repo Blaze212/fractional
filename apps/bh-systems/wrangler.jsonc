@@ -1,0 +1,13 @@
+{
+  // Static marketing site for bh-systems. Deploy: `npx wrangler deploy` from this folder.
+  "name": "bh-systems",
+  "compatibility_date": "2026-06-03",
+  "assets": {
+    "directory": ".",
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [
+    { "pattern": "bh-systems.com", "custom_domain": true },
+    { "pattern": "www.bh-systems.com", "custom_domain": true }
+  ]
+}

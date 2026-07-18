@@ -1,0 +1,8 @@
+# Only the marketing pages are served. Keep source, config, and deps out of the public bundle.
+node_modules
+.wrangler
+ui
+wrangler.jsonc
+.gitignore
+.assetsignore
+README.md
