@@ -1,0 +1,10 @@
+{
+  "pkg": "bh-systems-ui",
+  "globalName": "BHUI",
+  "shape": "package",
+  "projectId": "402e44f3-7214-4ab5-9c79-3a1c44d14a83",
+  "buildCmd": "npm run build",
+  "cssEntry": "./dist/styles.css",
+  "provider": { "component": "Surface" },
+  "readmeHeader": ".design-sync/conventions.md"
+}
