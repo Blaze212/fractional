@@ -168,8 +168,8 @@ section { padding: 96px 0; }
 .panel-body p { margin: 0 0 16px; color: var(--muted); max-width: 68ch; }
 .panel-body p:last-child { margin-bottom: 0; }
 .panel-body b { color: var(--text); font-weight: 600; }
-.obs { font-family: var(--mono); font-size: 13.5px; color: var(--text); display: flex; gap: 12px; margin: 8px 0; align-items: baseline; }
-.obs .t { color: var(--ice); flex: none; }
+.obs { font-family: var(--mono); font-size: 13.5px; color: var(--text); display: flex; gap: 12px; margin: 10px 0; align-items: center; }
+.obs .t { color: var(--ice); flex: none; align-self: center; min-width: 62px; text-align: center; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 9px; border: 1px solid var(--line-2); border-radius: 4px; background: rgba(120,160,255,0.08); }
 
 /* offer / deliverable cards (no prices) */
 .tracks { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; margin-top: 46px; }
