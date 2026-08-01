@@ -386,7 +386,7 @@
 
       <main class="card" id="stage" aria-live="polite"></main>
 
-      <footer>A daily geography puzzle.<br />Play, then paste your result in the comments.</footer>
+      <footer>A daily geography puzzle.</footer>
     </div>
 
     <script>
@@ -483,9 +483,9 @@
       }
 
       function verdictLine(score) {
-        if (score === total) return 'Flawless. Go on, gloat a little.'
+        if (score === total) return 'Flawless!'
         if (score === total - 1) return 'So close. One got away.'
-        if (score === 0) return 'A clean sweep, of the wrong kind. Tomorrow’s another map.'
+        if (score === 0) return 'Better luck next time. Try again tomorrow.'
         return 'Not bad. There’s room to argue about the rest.'
       }
 
@@ -496,8 +496,7 @@
         dotsEl.hidden = true
         stage.innerHTML = `
     <h1>Three rounds.<br>Two minutes.</h1>
-    <p class="lede">A world connection, a head-to-head, and a shape to name.
-      No account, no timer. Just don’t scroll the comments first.</p>
+    <p class="lede">A world connection, a head-to-head comparison, and name that country.</p>
     <button class="btn" id="go">Start today’s puzzle</button>`
         document.getElementById('go').onclick = () => {
           idx = 0
@@ -585,7 +584,7 @@
     <div class="grid-preview">${buildGrid()}</div>
     <button class="btn" id="copy">Share your results</button>
     <button class="btn ghost" id="again">Play again</button>
-    <p class="share-hint">Paste in the Skool comments. The grid gives nothing away.</p>
+    <p class="share-hint">Share your results in Skool.</p>
     <textarea id="fallback" class="sr" readonly></textarea>`
 
         document.getElementById('copy').onclick = copyResult
