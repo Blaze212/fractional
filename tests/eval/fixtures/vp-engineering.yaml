@@ -1,0 +1,78 @@
+description: 'VP Engineering, strong technical profile, platform-scaling JD'
+
+vars:
+  client_name: Hooli
+  role_title: VP of Engineering
+  jd_text: |
+    Hooli is hiring a VP of Engineering to scale its platform team through rapid
+    growth. You will own architecture, reliability, and hiring for a multi-region
+    backend, lead a growing engineering org, and partner with product on roadmap
+    execution. Experience scaling distributed systems and leading managers of
+    managers is required.
+  parsed_profile:
+    name: Marcus Lee
+    email: null
+    phone: null
+    location: Remote
+    linkedin_url: null
+    current_title: VP of Engineering
+    work_authorization: null
+    total_experience: '14 years'
+    summary: 'Engineering leader who has scaled distributed platform teams and multi-region backends.'
+    seniority_level: VP
+    career_highlights:
+      - 'Scaled the platform engineering org from 8 to 45 engineers across 3 regions'
+      - 'Cut p99 API latency 40% by re-architecting the request path'
+      - 'Led the migration to a multi-region active-active backend'
+    selected_experience:
+      - company: Pied Piper
+        title: VP of Engineering
+        start_date: '2020-05'
+        end_date: Present
+        responsibilities:
+          - 'Owned architecture, reliability, and hiring for the platform group'
+          - 'Managed a team of 7 engineering managers (managers of managers)'
+        achievements:
+          - 'Grew the org from 8 to 45 engineers while keeping attrition under 10%'
+          - 'Drove p99 latency down 40% via request-path re-architecture'
+      - company: Aviato
+        title: Director of Engineering
+        start_date: '2016-02'
+        end_date: '2020-04'
+        responsibilities:
+          - 'Led the services team and on-call reliability program'
+        achievements:
+          - 'Delivered the multi-region active-active migration with zero downtime'
+    other_experience: []
+    education:
+      - institution: Carnegie Mellon University
+        degree: BS Computer Science
+    certifications: []
+    skills:
+      - Distributed systems
+      - Engineering leadership
+      - Reliability
+      - Hiring
+    tools:
+      - Kubernetes
+      - AWS
+      - Go
+    functional_areas:
+      - Engineering
+      - Platform
+    industries:
+      - SaaS
+      - Cloud Infrastructure
+
+assert:
+  # Scenario-specific: output should cite a concrete technical achievement.
+  - type: javascript
+    value: |
+      const s = (output.fit_summary + ' ' + output.fit_bullets.map(b => b.text).join(' ')).toLowerCase()
+      return s.includes('region') || s.includes('latency') || s.includes('platform')
+  - type: llm-rubric
+    value: |
+      The narrative cites specific technical accomplishments from the candidate's
+      experience (scaling the org, latency reduction, multi-region migration) and
+      ties them to the platform-scaling needs of this VP Engineering role. It does
+      not inflate or invent metrics beyond what the profile states.

@@ -1,10 +1,10 @@
-import type { ReactNode } from 'react';
+import type { ReactNode } from 'react'
 
 export interface EyebrowProps {
   /** Label text, rendered uppercase in mono with a leading rule. */
-  children: ReactNode;
+  children: ReactNode
   /** Center the eyebrow (used above centered section headings). */
-  centered?: boolean;
+  centered?: boolean
 }
 
 /** Small uppercase mono label with a leading rule. Sits above headlines and section titles. */
@@ -13,5 +13,5 @@ export function Eyebrow({ children, centered }: EyebrowProps) {
     <span className="bh-eyebrow" style={centered ? { justifyContent: 'center' } : undefined}>
       {children}
     </span>
-  );
+  )
 }

@@ -1,0 +1,173 @@
+description: 'Anthony DeLuca — Director, Go-to-Market Strategy and Operations Interlock Lead at Autodesk'
+
+vars:
+  client_name: Autodesk
+  role_title: 'Director, Go-to-Market Strategy and Operations Interlock Lead'
+  jd_text: |
+    Autodesk is seeking a Director, Go-to-Market Strategy and Operations Interlock Lead (GS&O). California, USA - Remote.
+
+    Position Overview:
+    Translate sales priorities and field needs into clear Go-to-market Strategy & Operations requirements across sales plays, enablement, tooling, analytics, pricing models, and compensation/portfolio plans. Run a weekly initiative cadence, triage risks, drive field adoption, and provide executive readouts on progress and impact.
+
+    Team & Structure: Within Sales Strategy & Excellence. Manages a group of five analysts.
+
+    Responsibilities:
+    - Serve as the primary liaison between Sales leadership and Go-to-market Strategy & Operations; translate field priorities into clear requirements and a prioritized roadmap
+    - Lead a team of analysts to drive alignment between GS&O and Sales organizations
+    - Maintain a set cadence with GS&O teams to track delivery, manage dependencies, and unblock risks
+    - Oversee requirements for sales plays, enablement materials, operational support, pricing models, and compensation & portfolio plans
+    - Drive field adoption by partnering with Go-to-Market Enablement to launch training and communications; set utilization and process-adherence targets
+    - Oversee adequate deal support services (Deal Desk, Partner Operations) for field needs
+    - Publish leadership-level materials on progress, risks, and ROI; surface trade-offs with options and recommendations
+
+    Minimum Qualifications:
+    - Bachelor's degree; MBA preferred
+    - 7-10 years in sales operations, business operations, or sales enablement, with at least 3-5 years in a leadership role
+    - Proven experience managing global sales operations aligned with strategic priorities
+    - Strong understanding of sales enablement including dashboards, tools, and best practice processes
+    - Excellent project management with experience defining requirements for Sales Plays, Sales Process Documentation, and Tooling
+    - Analytical skills to gather field feedback, identify bottlenecks, and improve sales process adherence
+    - Proven leadership managing, mentoring, and developing a high-performing sales operations team
+    - Proficiency in CRM systems and project management tools
+    - Familiarity with analytics and data visualization tools
+    - Experience developing and executing enablement and adoption management strategies
+    - Track record managing field feedback on Deal Desk, Partner Helpdesk, and Pricing
+
+    Location: California, USA - Remote.
+    Salary: $168,200 - $272,030 base.
+  parsed_profile:
+    name: Anthony DeLuca
+    email: deluca80@gmail.com
+    phone: '(323) 533-5709'
+    location: Santa Clara, CA
+    linkedin_url: linkedin.com/in/anthonydeluca1
+    current_title: Revenue Operations Director
+    work_authorization: No Sponsorship Required
+    total_experience: '15+ years'
+    summary: >-
+      Revenue Operations leader with 15+ years of experience scaling GTM operations and analytics
+      across SaaS and enterprise technology companies (such as Alteryx and Cisco). Proven track
+      record of building revenue reporting, optimizing renewal and expansion motions, and improving
+      territory and process design to drive predictable growth. Experienced leading cross-functional
+      initiatives with Sales, Marketing, Finance, Data Science, and Customer Success stakeholders
+      across matrixed organizations. Skilled in Salesforce governance, forecast and KPI dashboards,
+      quote-to-cash optimization, and operating cadence design.
+    seniority_level: Director
+    career_highlights:
+      - "Delivered $90M in first-year revenue by building a high-performing team, defining metrics, and aligning GTM execution for Cisco's ELA business."
+      - 'Captured $33M in post-sales revenue by turning software consumption reporting into targeted expansion actions.'
+      - 'Generated $23.8M in revenue at a 40% deal expansion rate by applying predictive analytics to prioritize growth opportunities.'
+      - 'Reduced churn 11% by launching an auto-renewal program with 90% self-service adoption, automating 800+ bookings worth $8.8M.'
+      - 'Simplified territory management 60% in five weeks by consolidating contracts and modernizing Salesforce workflows to speed coverage decisions.'
+    selected_experience:
+      - company: Alteryx, Inc.
+        title: Revenue Operations, Director
+        start_date: '2021-01'
+        end_date: '2024-01'
+        responsibilities:
+          - 'Led GTM operations for a $900M ARR data platform business, supporting scalable revenue execution across the customer lifecycle.'
+          - 'Owned revenue analytics, seller dashboards, and performance reporting to improve visibility into productivity and GTM health.'
+          - 'Partnered with Sales, Marketing, Data Science, and Finance to align renewal, expansion, and process priorities.'
+          - 'Directed territory design, contract workflows, and Salesforce process governance to improve coverage and operating rigor.'
+        achievements:
+          - 'Reduced churn 11% by launching an auto-renewal program with 90% self-service adoption, automating 800+ bookings worth $8.8M.'
+          - 'Cut quoting time 17% by leading a cross-functional sales process modernization initiative that streamlined quote-to-cash workflows.'
+          - 'Generated a 40% deal expansion rate and $23.8M in revenue by applying analytics and predictive modeling to growth opportunities.'
+          - 'Simplified territory management 60% in five weeks by consolidating contracts and modernizing Salesforce workflows with customer data analytics.'
+      - company: Cisco Systems, Inc.
+        title: Business Operations, GTM Strategy and Operations Manager
+        start_date: '2016-01'
+        end_date: '2020-01'
+        responsibilities:
+          - "Led pricing and post-sales operations for Cisco's ELA business, supporting software agreement revenue that reached $90M in the first year."
+          - 'Owned quote-to-cash and licensing workflows for enterprise software agreements.'
+          - 'Built executive dashboards and software consumption reporting to track revenue KPIs.'
+          - 'Established governance models, performance metrics, and operating cadences for GTM decisions.'
+        achievements:
+          - 'Delivered $90M in first-year revenue by building a high-performing team, defining performance metrics, and aligning GTM stakeholders.'
+          - 'Captured $33M in post-sales revenue by turning GTM plans and consumption insights into expansion actions.'
+          - 'Increased customer volume 300% by leading development of a self-service licensing portal.'
+      - company: Cisco Systems, Inc.
+        title: Channel GTM Operations, Business Development Manager
+        start_date: '2012-01'
+        end_date: '2016-01'
+        responsibilities:
+          - "Supported partner-led GTM for Cisco's Service Provider business across a global partner ecosystem."
+          - 'Served as liaison across sales, partner, and operations teams to align alliance launches, acquisition integrations, and channel plans.'
+          - 'Designed partner operating models and quote-to-cash workflows to scale channel execution.'
+          - 'Built analytics and reporting to track partner program performance and support channel decisions.'
+        achievements:
+          - 'Generated $30M+ in bookings within 8 months by leading quote-to-cash design and operations integration for the Cisco-Ericsson alliance.'
+          - 'Increased partner contribution to Cisco SP business from 47% to 58% by optimizing partner-led GTM programs.'
+          - 'Trained 1,000+ partner employees across 15+ programs by coaching SMEs and developing partner-facing enablement content.'
+    other_experience:
+      - company: Trianz Consulting
+        title: Strategic Programs Senior Manager
+        start_date: '2007-01'
+        end_date: '2011-01'
+    education:
+      - institution: University of Southern California, Marshall School of Business
+        degree: Master of Business Administration
+      - institution: University of California, Los Angeles
+        degree: Bachelor of Arts in Philosophy and English
+    certifications: []
+    skills:
+      - Revenue Operations
+      - GTM Analytics
+      - Forecasting & Pipeline Management
+      - Renewal & Churn Strategy
+      - Quote-to-Cash Operations
+      - Territory & Capacity Planning
+      - Pricing & Expansion Strategy
+      - Data Governance
+      - Executive KPI Design
+      - GTM Automation Strategy
+    tools:
+      - Salesforce CPQ
+    functional_areas:
+      - Revenue Operations
+      - GTM Strategy & Operations
+      - Sales Operations
+      - Business Operations
+      - Channel Operations
+    industries:
+      - SaaS
+      - Enterprise Technology
+      - Data Analytics
+      - Networking & Infrastructure
+
+assert:
+  # Liaison/cadence work is the core of the interlock role and directly in the profile
+  - type: javascript
+    value: |
+      const all = (
+        (output.fit_summary || '') + ' ' +
+        (output.fit_bullets || []).map(b => b.text).join(' ')
+      ).toLowerCase()
+      return (
+        all.includes('cadence') || all.includes('liaison') ||
+        all.includes('cross-functional') || all.includes('operating cadence') ||
+        all.includes('stakeholder')
+      )
+  # Deal desk, partner ops, and enablement are explicit JD requirements covered by Cisco channel role
+  - type: javascript
+    value: |
+      const all = (
+        (output.fit_summary || '') + ' ' +
+        (output.fit_bullets || []).map(b => b.text).join(' ')
+      ).toLowerCase()
+      return (
+        all.includes('deal desk') || all.includes('partner') ||
+        all.includes('enablement') || all.includes('channel') ||
+        all.includes('trained') || all.includes('adoption')
+      )
+  # Quality: grounded in Cisco/Alteryx specifics, no fabricated Autodesk product knowledge
+  - type: llm-rubric
+    value: |
+      The narrative leads with DeLuca's strength as a GTM interlock and liaison — specifically
+      his experience running cross-functional operating cadences, translating field priorities
+      into requirements, and delivering executive readouts — grounded in concrete Cisco and
+      Alteryx examples. It does not fabricate Autodesk-specific product knowledge or claim he
+      has authored Autodesk sales plays or worked in design/manufacturing software verticals.
+      The Cisco channel role's direct relevance to Deal Desk and Partner Operations oversight
+      should be acknowledged.

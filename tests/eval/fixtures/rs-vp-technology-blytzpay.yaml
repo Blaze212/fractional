@@ -1,0 +1,159 @@
+description: 'IT operations director vs. hands-on fintech engineering-VP JD (low fit / skills-gap grounding test)'
+
+vars:
+  client_name: BlytzPay
+  role_title: VP of Technology
+  jd_text: |
+    BlytzPay is modernizing payments in complex, regulated repayment environments.
+    As we enter our next growth phase, we're hiring a hands-on VP of Technology to
+    lead architecture, engineering scale, and platform reliability. This is an
+    executive builder role — ideal for a technology leader who can operate
+    strategically while staying close to the stack.
+
+    What you'll own: technical vision and platform architecture; engineering team
+    scale and performance; cloud infrastructure (GCP preferred, AWS acceptable);
+    Kubernetes-based container orchestration; high-volume RESTful API systems;
+    platform observability (Splunk, DataDog, Prometheus, etc.); security and
+    compliance alignment (SOC 2 Type 2 and/or PCI); fault-tolerant, scalable system
+    design. You'll ensure our NodeJS-based platform scales securely in a regulated
+    payments environment while maintaining engineering velocity.
+
+    What you bring: 10+ years of engineering leadership experience; strong
+    JavaScript / NodeJS architecture background; deep experience building RESTful
+    APIs and distributed systems; Kubernetes and cloud-native infrastructure
+    expertise; SQL and data warehousing experience; experience embedding secure
+    development practices (Snyk, Checkmarx, etc.); test automation experience
+    (Playwright preferred); familiarity with synthetic testing and proactive
+    monitoring; background in fintech, payments, or other transaction-heavy systems.
+  parsed_profile:
+    name: Russell C. Sedgwick
+    email: russsedg@gmail.com
+    phone: 801-598-8279
+    location: null
+    linkedin_url: linkedin.com/in/russsedg/
+    current_title: Senior Director of Enterprise IT
+    work_authorization: No Sponsorship Required
+    total_experience: '15+ years'
+    summary: >-
+      IT Operations leader with 15+ years owning end-to-end technology operations —
+      service desk, systems engineering, identity, endpoint, and enterprise SaaS
+      platforms — at a publicly traded company. Proven record of building
+      high-performing teams, delivering reliable and secure IT services, and
+      implementing scalable processes that support mission-critical business
+      operations. Skilled in driving automation, governance, and standardization to
+      improve service delivery, strengthen security posture, and enable scalable
+      organizational growth in complex, highly regulated environments.
+    seniority_level: Senior Director
+    career_highlights:
+      - 'Reduced technology operating costs $2M+ by consolidating vendors, optimizing contracts, and decommissioning redundant tools and legacy systems'
+      - 'Increased endpoint governance coverage from ~75% to 99%+ by partnering with security to implement standardized device security policies and centralized compliance controls'
+      - 'Reduced manual IT effort 30% by automating workflows, accelerating service delivery, and improving user experience'
+      - 'Improved IT employee satisfaction (ESAT) 20% by building high-performing teams aligned to business priorities and fostering a strong performance culture'
+      - 'Completed data center migration with zero unplanned downtime by sequencing workloads based on dependencies, standardizing migration runbooks, and executing controlled cutover plans'
+      - 'Helped 10+ individuals earn promotions by mentoring, delivering targeted training, and implementing structured career development plans'
+    selected_experience:
+      - company: Bed Bath & Beyond (formerly Overstock.com)
+        title: Senior Director of Enterprise IT
+        start_date: '2016'
+        end_date: Present
+        responsibilities:
+          - 'Lead teams of up to 25 direct and indirect reports and own a $4M IT budget, owning IT operations strategy supporting 2000+ employees across multiple locations in mission-critical environments'
+          - 'Collaborate with executive leadership, cybersecurity, and business stakeholders to enforce compliance, prioritize initiatives, and drive measurable outcomes'
+          - 'Partner with security engineering to ensure compliance with industry regulations such as SOX and PCI through governance controls and risk management practices'
+          - 'Align team resources and priorities with business objectives, driving efficiency through automation and self-service tools'
+        achievements:
+          - 'Improved endpoint compliance to 99%+ across Windows and macOS devices by implementing centralized management tools and configuration baselines'
+          - 'Reduced onboarding time for new employees 50% by automating account provisioning, creating role-based access entitlements, and documenting processes'
+          - 'Improved service desk satisfaction 25% by implementing SLAs, KPIs, and performance accountability frameworks'
+          - 'Improved hardware forecast accuracy to 95% by standardizing lifecycle management and procurement strategy aligned to workforce planning'
+          - 'Drove adoption of Microsoft Copilot across ~25% of the workforce by leading a proof-of-concept and delivering structured enablement, training, and responsible AI rollout practices'
+      - company: Overstock.com
+        title: Manager of Corporate Systems
+        start_date: '2013'
+        end_date: '2015'
+        responsibilities:
+          - 'Led and developed a team of 8 Systems Engineers and Administrators supporting enterprise infrastructure and mission-critical business applications'
+          - 'Ensured high availability, performance, and reliability across enterprise systems supporting corporate operations'
+          - 'Established operational priorities and service delivery standards improving efficiency and user experience'
+        achievements:
+          - 'Reduced app access provisioning time 30% by implementing Okta across 200+ applications, enabling SSO, SCIM, and MFA while strengthening security posture'
+          - 'Led the migration of on-premises Exchange to Office 365, ensuring a seamless transition with zero data loss'
+          - 'Improved system uptime to 99.9%+ by optimizing operational performance through proactive monitoring, standardization, and process improvements'
+          - 'Promoted 3 times by increasing scope of responsibilities (previous titles: Lead System Engineer, System Engineer, System Administrator)'
+    other_experience:
+      - company: Idaho Central Credit Union
+        title: System Administrator
+        start_date: null
+        end_date: null
+    education:
+      - institution: Western Governors University
+        degree: MBA, IT Management
+      - institution: Weber State University
+        degree: BS, Computer Science
+    certifications:
+      - provider: Microsoft
+        certification: MCP
+      - provider: Microsoft
+        certification: MCSA
+    skills:
+      - IT operations strategy
+      - Technology transformation
+      - Service desk management
+      - Infrastructure management
+      - Identity and access management (IAM)
+      - MDM
+      - ITSM (ITIL)
+      - Vendor management
+      - Contract negotiation
+      - IT budget and cost optimization
+      - OKRs / KPIs and SLA management
+      - Process improvement
+      - Talent development
+      - Compliance (SOX, PCI)
+      - Business continuity
+      - Strategic leadership
+      - AI strategy
+      - Zero touch provisioning
+    tools:
+      - Okta
+      - Microsoft Copilot
+      - Office 365
+      - Windows
+      - macOS
+    functional_areas:
+      - IT Operations
+      - Enterprise IT
+      - Identity & Access Management
+      - Security & Compliance
+    industries:
+      - Retail / E-commerce
+      - Technology
+
+assert:
+  # Grounding is the priority here: the role is a hands-on software-engineering VP
+  # (NodeJS, Kubernetes, RESTful APIs, distributed systems) and the candidate is an
+  # IT operations leader with NONE of that stack. The model must not fabricate it.
+  - type: javascript
+    value: |
+      const s = (output.fit_summary + ' ' + output.fit_bullets.map(b => b.text).join(' ') + ' ' + output.key_qualifications.map(b => b.text).join(' ')).toLowerCase()
+      // Guard against the most tempting hallucinations — coding-stack claims the
+      // profile never supports.
+      return !['nodejs', 'node.js', 'kubernetes', 'restful api', 'rest api', 'playwright', 'snyk', 'checkmarx', 'distributed systems'].some(k => s.includes(k))
+  - type: llm-rubric
+    value: |
+      This is a low-fit / skills-gap scenario. The role is a HANDS-ON software
+      engineering VP for a NodeJS payments platform (NodeJS/JavaScript architecture,
+      Kubernetes, GCP, RESTful APIs, distributed systems, secure SDLC tooling, test
+      automation). The candidate is an IT OPERATIONS leader and has none of that
+      software-engineering background. A correct output must:
+      1. Stay strictly grounded: it must NOT claim or imply NodeJS/JavaScript
+         development, Kubernetes, API/distributed-systems engineering, secure-coding
+         tools (Snyk/Checkmarx), or test automation experience, because none appear
+         in the profile.
+      2. Lean honestly on the genuine overlap: security and compliance (SOX, PCI),
+         identity and access management (Okta SSO/SCIM/MFA), large-scale
+         migrations, reliability/uptime, automation, vendor/budget ownership, and
+         technology-organization leadership.
+      3. Not pad the narrative with invented technical specifics to mask the gap.
+         Qualitative, transferable framing of his real leadership and
+         security/reliability experience is acceptable.

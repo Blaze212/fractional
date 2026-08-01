@@ -19,9 +19,9 @@
   --bh-on-royal: #f3f7ff;
 
   --bh-radius: 6px;
-  --bh-serif: "Newsreader", "Iowan Old Style", Georgia, serif;
-  --bh-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --bh-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  --bh-serif: 'Newsreader', 'Iowan Old Style', Georgia, serif;
+  --bh-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --bh-mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
 }
 
 /* ============================================================
@@ -39,9 +39,11 @@
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
-.bh-surface--padded { padding: 40px; }
+.bh-surface--padded {
+  padding: 40px;
+}
 .bh-surface::before {
-  content: "";
+  content: '';
   position: absolute;
   inset: 0;
   z-index: 0;
@@ -51,10 +53,17 @@
     linear-gradient(90deg, var(--bh-royal) 1px, transparent 1px),
     linear-gradient(var(--bh-royal) 1px, transparent 1px),
     linear-gradient(90deg, var(--bh-royal) 1px, transparent 1px);
-  background-size: 128px 128px, 128px 128px, 32px 32px, 32px 32px;
+  background-size:
+    128px 128px,
+    128px 128px,
+    32px 32px,
+    32px 32px;
   opacity: 0.06;
 }
-.bh-surface > * { position: relative; z-index: 1; }
+.bh-surface > * {
+  position: relative;
+  z-index: 1;
+}
 
 /* ============================================================
    Eyebrow
@@ -70,7 +79,7 @@
   gap: 14px;
 }
 .bh-eyebrow::before {
-  content: "";
+  content: '';
   width: 26px;
   height: 1px;
   background: var(--bh-ice);
@@ -91,18 +100,34 @@
   cursor: pointer;
   border: 1px solid transparent;
   text-decoration: none;
-  transition: transform .16s ease, background .18s ease, border-color .18s ease;
+  transition:
+    transform 0.16s ease,
+    background 0.18s ease,
+    border-color 0.18s ease;
 }
-.bh-btn--primary { background: var(--bh-royal); color: var(--bh-on-royal); }
-.bh-btn--primary:hover { background: #4a68e6; transform: translateY(-2px); }
+.bh-btn--primary {
+  background: var(--bh-royal);
+  color: var(--bh-on-royal);
+}
+.bh-btn--primary:hover {
+  background: #4a68e6;
+  transform: translateY(-2px);
+}
 .bh-btn--ghost {
   border-color: var(--bh-line-2);
   color: var(--bh-text);
   background: rgba(255, 255, 255, 0.015);
 }
-.bh-btn--ghost:hover { border-color: var(--bh-ice); transform: translateY(-2px); }
-.bh-btn__arrow { transition: transform .16s ease; }
-.bh-btn:hover .bh-btn__arrow { transform: translateX(3px); }
+.bh-btn--ghost:hover {
+  border-color: var(--bh-ice);
+  transform: translateY(-2px);
+}
+.bh-btn__arrow {
+  transition: transform 0.16s ease;
+}
+.bh-btn:hover .bh-btn__arrow {
+  transform: translateX(3px);
+}
 
 /* ============================================================
    Stat + StatBand
@@ -122,8 +147,12 @@
   border-right: 1px solid var(--bh-line);
   border-bottom: 1px solid var(--bh-line);
 }
-.bh-stats .bh-stat:nth-child(3n) { border-right: none; }
-.bh-stats .bh-stat:nth-last-child(-n+3) { border-bottom: none; }
+.bh-stats .bh-stat:nth-child(3n) {
+  border-right: none;
+}
+.bh-stats .bh-stat:nth-last-child(-n + 3) {
+  border-bottom: none;
+}
 .bh-stat__num {
   font-family: var(--bh-serif);
   font-size: clamp(30px, 3.4vw, 46px);
@@ -138,14 +167,20 @@
   line-height: 1.45;
 }
 @media (max-width: 780px) {
-  .bh-stats { grid-template-columns: 1fr; }
-  .bh-stat { border-right: none; }
+  .bh-stats {
+    grid-template-columns: 1fr;
+  }
+  .bh-stat {
+    border-right: none;
+  }
 }
 
 /* ============================================================
    Section heading
    ============================================================ */
-.bh-sechead { max-width: 64ch; }
+.bh-sechead {
+  max-width: 64ch;
+}
 .bh-sechead__title {
   font-family: var(--bh-serif);
   font-weight: 500;
@@ -185,10 +220,21 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
-.bh-panel__body { padding: 30px; }
-.bh-panel__body p { margin: 0 0 16px; color: var(--bh-muted); max-width: 68ch; }
-.bh-panel__body p:last-child { margin-bottom: 0; }
-.bh-panel__body b { color: var(--bh-text); font-weight: 600; }
+.bh-panel__body {
+  padding: 30px;
+}
+.bh-panel__body p {
+  margin: 0 0 16px;
+  color: var(--bh-muted);
+  max-width: 68ch;
+}
+.bh-panel__body p:last-child {
+  margin-bottom: 0;
+}
+.bh-panel__body b {
+  color: var(--bh-text);
+  font-weight: 600;
+}
 .bh-obs {
   font-family: var(--bh-mono);
   font-size: 13.5px;
@@ -198,7 +244,10 @@
   margin: 8px 0;
   align-items: baseline;
 }
-.bh-obs__tag { color: var(--bh-ice); flex: none; }
+.bh-obs__tag {
+  color: var(--bh-ice);
+  flex: none;
+}
 
 /* ============================================================
    OfferCard
@@ -209,9 +258,14 @@
   border-radius: var(--bh-radius);
   background: linear-gradient(180deg, var(--bh-panel), var(--bh-bg-2));
   padding: 32px;
-  transition: border-color .2s ease, transform .2s ease;
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease;
 }
-.bh-track:hover { border-color: var(--bh-line-2); transform: translateY(-3px); }
+.bh-track:hover {
+  border-color: var(--bh-line-2);
+  transform: translateY(-3px);
+}
 .bh-track__num {
   font-family: var(--bh-mono);
   font-size: 11.5px;
@@ -232,8 +286,16 @@
   font-family: var(--bh-mono);
   letter-spacing: 0.02em;
 }
-.bh-track__desc { color: var(--bh-muted); margin: 18px 0 0; font-size: 15.5px; }
-.bh-track__list { list-style: none; padding: 0; margin: 20px 0 0; }
+.bh-track__desc {
+  color: var(--bh-muted);
+  margin: 18px 0 0;
+  font-size: 15.5px;
+}
+.bh-track__list {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0 0;
+}
 .bh-track__list li {
   position: relative;
   padding-left: 26px;
@@ -243,7 +305,7 @@
   line-height: 1.5;
 }
 .bh-track__list li::before {
-  content: "→";
+  content: '→';
   position: absolute;
   left: 0;
   color: var(--bh-ice);
@@ -258,11 +320,26 @@
   border-radius: var(--bh-radius);
   background: var(--bh-panel);
   padding: 30px;
-  transition: border-color .2s ease, background .2s ease;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
 }
-.bh-case:hover { border-color: var(--bh-line-2); background: var(--bh-panel-2); }
-.bh-case__top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.bh-case__co { font-family: var(--bh-serif); font-size: 22px; font-weight: 500; color: var(--bh-text); }
+.bh-case:hover {
+  border-color: var(--bh-line-2);
+  background: var(--bh-panel-2);
+}
+.bh-case__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.bh-case__co {
+  font-family: var(--bh-serif);
+  font-size: 22px;
+  font-weight: 500;
+  color: var(--bh-text);
+}
 .bh-case__kind {
   font-family: var(--bh-mono);
   font-size: 10.5px;
@@ -274,9 +351,20 @@
   border-radius: 20px;
   white-space: nowrap;
 }
-.bh-case__body { color: var(--bh-muted); font-size: 15.5px; margin: 16px 0 0; }
-.bh-case__outcome { color: var(--bh-text); font-size: 15.5px; margin: 16px 0 0; }
-.bh-case__outcome b { color: var(--bh-ice); font-weight: 600; }
+.bh-case__body {
+  color: var(--bh-muted);
+  font-size: 15.5px;
+  margin: 16px 0 0;
+}
+.bh-case__outcome {
+  color: var(--bh-text);
+  font-size: 15.5px;
+  margin: 16px 0 0;
+}
+.bh-case__outcome b {
+  color: var(--bh-ice);
+  font-weight: 600;
+}
 
 /* ============================================================
    CrossLink
@@ -293,9 +381,14 @@
   background: var(--bh-panel);
   padding: 26px 30px;
   text-decoration: none;
-  transition: border-color .2s ease, background .2s ease;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
 }
-.bh-crosslink a:hover { border-color: var(--bh-line-2); background: var(--bh-panel-2); }
+.bh-crosslink a:hover {
+  border-color: var(--bh-line-2);
+  background: var(--bh-panel-2);
+}
 .bh-crosslink__lead {
   font-family: var(--bh-mono);
   font-size: 11.5px;
@@ -310,4 +403,9 @@
   margin-top: 8px;
   color: var(--bh-text);
 }
-.bh-crosslink__go { font-family: var(--bh-mono); font-size: 13px; color: var(--bh-ice); white-space: nowrap; }
+.bh-crosslink__go {
+  font-family: var(--bh-mono);
+  font-size: 13px;
+  color: var(--bh-ice);
+  white-space: nowrap;
+}

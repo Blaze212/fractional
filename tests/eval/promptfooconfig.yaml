@@ -1,0 +1,66 @@
+# Promptfoo eval suite for the submittal-fit generation flow.
+# Run on-demand with `pnpm eval:submittal` (loads OPENAI_API_KEY from supabase/.env).
+# Not wired into CI — it hits the real OpenAI API and costs tokens.
+
+description: submittal-fit generation eval
+
+providers:
+  - id: file://provider.ts
+    label: submittal-fit
+
+prompts:
+  - 'Generate the submittal fit narrative for the supplied candidate and role.'
+
+tests:
+  - file://fixtures/bh-carmax-senior-swe.yaml
+  - file://fixtures/bh-ibm-ai-engineer.yaml
+  - file://fixtures/bh-scrum-master-gpu.yaml
+  - file://fixtures/rs-head-of-technology-atos.yaml
+  - file://fixtures/rs-vp-technology-blytzpay.yaml
+
+defaultTest:
+  assert:
+    # Structural: output must be valid JSON matching the FitResult shape.
+    - type: is-json
+    - type: javascript
+      value: 'output.fit_bullets?.length === 3'
+    - type: javascript
+      value: |
+        output.fit_bullets.every(b => typeof b.text === 'string' && typeof b.source_ref === 'string')
+    - type: javascript
+      value: |
+        output.key_qualifications?.length >= 3 && output.key_qualifications.length <= 5
+    - type: javascript
+      value: "typeof output.fit_summary === 'string' && output.fit_summary.trim().length > 0"
+
+    # Grounding: no invented numbers (mirrors findUnsupportedNumbers in submittal-fit.ts).
+    - type: javascript
+      value: |
+        const allText = [
+          output.fit_summary,
+          ...output.fit_bullets.map(b => b.text),
+          ...output.key_qualifications.map(b => b.text),
+        ].join(' ')
+        const normalize = s => s.toLowerCase().replace(/[$,\s]/g, '')
+        const tokens = (allText.toLowerCase().match(/\$?\d[\d,.]*\s?(?:%|k|m|b|x|million|billion)?/g) ?? [])
+          .map(m => normalize(m).replace(/[.+]+$/, ''))
+          .filter(m => /\d/.test(m))
+        const haystack = normalize(JSON.stringify(context.vars.parsed_profile))
+        return tokens.every(t => haystack.includes(t))
+
+    # Quality gate: LLM-as-judge pass/fail on the criteria a submittal MUST meet.
+    # Keep this list to true gates — `llm-rubric` reads every line as a
+    # requirement the OUTPUT must satisfy and fails the case if any is unmet.
+    - type: llm-rubric
+      value: |
+        The fit narrative must:
+        1. Contain no invented employers, titles, or metrics absent from the candidate profile
+        2. Avoid recruiting clichés ("results-driven", "proven track record", "passionate", "dynamic")
+        3. Use active, specific language with at most two sentences per bullet
+        4. The fit_summary must position the candidate for this specific role, not describe them generically
+
+    # Quality scorecard: per-category 1–10 judge scores with justifications.
+    # Diagnostic (does NOT fail the case); set EVAL_OVERALL_MIN to gate on Overall.
+    # Scores aggregate into per-metric averages in `npx promptfoo view`.
+    - type: javascript
+      value: file://scorecard.ts

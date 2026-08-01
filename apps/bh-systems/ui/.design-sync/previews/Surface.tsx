@@ -1,4 +1,4 @@
-import { Surface, SectionHeading, Button } from 'bh-systems-ui';
+import { Surface, SectionHeading, Button } from 'bh-systems-ui'
 
 export const Canvas = () => (
   <Surface>
@@ -8,7 +8,9 @@ export const Canvas = () => (
       description="Wrap any composition in Surface to inherit the theme."
     />
     <div style={{ marginTop: 28 }}>
-      <Button variant="primary" arrow>Book a call</Button>
+      <Button variant="primary" arrow>
+        Book a call
+      </Button>
     </div>
   </Surface>
-);
+)

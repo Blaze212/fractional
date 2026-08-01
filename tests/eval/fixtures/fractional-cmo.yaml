@@ -1,0 +1,58 @@
+description: 'Fractional CMO, thin/sparse profile, vague JD'
+
+vars:
+  client_name: Vandelay Industries
+  role_title: Fractional Chief Marketing Officer
+  jd_text: |
+    Vandelay Industries is looking for a fractional CMO to help shape its
+    go-to-market and brand. We want someone who can roll up their sleeves and
+    set marketing direction a few days a week.
+  parsed_profile:
+    name: Dana Cole
+    email: null
+    phone: null
+    location: Austin, TX
+    linkedin_url: null
+    current_title: Marketing Consultant
+    work_authorization: null
+    total_experience: '9 years'
+    summary: 'Marketing leader focused on early-stage go-to-market and brand positioning.'
+    seniority_level: Director
+    career_highlights:
+      - 'Set go-to-market strategy for two early-stage B2B startups'
+      - 'Repositioned a SaaS brand around a clearer value proposition'
+    selected_experience:
+      - company: Kruger Industrial
+        title: Head of Marketing
+        start_date: '2021-06'
+        end_date: Present
+        responsibilities:
+          - 'Owned brand, positioning, and go-to-market for an early-stage B2B product'
+          - 'Built the first content and demand-generation motion'
+        achievements:
+          - 'Launched the company brand and messaging from scratch'
+    other_experience: []
+    education:
+      - institution: University of Texas
+        degree: BA Communications
+    certifications: []
+    skills:
+      - Go-to-market
+      - Brand positioning
+      - Demand generation
+    tools:
+      - HubSpot
+    functional_areas:
+      - Marketing
+    industries:
+      - B2B SaaS
+
+assert:
+  # Grounding is the priority for the sparse profile: the model must stay honest.
+  - type: llm-rubric
+    value: |
+      The candidate profile is thin. The output must stay grounded: it makes no
+      claims, metrics, employers, or titles that are not present in the profile,
+      and does not pad the narrative with invented specifics to compensate for the
+      sparse input. Qualitative framing of the candidate's real go-to-market and
+      brand experience is acceptable and expected.

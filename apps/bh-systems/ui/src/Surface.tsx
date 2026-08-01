@@ -1,10 +1,10 @@
-import type { ReactNode } from 'react';
+import type { ReactNode } from 'react'
 
 export interface SurfaceProps {
   /** Content rendered on the navy canvas. */
-  children: ReactNode;
+  children: ReactNode
   /** Add comfortable padding around the content. Defaults to true. */
-  padded?: boolean;
+  padded?: boolean
 }
 
 /**
@@ -12,5 +12,5 @@ export interface SurfaceProps {
  * blueprint texture. Wrap any composition in Surface to get the theme.
  */
 export function Surface({ children, padded = true }: SurfaceProps) {
-  return <div className={`bh-surface${padded ? ' bh-surface--padded' : ''}`}>{children}</div>;
+  return <div className={`bh-surface${padded ? 'bh-surface--padded' : ''}`}>{children}</div>
 }

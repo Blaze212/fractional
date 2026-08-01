@@ -7,16 +7,17 @@ The fractional-practice brand for Barton Holdridge: a dark navy canvas, an edito
 Wrap every screen or section in `Surface`. It paints the navy background (`--bh-bg`), sets the base font and text color, and draws the blueprint grid. Components rendered outside a `Surface` sit on a bare background and lose the canvas.
 
 ```tsx
-import { Surface, SectionHeading, Button } from 'bh-systems-ui';
-
-<Surface>
+import { Surface, SectionHeading, Button } from 'bh-systems-ui'
+;<Surface>
   <SectionHeading
     eyebrow="What I do"
     title="Start with one workflow. Own the whole system."
     description="I make AI systems survive production and scale."
   />
   <div style={{ marginTop: 28 }}>
-    <Button variant="primary" arrow>Book a call</Button>
+    <Button variant="primary" arrow>
+      Book a call
+    </Button>
   </div>
 </Surface>
 ```
@@ -25,7 +26,7 @@ Fonts load automatically from a `@font-face` `@import` at the top of `styles.css
 
 ## Styling idiom — compose components, style layout with tokens
 
-Components carry their own styling; you do **not** pass CSS classes to them. Control them through their documented props (`variant`, `kicker`, `items`, `outcome`, …). For the layout *around* components (spacing, grids, one-off type), use the design tokens as `var(--*)` — never hard-code hexes or fonts:
+Components carry their own styling; you do **not** pass CSS classes to them. Control them through their documented props (`variant`, `kicker`, `items`, `outcome`, …). For the layout _around_ components (spacing, grids, one-off type), use the design tokens as `var(--*)` — never hard-code hexes or fonts:
 
 - Color: `--bh-bg`, `--bh-bg-2`, `--bh-panel`, `--bh-panel-2`, `--bh-text`, `--bh-muted`, `--bh-dim`, `--bh-royal`, `--bh-ice`, `--bh-on-royal`
 - Lines/edges: `--bh-line`, `--bh-line-2`, `--bh-radius` (6px)

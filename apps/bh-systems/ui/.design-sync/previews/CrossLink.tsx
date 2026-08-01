@@ -1,4 +1,4 @@
-import { CrossLink } from 'bh-systems-ui';
+import { CrossLink } from 'bh-systems-ui'
 
 export const ToCreators = () => (
   <CrossLink
@@ -7,4 +7,4 @@ export const ToCreators = () => (
     headline="I also build self-serve AI for coaches and creators."
     cta="For creators →"
   />
-);
+)

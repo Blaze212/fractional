@@ -1,0 +1,165 @@
+description: 'Revenue Operations leader, Director RevOps & Strategy at Harness'
+
+vars:
+  client_name: Harness
+  role_title: 'Director, Revenue Operations & Strategy'
+  jd_text: |
+    Harness (AI Software Delivery Platform, $5.5B valuation, $570M raised) is seeking a Director, Revenue Operations & Strategy.
+
+    The Revenue Operations & Strategy team blends high-level strategic thinking with on-the-ground execution. Works cross-functionally with sales, customer success, finance, product, and IT.
+
+    Key Responsibilities:
+
+    Operating Cadence & Governance:
+    - Design and run the GTM operating rhythm: QBRs, weekly forecast calls, pipeline reviews, and performance reviews across segments
+    - Define and enforce data, process, and governance standards so GTM data is reliable, auditable, and decision-ready
+    - Partner with Finance on revenue analytics, cohort performance, sales efficiency, and payback metrics
+    - Own territory mapping and routing plans, scaling for automated efficiency
+
+    Systems, Tooling & Data:
+    - Own and influence the GTM tech stack (Salesforce, CPQ, forecasting/BI, enablement, sequencing, enrichment, intent)
+    - Lead design and implementation of key integrations (AI adoption, enrichment, product usage, marketing automation)
+    - Partner with Data/Analytics to define core GTM dashboards and self-serve reporting
+    - Identify and deploy AI and automation opportunities including AI-assisted forecasting, intelligent lead/account scoring, automated workflows, and GenAI-powered enablement
+
+    Revenue Performance & Insights:
+    - Build analytics capability across segments, products, and channels
+    - Own funnel and lifecycle analysis (lead to opportunity to closed-won to adoption to expansion/renewal)
+    - Identify and quantify growth levers (pricing/packaging, mix shift, win rates, ramp times, capacity)
+    - Leverage AI/ML to surface predictive signals (churn risk, expansion propensity, deal health)
+
+    Leadership & Team Building:
+    - Build, lead, and develop a high-performing RevOps organization across strategy, analytics, and systems
+    - Act as trusted advisor to GTM, Finance, Product, and Executive leaders
+
+    About You:
+    - 10+ years of Operations & Strategy experience at high-growth technology companies
+    - Experience working with 100+ person sales organization
+    - Excellent communication skills with senior management
+    - Advanced analytical skills - proficient in modelling complex problems
+    - Experience designing sales & CS organizations
+    - Strong critical thinking and problem solving skills
+  parsed_profile:
+    name: Anthony DeLuca
+    email: deluca80@gmail.com
+    phone: '(323) 533-5709'
+    location: Santa Clara, CA
+    linkedin_url: linkedin.com/in/anthonydeluca1
+    current_title: Revenue Operations Director
+    work_authorization: No Sponsorship Required
+    total_experience: '15+ years'
+    summary: 'Revenue Operations leader with 15+ years of experience scaling GTM operations and analytics across SaaS and enterprise technology companies (such as Alteryx and Cisco). Proven track record of building revenue reporting, optimizing renewal and expansion motions, and improving territory and process design to drive predictable growth. Experienced leading cross-functional initiatives with Sales, Marketing, Finance, Data Science, and Customer Success stakeholders across matrixed organizations. Skilled in Salesforce governance, forecast and KPI dashboards, quote-to-cash optimization, and operating cadence design.'
+    seniority_level: Director
+    career_highlights:
+      - "Delivered $90M in first-year revenue by building a high-performing team, defining metrics, and aligning GTM execution for Cisco's ELA business."
+      - 'Captured $33M in post-sales revenue by turning software consumption reporting into targeted expansion actions.'
+      - 'Generated $23.8M in revenue at a 40% deal expansion rate by applying predictive analytics to prioritize growth opportunities.'
+      - 'Reduced churn 11% by launching an auto-renewal program with 90% self-service adoption, automating 800+ bookings worth $8.8M.'
+      - 'Simplified territory management 60% in five weeks by consolidating contracts and modernizing Salesforce workflows to speed coverage decisions.'
+    selected_experience:
+      - company: Alteryx, Inc.
+        title: Revenue Operations, Director
+        start_date: '2021-01'
+        end_date: '2024-01'
+        responsibilities:
+          - 'Led GTM operations for a $900M ARR data platform business, supporting scalable revenue execution across the customer lifecycle.'
+          - 'Owned revenue analytics, seller dashboards, and performance reporting to improve visibility into productivity and GTM health.'
+          - 'Partnered with Sales, Marketing, Data Science, and Finance to align renewal, expansion, and process priorities.'
+          - 'Directed territory design, contract workflows, and Salesforce process governance to improve coverage and operating rigor.'
+        achievements:
+          - 'Reduced churn 11% by launching an auto-renewal program with 90% self-service adoption, automating 800+ bookings worth $8.8M.'
+          - 'Cut quoting time 17% by leading a cross-functional sales process modernization initiative that streamlined quote-to-cash workflows.'
+          - 'Generated a 40% deal expansion rate and $23.8M in revenue by applying analytics and predictive modeling to growth opportunities.'
+          - 'Simplified territory management 60% in five weeks by consolidating contracts and modernizing Salesforce workflows with customer data analytics.'
+      - company: Cisco Systems, Inc.
+        title: Business Operations, GTM Strategy and Operations Manager
+        start_date: '2016-01'
+        end_date: '2020-01'
+        responsibilities:
+          - "Led pricing and post-sales operations for Cisco's ELA business, supporting software agreement revenue that reached $90M in the first year."
+          - 'Owned quote-to-cash and licensing workflows for enterprise software agreements.'
+          - 'Built executive dashboards and software consumption reporting to track revenue KPIs.'
+          - 'Established governance models, performance metrics, and operating cadences for GTM decisions.'
+        achievements:
+          - 'Delivered $90M in first-year revenue by building a high-performing team, defining performance metrics, and aligning GTM stakeholders.'
+          - 'Captured $33M in post-sales revenue by turning GTM plans and consumption insights into expansion actions.'
+          - 'Increased customer volume 300% by leading development of a self-service licensing portal.'
+      - company: Cisco Systems, Inc.
+        title: Channel GTM Operations, Business Development Manager
+        start_date: '2012-01'
+        end_date: '2016-01'
+        responsibilities:
+          - "Supported partner-led GTM for Cisco's Service Provider business across a global partner ecosystem."
+          - 'Served as liaison across sales, partner, and operations teams to align alliance launches, acquisition integrations, and channel plans.'
+          - 'Designed partner operating models and quote-to-cash workflows to scale channel execution.'
+          - 'Built analytics and reporting to track partner program performance and support channel decisions.'
+        achievements:
+          - 'Generated $30M+ in bookings within 8 months by leading quote-to-cash design and operations integration for the Cisco-Ericsson alliance.'
+          - 'Increased partner contribution to Cisco SP business from 47% to 58% by optimizing partner-led GTM programs.'
+          - 'Trained 1,000+ partner employees across 15+ programs by coaching SMEs and developing partner-facing enablement content.'
+    other_experience:
+      - company: Trianz Consulting
+        title: Strategic Programs Senior Manager
+        start_date: '2007-01'
+        end_date: '2011-01'
+    education:
+      - institution: University of Southern California, Marshall School of Business
+        degree: Master of Business Administration
+      - institution: University of California, Los Angeles
+        degree: Bachelor of Arts in Philosophy and English
+    certifications: []
+    skills:
+      - Revenue Operations
+      - GTM Analytics
+      - Forecasting & Pipeline Management
+      - Renewal & Churn Strategy
+      - Quote-to-Cash Operations
+      - Territory & Capacity Planning
+      - Pricing & Expansion Strategy
+      - Data Governance
+      - Executive KPI Design
+      - GTM Automation Strategy
+    tools:
+      - Salesforce CPQ
+    functional_areas:
+      - Revenue Operations
+      - GTM Strategy
+      - Sales Operations
+      - Analytics & Reporting
+    industries:
+      - SaaS
+      - Enterprise Technology
+
+assert:
+  # Strong fit: quantified revenue impact is the core of the narrative — must be referenced
+  - type: javascript
+    value: |
+      const all = (
+        (output.fit_summary || '') + ' ' +
+        (output.fit_bullets || []).map(b => b.text).join(' ')
+      ).toLowerCase()
+      return (
+        all.includes('900') || all.includes('90m') || all.includes('23.8') ||
+        all.includes('33m') || all.includes('8.8') || all.includes('churn') ||
+        all.includes('expansion')
+      )
+  # AI/ML tooling is not in the profile as hands-on experience — must not be fabricated
+  - type: javascript
+    value: |
+      const all = (
+        (output.fit_summary || '') + ' ' +
+        (output.fit_bullets || []).map(b => b.text).join(' ')
+      ).toLowerCase()
+      const fabricated = ['ai-assisted forecasting', 'genai', 'gen ai', 'large language model', 'llm', 'ai/ml tool']
+      return !fabricated.some(p => all.includes(p))
+  # Quality: leads with RevOps depth at scale, no vague leadership filler, no invented tooling
+  - type: llm-rubric
+    value: |
+      The narrative leads confidently with DeLuca's RevOps depth at scale — specifically
+      referencing his $900M ARR experience at Alteryx, the Cisco ELA $90M first-year
+      revenue, predictive analytics driving 40% deal expansion and $23.8M, and the
+      auto-renewal program churn reduction. It does not pad with vague leadership language
+      and does not fabricate specific AI/ML tool experience (AI-assisted forecasting platforms,
+      GenAI tooling) absent from his profile. His 'GTM Automation Strategy' skill may be
+      acknowledged, but no specific AI/ML tools should be invented or overstated as
+      hands-on product experience.

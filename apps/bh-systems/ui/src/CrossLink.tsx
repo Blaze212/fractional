@@ -1,14 +1,14 @@
-import type { ReactNode } from 'react';
+import type { ReactNode } from 'react'
 
 export interface CrossLinkProps {
   /** Small uppercase lead-in, often a question. */
-  lead?: ReactNode;
+  lead?: ReactNode
   /** The main serif line. */
-  headline: ReactNode;
+  headline: ReactNode
   /** Call-to-action label at the right, e.g. "For creators →". */
-  cta: ReactNode;
+  cta: ReactNode
   /** Destination URL. */
-  href: string;
+  href: string
 }
 
 /** A full-width banner linking to another page or audience: lead-in, serif headline, right-aligned CTA, with an ice left rule. */
@@ -23,5 +23,5 @@ export function CrossLink({ lead, headline, cta, href }: CrossLinkProps) {
         <span className="bh-crosslink__go">{cta}</span>
       </a>
     </div>
-  );
+  )
 }

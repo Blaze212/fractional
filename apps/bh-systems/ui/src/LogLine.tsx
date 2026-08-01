@@ -1,10 +1,10 @@
-import type { ReactNode } from 'react';
+import type { ReactNode } from 'react'
 
 export interface LogLineProps {
   /** Short status tag shown in ice, e.g. "warn", "stuck", "wait". */
-  tag: string;
+  tag: string
   /** The log message. */
-  children: ReactNode;
+  children: ReactNode
 }
 
 /** One line inside a LogPanel: a colored status tag followed by a monospace message. */
@@ -14,5 +14,5 @@ export function LogLine({ tag, children }: LogLineProps) {
       <span className="bh-obs__tag">{tag}</span>
       <span>{children}</span>
     </div>
-  );
+  )
 }

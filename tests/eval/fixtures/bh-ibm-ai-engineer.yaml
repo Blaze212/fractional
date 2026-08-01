@@ -1,0 +1,187 @@
+description: 'Senior AI Engineer at IBM Consulting — strong AI engineering depth, Azure platform gap'
+
+vars:
+  client_name: IBM Consulting
+  role_title: Senior AI Engineer
+  jd_text: |
+    IBM Consulting is seeking a skilled AI Engineer for an active enterprise AI engagement
+    in a hands-on, client-facing capacity. Senior individual contributor role requiring deep
+    technical proficiency in Agentic AI. Will operate independently, interact directly with
+    the client, and deliver with minimal oversight. Focus on building, fine-tuning, and
+    operationalizing AI solutions on Azure.
+
+    What you will do:
+    - Design, build, and deploy agentic AI workflows and multi-agent systems using Azure OpenAI and supporting frameworks
+    - Develop and optimize prompt engineering strategies to maximize model performance and reliability
+    - Build and maintain Retrieval-Augmented Generation (RAG) pipelines for grounded, context-aware AI responses
+    - Implement agent orchestration patterns including tool calling, memory management, and human-in-the-loop workflows
+    - Engage directly with client stakeholders to gather requirements, demo capabilities, and walk through technical solutions
+    - Communicate clearly on progress, blockers, and technical tradeoffs
+    - Deploy and manage AI models using Azure ML, Azure AI Studio, or equivalent Azure services
+    - Integrate AI capabilities into enterprise applications via APIs, event-driven pipelines, and microservices
+    - Establish monitoring, evaluation, and feedback loops for ongoing model performance in production
+    - Ensure solutions meet enterprise standards for security, scalability, and compliance
+
+    Required:
+    - 7+ years designing, developing, and deploying scalable AI applications leveraging LLMs, RAG architectures, and agentic AI workflows
+    - Build and operationalize AI orchestration pipelines using LangChain and LangGraph
+    - Develop AI agents capable of tool calling, contextual retrieval, memory/state management, multi-agent coordination, and autonomous workflow execution
+    - Implement MCP (Model Context Protocol) integration patterns
+    - CI/CD, LLMOps/MLOps, and cloud-native deployment practices
+
+    Preferred:
+    - LangChain, LangGraph, AutoGen, Semantic Kernel, or CrewAI experience
+    - Vector databases (Azure AI Search, Pinecone, Weaviate)
+    - Enterprise integration patterns connecting AI to CRMs, ERPs, or data platforms
+    - Master's Degree preferred
+  parsed_profile:
+    name: Barton Holdridge
+    email: bartonholdridge@gmail.com
+    phone: '817-676-2145'
+    location: 'Dallas, TX 75216'
+    linkedin_url: linkedin.com/in/barton-holdridge
+    current_title: Fractional AI Engineer
+    work_authorization: No Sponsorship Required
+    total_experience: '10+ years'
+    summary: >-
+      Software Engineer with 10+ years of experience building and deploying cloud-native AI
+      and backend systems across IT, Insurtech, Manufacturing, and Government Defense sectors
+      for mid-size and Fortune 500 companies (such as Amazon AWS and Lockheed Martin). Proven
+      track record of designing distributed microservice architectures, shipping LLM-powered
+      workflows end-to-end, and scaling backend services to 99.9%+ availability supporting
+      1M+ users and $100B+ in revenue. Experienced partnering with cross-functional teams
+      across Engineering, Product, and senior leadership to align system architecture with
+      business goals. Skilled in agent orchestration, CI/CD pipeline automation, performance
+      optimization, and observability tooling to drive reliability, engineering velocity, and
+      AI output quality.
+    seniority_level: Senior
+    career_highlights:
+      - 'Increased concurrent workflow throughput 10x by redesigning SQL architecture, introducing async workflows, and decomposing core services into microservices.'
+      - 'Reduced manual claims review effort ~70% by designing and implementing an AI-driven document processing pipeline for +$100M in insurance claims.'
+      - 'Increased control plane service TPS 600% by profiling and resolving bottlenecks in dependency services across 30+ AWS regions.'
+      - 'Completed zero-downtime security upgrades across 2,500 hosts by upgrading 10 microservices with staged rollouts and deployment safeguards.'
+      - 'Accelerated engineer ramp time for 4 new engineers by establishing code review cadences, enforcing engineering standards, and mentoring across multiple microservices.'
+    selected_experience:
+      - company: TurboClaim
+        title: Fractional AI Engineer
+        start_date: '2025-01'
+        end_date: Present
+        responsibilities:
+          - 'Built and operated an AI-powered multi-tenant SaaS platform processing +$100M in insurance claims, serving as the sole technical decision-maker in a 0-to-1 environment'
+          - 'Designed and maintained backend APIs, microservices, async workflows, and third-party integrations supporting end-to-end insurance claims automation'
+          - 'Defined system architecture and technical strategy to balance speed, cost, and scalability across AI-driven workflows and cloud infrastructure'
+          - 'Contributed to technical design documentation and implemented business logic, data models, and third-party integrations for AI-driven claims processing features'
+        achievements:
+          - 'Reduced manual claims review effort ~70% by designing and implementing an AI-driven document processing pipeline for +$100M in insurance claims'
+          - 'Increased concurrent workflow throughput 10x by redesigning SQL architecture, introducing async workflows, and decomposing core services into microservices'
+          - 'Improved AI workflow success rate to 95% across multi-minute document-processing jobs by implementing durable Temporal orchestration with retries, idempotency, and failure recovery'
+          - 'Reduced mean time to deploy 80% in 90 days by provisioning ECS/RDS and building CI/CD pipelines on AWS'
+      - company: Amazon AWS
+        title: Software Engineer II
+        start_date: '2022-01'
+        end_date: '2025-01'
+        responsibilities:
+          - 'Engineered backend services across 30+ AWS regions, supporting 2,500+ hosts at 99.9%+ availability'
+          - 'Designed and maintained distributed microservice architectures with fault-tolerant patterns and safeguards for cloud infrastructure provisioning'
+          - 'Monitored production systems via on-call rotations, investigated incidents, and implemented long-term reliability fixes'
+          - 'Mentored 4 engineers across multiple microservices through code reviews and engineering standards'
+          - 'Contributed to technical design discussions for new features, services, and architectural changes'
+        achievements:
+          - 'Completed zero-downtime security upgrades across 2,500 hosts by upgrading 10 microservices with staged rollouts and deployment safeguards'
+          - 'Increased control plane service TPS 600% by profiling and resolving bottlenecks in dependency services across 30+ AWS regions'
+          - 'Reduced account creation time 50% by architecting a CI/CD pipeline managing accounts and permissions across 30+ regions'
+          - 'Saved 1 year of Dev effort by standardizing launch plans, owners, and readiness reviews across 5 teams'
+          - 'Reduced on-call weekly reporting effort 50% by building a tool linking service faults to tickets, graph overlays, and logs'
+      - company: Lockheed Martin
+        title: Senior Software Engineer
+        start_date: '2017-01'
+        end_date: '2022-01'
+        responsibilities:
+          - 'Developed full-stack software for an $80M ground-based radar contract across the full software lifecycle'
+          - 'Wrote clean, tested, and maintainable code; conducted code reviews and pair programming to mentor junior engineers'
+          - 'Collaborated with systems, test, and program teams to refine requirements and deliver iterative features via Agile sprint cycles'
+          - 'Contributed to technical design discussions and documentation for radar tracking features'
+        achievements:
+          - 'Promoted 2x within 5 years to Senior Software Engineer'
+          - 'Increased automated test pass rate from 50% to greater than 90% in 8 weeks by diagnosing and rebuilding an unpredictable test pipeline'
+          - 'Reduced bug fix implementation time 30% by creating a CI pipeline using Git, Jenkins, and computer vision to automate testing and report generation'
+          - 'Cut integration test time 10% by automating launch and teardown workflows for 10+ applications'
+    other_experience: []
+    education:
+      - institution: University of Dallas
+        degree: Bachelor of Science, Computer Science
+    certifications: []
+    skills:
+      - Distributed Systems Design
+      - LLM Integration & Agent Orchestration
+      - Scalable API Design
+      - Cloud Infrastructure & IaC
+      - CI/CD Pipelines
+      - Microservices Architecture
+      - Automated Testing & Reliability Engineering
+      - Observability & Monitoring
+      - Prompt Engineering & RAG
+    tools:
+      - Python
+      - TypeScript
+      - Java
+      - ECS
+      - RDS
+      - DynamoDB
+      - SQS
+      - SNS
+      - CDK
+      - Docker
+      - Claude Code
+      - Codex
+      - AWS
+      - Postgres
+      - Supabase
+      - Cloudformation
+    functional_areas:
+      - AI Engineering
+      - Backend Engineering
+      - Distributed Systems
+      - DevOps / CI/CD
+    industries:
+      - Insurtech
+      - Cloud Infrastructure
+      - Government Defense
+      - Manufacturing
+
+assert:
+  # Azure-specific services are not in the profile — output must not fabricate them
+  - type: javascript
+    value: |
+      const text = (
+        (output.fit_summary || '') + ' ' +
+        (output.fit_bullets || []).map(b => b.text || '').join(' ')
+      ).toLowerCase()
+      const azureSpecific = ['azure openai', 'azure ml', 'azure ai studio', 'azure machine learning']
+      return !azureSpecific.some(phrase => text.includes(phrase))
+  # Agentic AI and LLM work IS in the profile — must be referenced
+  - type: javascript
+    value: |
+      const text = (
+        (output.fit_summary || '') + ' ' +
+        (output.fit_bullets || []).map(b => b.text || '').join(' ')
+      ).toLowerCase()
+      return (
+        text.includes('agentic') ||
+        text.includes('llm') ||
+        text.includes('ai pipeline') ||
+        text.includes('agent orchestration') ||
+        text.includes('document processing') ||
+        text.includes('ai workflow')
+      )
+  # Quality: leads with AI depth, handles Azure gap honestly
+  - type: llm-rubric
+    value: |
+      The narrative honestly leads with Barton's strong AI engineering depth — agentic
+      workflows, LLM integration, RAG, prompt engineering, and cloud-native CI/CD — without
+      fabricating or implying Azure-specific experience (Azure OpenAI, Azure ML, or Azure AI
+      Studio) that does not appear in his profile. It positions him as a strong AI engineer
+      with deep AWS cloud and distributed-systems experience whose skills are transferable to
+      Azure, rather than presenting him as an Azure specialist. The platform gap is either
+      acknowledged candidly or handled by framing his cloud skills as broadly applicable,
+      but the output does not assert Azure expertise he does not have.

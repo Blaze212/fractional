@@ -1,4 +1,4 @@
-import { StatBand } from 'bh-systems-ui';
+import { StatBand } from 'bh-systems-ui'
 
 export const CredibilityBand = () => (
   <StatBand
@@ -11,4 +11,4 @@ export const CredibilityBand = () => (
       { value: '10+', label: 'years shipping production software' },
     ]}
   />
-);
+)

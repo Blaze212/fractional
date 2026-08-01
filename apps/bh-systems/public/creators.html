@@ -1,245 +1,398 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>bh-systems · Self-Serve AI for Creators · Barton Holdridge</title>
-  <meta name="description" content="Fractional AI engineer for coaches, course creators, and community founders. I build one AI tool that does a piece of your hands-on work, so every member gets a result without waiting on you." />
-  <meta name="theme-color" content="#0a1120" />
-  <script>document.documentElement.className += ' js';</script>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>bh-systems · Self-Serve AI for Creators · Barton Holdridge</title>
+    <meta
+      name="description"
+      content="Fractional AI engineer for coaches, course creators, and community founders. I build one AI tool that does a piece of your hands-on work, so every member gets a result without waiting on you."
+    />
+    <meta name="theme-color" content="#0a1120" />
+    <script>
+      document.documentElement.className += ' js'
+    </script>
 
-  <meta property="og:title" content="bh-systems · Self-Serve AI for Creators" />
-  <meta property="og:description" content="Your best coaching, minus your calendar." />
-  <meta property="og:type" content="website" />
+    <meta property="og:title" content="bh-systems · Self-Serve AI for Creators" />
+    <meta property="og:description" content="Your best coaching, minus your calendar." />
+    <meta property="og:type" content="website" />
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=IBM+Plex+Sans:wght@400;450;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=IBM+Plex+Sans:wght@400;450;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
 
-  <!-- Booking: all "Book a call" buttons open the Google Calendar link
+    <!-- Booking: all "Book a call" buttons open the Google Calendar link
        https://calendar.app.google/9HCGPEChEqgXxcAj8 in a new tab. -->
-</head>
-<body>
-<div class="wrap">
-
-  <header id="hdr">
-    <div class="container nav">
-      <a class="brand" href="index.html" aria-label="bh-systems home"><span class="m">/</span><b>bh-systems</b></a>
-      <nav class="nav-links">
-        <a href="#problem">The problem</a>
-        <a href="#offers">What I do</a>
-        <a href="#work">Work</a>
-        <a href="#about">About</a>
-        <span class="nav-sep"></span>
-        <a class="alt" href="index.html">AI reliability →</a>
-        <a class="nav-cta" href="https://calendar.app.google/9HCGPEChEqgXxcAj8" target="_blank" rel="noopener">Book a call</a>
-      </nav>
-      <button class="menu-btn" id="menuBtn" aria-label="Jump to what I do">Menu</button>
-    </div>
-  </header>
-
-  <main id="top">
-
-    <!-- HERO -->
-    <section class="hero container">
-      <span class="eyebrow">Self-Serve AI for Creators · Fractional · Dallas, TX</span>
-      <h1>Your best coaching, <span class="hl">minus your calendar.</span></h1>
-      <p class="lede">You hit the time ceiling: getting a member a result still requires you, personally. <b>I build one AI tool that does a piece of that work, so your community gets unstuck without waiting on your calendar.</b></p>
-      <div class="hero-cta">
-        <a class="btn btn-primary" href="https://calendar.app.google/9HCGPEChEqgXxcAj8" target="_blank" rel="noopener">Book a 30-min call <span class="arrow">→</span></a>
-        <a class="btn btn-ghost" href="#work">See the work</a>
-      </div>
-      <p class="hero-sub">Built inside Skool, Circle, or Kajabi · Career Systems · TurboClaim · AWS</p>
-
-      <div class="stats reveal">
-        <div class="stat"><div class="num">99.9%+</div><div class="lbl">uptime across 2,500 hosts and 30+ AWS regions</div></div>
-        <div class="stat"><div class="num">$100M+</div><div class="lbl">in claims processed by AI pipelines I built and keep running</div></div>
-        <div class="stat"><div class="num">10×</div><div class="lbl">concurrent workflow throughput after re-architecting</div></div>
-        <div class="stat"><div class="num">600%</div><div class="lbl">control-plane TPS increase after clearing bottlenecks</div></div>
-        <div class="stat"><div class="num">0</div><div class="lbl">downtime on security upgrades across 2,500 hosts</div></div>
-        <div class="stat"><div class="num">10+</div><div class="lbl">years shipping production software</div></div>
-      </div>
-    </section>
-
-    <!-- PROBLEM -->
-    <section id="problem" class="container">
-      <div class="sec-head reveal">
-        <span class="eyebrow">The problem you actually have</span>
-        <h2>You're the bottleneck, and you can feel it.</h2>
-        <p>Getting a member a result is what people pay you for. The trouble is it still runs through you, and there's only one of you.</p>
-      </div>
-
-      <div class="panel reveal">
-        <div class="panel-bar"><span class="label">support-queue.log</span></div>
-        <div class="panel-body">
-          <p>You launched the community, the course, the membership. People joined. And now the work that gets them results piles up on your desk:</p>
-          <div class="obs"><span class="t">stuck</span><span>a member stalls on step two and quietly churns</span></div>
-          <div class="obs"><span class="t">again</span><span>you answer the same question for the tenth time this week</span></div>
-          <div class="obs"><span class="t">wait</span><span>onboarding sits idle because it needs your eyes</span></div>
-          <p style="margin-top:16px;">You could hire a support person, or you could build the part of the work that doesn't need to be you. I build one AI tool that does a real piece of your hands-on coaching, runs where your members already are, and holds up when you're not watching. <b>That's the gap I fill.</b></p>
+  </head>
+  <body>
+    <div class="wrap">
+      <header id="hdr">
+        <div class="nav container">
+          <a class="brand" href="index.html" aria-label="bh-systems home"
+            ><span class="m">/</span><b>bh-systems</b></a
+          >
+          <nav class="nav-links">
+            <a href="#problem">The problem</a>
+            <a href="#offers">What I do</a>
+            <a href="#work">Work</a>
+            <a href="#about">About</a>
+            <span class="nav-sep"></span>
+            <a class="alt" href="index.html">AI reliability →</a>
+            <a
+              class="nav-cta"
+              href="https://calendar.app.google/9HCGPEChEqgXxcAj8"
+              target="_blank"
+              rel="noopener"
+              >Book a call</a
+            >
+          </nav>
+          <button class="menu-btn" id="menuBtn" aria-label="Jump to what I do">Menu</button>
         </div>
-      </div>
-    </section>
+      </header>
 
-    <!-- WHAT I DO -->
-    <section id="offers" class="container">
-      <div class="sec-head reveal">
-        <span class="eyebrow">What I do</span>
-        <h2>Build one tool that gets a member a result without you.</h2>
-        <p>I turn a piece of your by-hand coaching into a tool members run themselves. It starts with a short, fixed-fee sprint, so you feel the value before any longer commitment.</p>
-      </div>
-
-      <div class="tracks">
-        <div class="track reveal">
-          <div class="tnum">THE SPRINT</div>
-          <h3>Self-Serve Tool Sprint</h3>
-          <div class="who">2–3 week fixed-fee sprint</div>
-          <p class="desc">Pick the one piece of your hands-on work that eats the most time, and turn it into a tool your members run themselves.</p>
-          <ul>
-            <li>Build a member's plan from your method, automatically</li>
-            <li>Grade their work against your framework and route the next step</li>
-            <li>Runs inside Skool, Circle, or Kajabi, where your people already are</li>
-            <li>Ships with a plain-English how-to and handles errors</li>
-            <li>A working tool at the end, tested on a real non-technical user</li>
-          </ul>
-        </div>
-
-        <div class="track reveal">
-          <div class="tnum">ONGOING</div>
-          <h3>Build the backlog</h3>
-          <div class="who">Monthly retainer</div>
-          <p class="desc">One tool frees your time and shows you the next three worth building.</p>
-          <ul>
-            <li>Turn more of your by-hand coaching into tools members run themselves</li>
-            <li>Keep the tools running and incrementally improving them</li>
-            <li>Add short lessons and demo workspaces so members actually adopt them</li>
-            <li>Keep it self-serve, so you stay out of the loop</li>
-          </ul>
-        </div>
-      </div>
-      <p class="hero-sub" style="margin-top:22px;">Fees depend on scope. We size it together on the first call.</p>
-    </section>
-
-    <!-- WORK -->
-    <section id="work" class="container">
-      <div class="sec-head reveal">
-        <span class="eyebrow">Selected work</span>
-        <h2>I build this for a living, then keep it running.</h2>
-        <p>The tools I'd build for your community, and the reliability habits that keep them from breaking on you.</p>
-      </div>
-
-      <div class="work">
-        <div class="case reveal">
-          <div class="top"><span class="co">Career Systems</span><span class="kind">Coaching · Product</span></div>
-          <p>I build the AI at Career Systems, a coaching and digital-product business. My whole job is turning coaching systems into AI tools members run themselves: rewriting a resume into a standard format, generating and grading outreach messages, and a Chrome plugin that tracks a member's job search automatically.</p>
-          <p class="outcome">Coaching that used to need a 1:1 call now runs <b>self-serve</b>, so more members get a result without waiting on a calendar.</p>
-        </div>
-
-        <div class="case reveal">
-          <div class="top"><span class="co">TurboClaim</span><span class="kind">AI · Reliability</span></div>
-          <p>Built an AI platform processing $100M+ in insurance claims and made its multi-minute AI jobs trustworthy with durable orchestration: retries, idempotency, recovery. The reason it matters to you: the tools I build for your members don't fail silently.</p>
-          <p class="outcome"><b>95% success</b> on AI jobs that used to fail in the dark.</p>
-        </div>
-
-        <div class="case reveal">
-          <div class="top"><span class="co">Amazon AWS</span><span class="kind">Cloud · Scale</span></div>
-          <p>Built and maintained the AWS SSO Control Plane service across 2,500 hosts at 99.9%+ uptime, with staged rollouts and monitoring. The habits from hyperscale are the same ones that keep a member-facing tool from falling over the week you go on vacation.</p>
-          <p class="outcome">The tool still works on a Sunday when <b>you're offline</b>.</p>
-        </div>
-      </div>
-    </section>
-
-    <!-- ABOUT -->
-    <section id="about" class="container">
-      <div class="sec-head reveal">
-        <span class="eyebrow">About</span>
-        <h2>Barton Holdridge</h2>
-      </div>
-      <div class="about-grid">
-        <div class="reveal">
-          <p>I'm a software engineer with 10+ years building cloud-native AI and backend systems, from Fortune 500 scale at Amazon AWS to a 0-to-1 AI platform at TurboClaim. I also build the AI at Career Systems, so I work with coaches and communities every day.</p>
-          <p>What I want to be known for: making AI genuinely useful for people who aren't technical. <b>Real tools a busy person can use on Monday and see a result by Friday.</b> Not demos that look cool and do nothing.</p>
-          <p>I take a capped number of fractional engagements so the work stays deep. If getting your members a result still requires you personally, that's my zone.</p>
-        </div>
-        <div class="cred reveal">
-          <div class="row"><span class="k">Based</span><span class="v">Dallas, TX</span></div>
-          <div class="row"><span class="k">Focus</span><span class="v">Self-serve AI for creators</span></div>
-          <div class="row"><span class="k">Builds on</span><span class="v">Skool · Circle · Kajabi</span></div>
-          <div class="row"><span class="k">Stack</span><span class="v">Claude · Supabase · TypeScript</span></div>
-          <div class="row"><span class="k">Done means</span><span class="v">A member uses it without you</span></div>
-          <div class="row"><span class="k">Availability</span><span class="v">Fractional, limited slots</span></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- CROSS-LINK -->
-    <section class="container" style="padding-top:0;">
-      <div class="crosslink reveal">
-        <a href="index.html">
-          <div>
-            <div class="lead">Already shipped AI and watching it misbehave?</div>
-            <div class="big">I also harden AI systems for reliability and scale.</div>
+      <main id="top">
+        <!-- HERO -->
+        <section class="hero container">
+          <span class="eyebrow">Self-Serve AI for Creators · Fractional · Dallas, TX</span>
+          <h1>Your best coaching, <span class="hl">minus your calendar.</span></h1>
+          <p class="lede">
+            You hit the time ceiling: getting a member a result still requires you, personally.
+            <b
+              >I build one AI tool that does a piece of that work, so your community gets unstuck
+              without waiting on your calendar.</b
+            >
+          </p>
+          <div class="hero-cta">
+            <a
+              class="btn btn-primary"
+              href="https://calendar.app.google/9HCGPEChEqgXxcAj8"
+              target="_blank"
+              rel="noopener"
+              >Book a 30-min call <span class="arrow">→</span></a
+            >
+            <a class="btn btn-ghost" href="#work">See the work</a>
           </div>
-          <span class="go">AI reliability →</span>
-        </a>
-      </div>
-    </section>
+          <p class="hero-sub">
+            Built inside Skool, Circle, or Kajabi · Career Systems · TurboClaim · AWS
+          </p>
 
-    <!-- CTA -->
-    <section id="book" class="container">
-      <div class="cta reveal">
-        <span class="eyebrow" style="justify-content:center;">Let's talk</span>
-        <h2>What would you build if you weren't <em>the bottleneck?</em></h2>
-        <p>Book a 30-minute call. Tell me where your members get stuck waiting on you. If AI can take that off your plate, I'll show you how. If it can't, I'll tell you that too.</p>
-        <div class="cta-btns">
-          <a class="btn btn-primary" href="https://calendar.app.google/9HCGPEChEqgXxcAj8" target="_blank" rel="noopener">Book a call <span class="arrow">→</span></a>
-          <a class="btn btn-ghost" href="mailto:barton@bh-systems.com">Email me directly</a>
+          <div class="stats reveal">
+            <div class="stat">
+              <div class="num">99.9%+</div>
+              <div class="lbl">uptime across 2,500 hosts and 30+ AWS regions</div>
+            </div>
+            <div class="stat">
+              <div class="num">$100M+</div>
+              <div class="lbl">in claims processed by AI pipelines I built and keep running</div>
+            </div>
+            <div class="stat">
+              <div class="num">10×</div>
+              <div class="lbl">concurrent workflow throughput after re-architecting</div>
+            </div>
+            <div class="stat">
+              <div class="num">600%</div>
+              <div class="lbl">control-plane TPS increase after clearing bottlenecks</div>
+            </div>
+            <div class="stat">
+              <div class="num">0</div>
+              <div class="lbl">downtime on security upgrades across 2,500 hosts</div>
+            </div>
+            <div class="stat">
+              <div class="num">10+</div>
+              <div class="lbl">years shipping production software</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- PROBLEM -->
+        <section id="problem" class="container">
+          <div class="sec-head reveal">
+            <span class="eyebrow">The problem you actually have</span>
+            <h2>You're the bottleneck, and you can feel it.</h2>
+            <p>
+              Getting a member a result is what people pay you for. The trouble is it still runs
+              through you, and there's only one of you.
+            </p>
+          </div>
+
+          <div class="panel reveal">
+            <div class="panel-bar"><span class="label">support-queue.log</span></div>
+            <div class="panel-body">
+              <p>
+                You launched the community, the course, the membership. People joined. And now the
+                work that gets them results piles up on your desk:
+              </p>
+              <div class="obs">
+                <span class="t">stuck</span
+                ><span>a member stalls on step two and quietly churns</span>
+              </div>
+              <div class="obs">
+                <span class="t">again</span
+                ><span>you answer the same question for the tenth time this week</span>
+              </div>
+              <div class="obs">
+                <span class="t">wait</span
+                ><span>onboarding sits idle because it needs your eyes</span>
+              </div>
+              <p style="margin-top: 16px">
+                You could hire a support person, or you could build the part of the work that
+                doesn't need to be you. I build one AI tool that does a real piece of your hands-on
+                coaching, runs where your members already are, and holds up when you're not
+                watching. <b>That's the gap I fill.</b>
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- WHAT I DO -->
+        <section id="offers" class="container">
+          <div class="sec-head reveal">
+            <span class="eyebrow">What I do</span>
+            <h2>Build one tool that gets a member a result without you.</h2>
+            <p>
+              I turn a piece of your by-hand coaching into a tool members run themselves. It starts
+              with a short, fixed-fee sprint, so you feel the value before any longer commitment.
+            </p>
+          </div>
+
+          <div class="tracks">
+            <div class="track reveal">
+              <div class="tnum">THE SPRINT</div>
+              <h3>Self-Serve Tool Sprint</h3>
+              <div class="who">2–3 week fixed-fee sprint</div>
+              <p class="desc">
+                Pick the one piece of your hands-on work that eats the most time, and turn it into a
+                tool your members run themselves.
+              </p>
+              <ul>
+                <li>Build a member's plan from your method, automatically</li>
+                <li>Grade their work against your framework and route the next step</li>
+                <li>Runs inside Skool, Circle, or Kajabi, where your people already are</li>
+                <li>Ships with a plain-English how-to and handles errors</li>
+                <li>A working tool at the end, tested on a real non-technical user</li>
+              </ul>
+            </div>
+
+            <div class="track reveal">
+              <div class="tnum">ONGOING</div>
+              <h3>Build the backlog</h3>
+              <div class="who">Monthly retainer</div>
+              <p class="desc">
+                One tool frees your time and shows you the next three worth building.
+              </p>
+              <ul>
+                <li>Turn more of your by-hand coaching into tools members run themselves</li>
+                <li>Keep the tools running and incrementally improving them</li>
+                <li>Add short lessons and demo workspaces so members actually adopt them</li>
+                <li>Keep it self-serve, so you stay out of the loop</li>
+              </ul>
+            </div>
+          </div>
+          <p class="hero-sub" style="margin-top: 22px">
+            Fees depend on scope. We size it together on the first call.
+          </p>
+        </section>
+
+        <!-- WORK -->
+        <section id="work" class="container">
+          <div class="sec-head reveal">
+            <span class="eyebrow">Selected work</span>
+            <h2>I build this for a living, then keep it running.</h2>
+            <p>
+              The tools I'd build for your community, and the reliability habits that keep them from
+              breaking on you.
+            </p>
+          </div>
+
+          <div class="work">
+            <div class="case reveal">
+              <div class="top">
+                <span class="co">Career Systems</span><span class="kind">Coaching · Product</span>
+              </div>
+              <p>
+                I build the AI at Career Systems, a coaching and digital-product business. My whole
+                job is turning coaching systems into AI tools members run themselves: rewriting a
+                resume into a standard format, generating and grading outreach messages, and a
+                Chrome plugin that tracks a member's job search automatically.
+              </p>
+              <p class="outcome">
+                Coaching that used to need a 1:1 call now runs <b>self-serve</b>, so more members
+                get a result without waiting on a calendar.
+              </p>
+            </div>
+
+            <div class="case reveal">
+              <div class="top">
+                <span class="co">TurboClaim</span><span class="kind">AI · Reliability</span>
+              </div>
+              <p>
+                Built an AI platform processing $100M+ in insurance claims and made its multi-minute
+                AI jobs trustworthy with durable orchestration: retries, idempotency, recovery. The
+                reason it matters to you: the tools I build for your members don't fail silently.
+              </p>
+              <p class="outcome"><b>95% success</b> on AI jobs that used to fail in the dark.</p>
+            </div>
+
+            <div class="case reveal">
+              <div class="top">
+                <span class="co">Amazon AWS</span><span class="kind">Cloud · Scale</span>
+              </div>
+              <p>
+                Built and maintained the AWS SSO Control Plane service across 2,500 hosts at 99.9%+
+                uptime, with staged rollouts and monitoring. The habits from hyperscale are the same
+                ones that keep a member-facing tool from falling over the week you go on vacation.
+              </p>
+              <p class="outcome">The tool still works on a Sunday when <b>you're offline</b>.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ABOUT -->
+        <section id="about" class="container">
+          <div class="sec-head reveal">
+            <span class="eyebrow">About</span>
+            <h2>Barton Holdridge</h2>
+          </div>
+          <div class="about-grid">
+            <div class="reveal">
+              <p>
+                I'm a software engineer with 10+ years building cloud-native AI and backend systems,
+                from Fortune 500 scale at Amazon AWS to a 0-to-1 AI platform at TurboClaim. I also
+                build the AI at Career Systems, so I work with coaches and communities every day.
+              </p>
+              <p>
+                What I want to be known for: making AI genuinely useful for people who aren't
+                technical.
+                <b>Real tools a busy person can use on Monday and see a result by Friday.</b> Not
+                demos that look cool and do nothing.
+              </p>
+              <p>
+                I take a capped number of fractional engagements so the work stays deep. If getting
+                your members a result still requires you personally, that's my zone.
+              </p>
+            </div>
+            <div class="cred reveal">
+              <div class="row"><span class="k">Based</span><span class="v">Dallas, TX</span></div>
+              <div class="row">
+                <span class="k">Focus</span><span class="v">Self-serve AI for creators</span>
+              </div>
+              <div class="row">
+                <span class="k">Builds on</span><span class="v">Skool · Circle · Kajabi</span>
+              </div>
+              <div class="row">
+                <span class="k">Stack</span><span class="v">Claude · Supabase · TypeScript</span>
+              </div>
+              <div class="row">
+                <span class="k">Done means</span><span class="v">A member uses it without you</span>
+              </div>
+              <div class="row">
+                <span class="k">Availability</span><span class="v">Fractional, limited slots</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- CROSS-LINK -->
+        <section class="container" style="padding-top: 0">
+          <div class="crosslink reveal">
+            <a href="index.html">
+              <div>
+                <div class="lead">Already shipped AI and watching it misbehave?</div>
+                <div class="big">I also harden AI systems for reliability and scale.</div>
+              </div>
+              <span class="go">AI reliability →</span>
+            </a>
+          </div>
+        </section>
+
+        <!-- CTA -->
+        <section id="book" class="container">
+          <div class="cta reveal">
+            <span class="eyebrow" style="justify-content: center">Let's talk</span>
+            <h2>What would you build if you weren't <em>the bottleneck?</em></h2>
+            <p>
+              Book a 30-minute call. Tell me where your members get stuck waiting on you. If AI can
+              take that off your plate, I'll show you how. If it can't, I'll tell you that too.
+            </p>
+            <div class="cta-btns">
+              <a
+                class="btn btn-primary"
+                href="https://calendar.app.google/9HCGPEChEqgXxcAj8"
+                target="_blank"
+                rel="noopener"
+                >Book a call <span class="arrow">→</span></a
+              >
+              <a class="btn btn-ghost" href="mailto:barton@bh-systems.com">Email me directly</a>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <div class="foot container">
+          <div class="brand"><span class="m">/</span><b>bh-systems</b></div>
+          <div class="links">
+            <a href="#offers">What I do</a>
+            <a href="#work">Work</a>
+            <a href="index.html">AI reliability</a>
+            <a href="https://linkedin.com/in/barton-holdridge" target="_blank" rel="noopener"
+              >LinkedIn</a
+            >
+            <a href="mailto:barton@bh-systems.com">Email</a>
+          </div>
+          <div class="meta">© <span id="yr">2026</span> Barton Holdridge · Dallas, TX</div>
         </div>
-      </div>
-    </section>
-
-  </main>
-
-  <footer>
-    <div class="container foot">
-      <div class="brand"><span class="m">/</span><b>bh-systems</b></div>
-      <div class="links">
-        <a href="#offers">What I do</a>
-        <a href="#work">Work</a>
-        <a href="index.html">AI reliability</a>
-        <a href="https://linkedin.com/in/barton-holdridge" target="_blank" rel="noopener">LinkedIn</a>
-        <a href="mailto:barton@bh-systems.com">Email</a>
-      </div>
-      <div class="meta">© <span id="yr">2026</span> Barton Holdridge · Dallas, TX</div>
+      </footer>
     </div>
-  </footer>
 
-</div>
+    <script>
+      var hdr = document.getElementById('hdr')
+      var onScroll = function () {
+        hdr.classList.toggle('scrolled', window.scrollY > 8)
+      }
+      onScroll()
+      window.addEventListener('scroll', onScroll, { passive: true })
 
-<script>
-  var hdr = document.getElementById('hdr');
-  var onScroll = function () { hdr.classList.toggle('scrolled', window.scrollY > 8); };
-  onScroll(); window.addEventListener('scroll', onScroll, { passive: true });
+      var reveals = document.querySelectorAll('.reveal')
+      var revealAll = function () {
+        reveals.forEach(function (el) {
+          el.classList.add('in')
+        })
+      }
+      if (!('IntersectionObserver' in window)) {
+        revealAll()
+      } else {
+        var io = new IntersectionObserver(
+          function (entries) {
+            entries.forEach(function (e) {
+              if (e.isIntersecting) {
+                e.target.classList.add('in')
+                io.unobserve(e.target)
+              }
+            })
+          },
+          { threshold: 0.08, rootMargin: '0px 0px -8% 0px' },
+        )
+        reveals.forEach(function (el) {
+          if (el.getBoundingClientRect().top < window.innerHeight * 0.92) {
+            el.classList.add('in')
+          } else {
+            io.observe(el)
+          }
+        })
+        setTimeout(revealAll, 1400)
+      }
 
-  var reveals = document.querySelectorAll('.reveal');
-  var revealAll = function () { reveals.forEach(function (el) { el.classList.add('in'); }); };
-  if (!('IntersectionObserver' in window)) {
-    revealAll();
-  } else {
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } });
-    }, { threshold: 0.08, rootMargin: '0px 0px -8% 0px' });
-    reveals.forEach(function (el) {
-      if (el.getBoundingClientRect().top < window.innerHeight * 0.92) { el.classList.add('in'); }
-      else { io.observe(el); }
-    });
-    setTimeout(revealAll, 1400);
-  }
-
-  var mb = document.getElementById('menuBtn');
-  if (mb) mb.addEventListener('click', function () { document.getElementById('offers').scrollIntoView({ behavior: 'smooth' }); });
-  document.getElementById('yr').textContent = new Date().getFullYear();
-</script>
-</body>
+      var mb = document.getElementById('menuBtn')
+      if (mb)
+        mb.addEventListener('click', function () {
+          document.getElementById('offers').scrollIntoView({ behavior: 'smooth' })
+        })
+      document.getElementById('yr').textContent = new Date().getFullYear()
+    </script>
+  </body>
 </html>

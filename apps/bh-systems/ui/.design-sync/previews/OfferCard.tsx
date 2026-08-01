@@ -1,4 +1,4 @@
-import { OfferCard } from 'bh-systems-ui';
+import { OfferCard } from 'bh-systems-ui'
 
 export const PhaseOne = () => (
   <OfferCard
@@ -13,7 +13,7 @@ export const PhaseOne = () => (
       'Hand back a reliability scorecard and a hardening roadmap',
     ]}
   />
-);
+)
 
 export const Ongoing = () => (
   <OfferCard
@@ -27,4 +27,4 @@ export const Ongoing = () => (
       'Load-test the system before you push it to 10× the volume',
     ]}
   />
-);
+)

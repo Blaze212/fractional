@@ -1,0 +1,79 @@
+description: 'C-level finance leader, SaaS growth-stage JD'
+
+vars:
+  client_name: Globex
+  role_title: Chief Financial Officer
+  jd_text: |
+    Globex is a Series C SaaS company ($18M ARR) seeking a CFO to own FP&A,
+    fundraising, and board reporting through a Series D. The ideal candidate has
+    scaled finance functions at venture-backed SaaS companies, led an institutional
+    raise end-to-end, and partnered closely with a CEO and board on capital strategy.
+  parsed_profile:
+    name: Jane Smith
+    email: null
+    phone: null
+    location: San Francisco, CA
+    linkedin_url: null
+    current_title: Chief Financial Officer
+    work_authorization: null
+    total_experience: '15 years'
+    summary: 'CFO with 15 years in SaaS finance and two successful institutional capital raises.'
+    seniority_level: C-level
+    career_highlights:
+      - 'Led $50M Series C at Acme Corp'
+      - 'Reduced operating burn 30% through zero-base reforecasting'
+      - 'Built and scaled a 12-person finance team from the ground up'
+    selected_experience:
+      - company: Acme Corp
+        title: Chief Financial Officer
+        start_date: '2019-01'
+        end_date: Present
+        responsibilities:
+          - 'Owned FP&A, treasury, and board reporting for a 120-person org'
+          - 'Partnered with the CEO and board on capital strategy and investor relations'
+        achievements:
+          - 'Raised $50M Series C; led the due-diligence dataroom end-to-end'
+          - 'Reduced burn 30% via a zero-base reforecast'
+      - company: Initech
+        title: VP Finance
+        start_date: '2014-03'
+        end_date: '2018-12'
+        responsibilities:
+          - 'Built the FP&A function and monthly board reporting cadence'
+        achievements:
+          - 'Supported a $20M Series B as deal lead on the finance workstream'
+    other_experience: []
+    education:
+      - institution: UC Berkeley
+        degree: BS Economics
+    certifications:
+      - provider: AICPA
+        certification: CPA
+    skills:
+      - FP&A
+      - Fundraising
+      - Board reporting
+      - Treasury
+    tools:
+      - NetSuite
+      - Adaptive Planning
+    functional_areas:
+      - Finance
+      - Corporate Strategy
+    industries:
+      - SaaS
+      - Technology
+
+assert:
+  # Scenario-specific: summary must reference the firm or the raise.
+  - type: javascript
+    value: |
+      const s = output.fit_summary.toLowerCase()
+      return s.includes('acme') || s.includes('series') || s.includes('50')
+  - type: llm-rubric
+    value: |
+      The fit_summary and bullets are clearly tailored to the CFO fundraising and
+      FP&A context of this Series C SaaS role; they do not merely list generic
+      finance skills. Bullets reference the candidate's real achievements
+      (the Series C raise, burn reduction, team build) rather than restating the
+      job description.

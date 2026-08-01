@@ -19,3 +19,12 @@ workspace
 .dev.vars
 # pnpm workspace — never commit npm lockfiles (Cloudflare bot generates these)
 package-lock.json
+Outputs/
+.claire/
+draft-skills/
+Writing samples/
+Templates/
+skills-src/
+AboutMe/
+SAMPLES/
+scripts/clients/

@@ -1,16 +1,16 @@
-import type { ReactNode } from 'react';
+import type { ReactNode } from 'react'
 
 export interface OfferCardProps {
   /** Small mono kicker, e.g. "PHASE ONE" or "TRACK 01". */
-  kicker?: string;
+  kicker?: string
   /** Offer title, rendered in the serif face. */
-  title: ReactNode;
+  title: ReactNode
   /** Who it's for or the cadence, e.g. "4-week fixed-fee sprint". */
-  who?: ReactNode;
+  who?: ReactNode
   /** One-line description above the deliverables. */
-  description?: ReactNode;
+  description?: ReactNode
   /** Bullet list of deliverables, each shown with an arrow marker. */
-  items?: string[];
+  items?: string[]
 }
 
 /** A service/offer card with a royal top rule: kicker, serif title, cadence line, and an arrow-marked deliverables list. */
@@ -29,5 +29,5 @@ export function OfferCard({ kicker, title, who, description, items }: OfferCardP
         </ul>
       ) : null}
     </div>
-  );
+  )
 }
