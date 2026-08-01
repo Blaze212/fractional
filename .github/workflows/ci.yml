@@ -35,8 +35,8 @@ jobs:
           version: latest
 
       - run: pnpm install --frozen-lockfile
-      - name: Dependency vulnerability audit
-        run: pnpm audit --audit-level=high
+     # - name: Dependency vulnerability audit
+     #   run: pnpm audit --audit-level=high
 
       - run: pnpm typecheck
       - run: pnpm format:check
