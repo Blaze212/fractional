@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Geography Club: Daily Quiz</title>
+    <meta
+      name="description"
+      content="Three rounds of geography. Two minutes. A new puzzle to start your day."
+    />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Geography Club: Daily Quiz" />
+    <meta property="og:description" content="Three rounds. Two minutes. Can you beat 3/3?" />
+    <meta property="og:image" content="assets/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <style>
+      :root {
+        --paper: #faf6ef;
+        --card: #ffffff;
+        --ink: #1f2933;
+        --muted: #8a7e6d;
+        --line: #e4daca;
+        --accent: #c25e3a;
+        --correct: #4f7942;
+        --correct-bg: #edf3ea;
+        --wrong: #b4553f;
+        --wrong-bg: #f9edea;
+        --serif: ui-serif, Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+        --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: var(--paper);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 17px;
+        line-height: 1.55;
+        -webkit-font-smoothing: antialiased;
+        padding: 24px 18px calc(40px + env(safe-area-inset-bottom));
+        display: flex;
+        justify-content: center;
+      }
+      .wrap {
+        width: 100%;
+        max-width: 560px;
+      }
+
+      /* ---------- header ---------- */
+      header {
+        text-align: center;
+        margin-bottom: 26px;
+      }
+      .mark {
+        font-family: var(--serif);
+        font-size: 13px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--accent);
+        margin: 0 0 6px;
+      }
+      .issue {
+        font-size: 13px;
+        color: var(--muted);
+        margin: 0;
+      }
+
+      /* ---------- progress ---------- */
+      .dots {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin: 18px 0 24px;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--line);
+        transition:
+          background 0.25s,
+          transform 0.25s;
+      }
+      .dot.done {
+        background: var(--accent);
+      }
+      .dot.now {
+        background: var(--accent);
+        transform: scale(1.5);
+      }
+
+      /* ---------- card ---------- */
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 26px 22px;
+        box-shadow:
+          0 1px 2px rgba(31, 41, 51, 0.04),
+          0 8px 24px -12px rgba(31, 41, 51, 0.1);
+      }
+      .kicker {
+        font-size: 12px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 0 0 14px;
+        font-weight: 600;
+      }
+      h1 {
+        font-family: var(--serif);
+        font-size: 31px;
+        line-height: 1.2;
+        margin: 0 0 10px;
+        font-weight: 600;
+      }
+      h2 {
+        font-family: var(--serif);
+        font-size: 22px;
+        line-height: 1.3;
+        margin: 0 0 20px;
+        font-weight: 600;
+      }
+      p.lede {
+        color: var(--muted);
+        margin: 0 0 26px;
+      }
+
+      /* ---------- round 1: place tiles ---------- */
+      .places {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0 0 22px;
+      }
+      .place {
+        flex: 1 1 auto;
+        text-align: center;
+        font-family: var(--serif);
+        font-size: 17px;
+        padding: 13px 10px;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        white-space: nowrap;
+      }
+
+      /* ---------- round 3: shape ---------- */
+      .shape {
+        display: block;
+        width: 100%;
+        max-width: 230px;
+        height: 210px;
+        margin: 0 auto 22px;
+        object-fit: contain;
+      }
+
+      /* ---------- options ---------- */
+      .opts {
+        display: flex;
+        flex-direction: column;
+        gap: 9px;
+      }
+      .opt {
+        font: inherit;
+        text-align: left;
+        color: var(--ink);
+        background: var(--card);
+        border: 1.5px solid var(--line);
+        border-radius: 10px;
+        padding: 14px 16px;
+        min-height: 50px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        transition:
+          border-color 0.15s,
+          background 0.15s,
+          transform 0.08s;
+      }
+      .opt:hover:not(:disabled) {
+        border-color: var(--accent);
+        background: #fffcf8;
+      }
+      .opt:active:not(:disabled) {
+        transform: scale(0.994);
+      }
+      .opt:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .opt:disabled {
+        cursor: default;
+      }
+      .opt .tick {
+        font-size: 15px;
+        flex: none;
+        opacity: 0;
+      }
+      .opt.correct {
+        border-color: var(--correct);
+        background: var(--correct-bg);
+      }
+      .opt.correct .tick {
+        opacity: 1;
+        color: var(--correct);
+      }
+      .opt.wrong {
+        border-color: var(--wrong);
+        background: var(--wrong-bg);
+      }
+      .opt.wrong .tick {
+        opacity: 1;
+        color: var(--wrong);
+      }
+      .opt.muted {
+        opacity: 0.5;
+      }
+
+      /* pair layout for the bigger/smaller round */
+      .opts.pair {
+        flex-direction: row;
+      }
+      .opts.pair .opt {
+        position: relative;
+        flex: 1;
+        justify-content: center;
+        font-family: var(--serif);
+        font-size: 19px;
+        padding: 26px 12px;
+      }
+      .opts.pair .opt .tick {
+        position: absolute;
+        top: 8px;
+        right: 11px;
+      }
+
+      /* ---------- reveal ---------- */
+      .reveal {
+        margin-top: 20px;
+      }
+      .verdict {
+        font-family: var(--serif);
+        font-size: 19px;
+        margin: 0 0 8px;
+      }
+      .verdict.yes {
+        color: var(--correct);
+      }
+      .verdict.no {
+        color: var(--wrong);
+      }
+      .fact {
+        margin: 0;
+        font-size: 15.5px;
+        color: #4a5560;
+        background: var(--paper);
+        border-left: 3px solid var(--accent);
+        border-radius: 0 8px 8px 0;
+        padding: 13px 15px;
+      }
+      .flag {
+        width: 34px;
+        height: auto;
+        border-radius: 3px;
+        border: 1px solid var(--line);
+        vertical-align: -8px;
+        margin-right: 9px;
+      }
+
+      /* ---------- buttons ---------- */
+      .btn {
+        font: inherit;
+        font-weight: 600;
+        width: 100%;
+        min-height: 52px;
+        margin-top: 20px;
+        border: none;
+        border-radius: 10px;
+        background: var(--accent);
+        color: #fff;
+        cursor: pointer;
+        transition:
+          filter 0.15s,
+          transform 0.08s;
+      }
+      .btn:hover {
+        filter: brightness(1.07);
+      }
+      .btn:active {
+        transform: scale(0.994);
+      }
+      .btn:focus-visible {
+        outline: 2px solid var(--ink);
+        outline-offset: 2px;
+      }
+      .btn.ghost {
+        background: transparent;
+        color: var(--muted);
+        border: 1.5px solid var(--line);
+        min-height: 46px;
+      }
+
+      /* ---------- result ---------- */
+      .score {
+        font-family: var(--serif);
+        font-size: 52px;
+        line-height: 1;
+        margin: 6px 0 4px;
+        text-align: center;
+      }
+      .score small {
+        font-size: 23px;
+        color: var(--muted);
+      }
+      .verdict-line {
+        text-align: center;
+        color: var(--muted);
+        margin: 0 0 22px;
+      }
+      .grid-preview {
+        text-align: center;
+        font-size: 30px;
+        letter-spacing: 6px;
+        margin: 0 0 22px;
+      }
+      .share-hint {
+        text-align: center;
+        font-size: 14px;
+        color: var(--muted);
+        margin: 16px 0 0;
+      }
+      .sr {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+
+      footer {
+        text-align: center;
+        margin-top: 26px;
+        font-size: 12.5px;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      @media (max-width: 400px) {
+        h1 {
+          font-size: 27px;
+        }
+        .places {
+          flex-direction: column;
+        }
+        .opts.pair .opt {
+          font-size: 17px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <p class="mark">Geography Club</p>
+        <p class="issue" id="issue"></p>
+      </header>
+
+      <div class="dots" id="dots" hidden></div>
+
+      <main class="card" id="stage" aria-live="polite"></main>
+
+      <footer>A daily geography puzzle.<br />Play, then paste your result in the comments.</footer>
+    </div>
+
+    <script>
+      /* ------------------------------------------------------------------
+   PUZZLE CONTENT
+   Everything below is data. To publish a new day, edit this object.
+   No other part of the file needs to change.
+------------------------------------------------------------------- */
+      const PUZZLE = {
+        number: 1,
+        rounds: [
+          {
+            type: 'links',
+            kicker: 'Round 1: What links these places?',
+            places: ['Lesotho', 'San Marino', 'Vatican City'],
+            options: [
+              'They are the world’s three smallest countries',
+              'They are each completely surrounded by a single country',
+              'None of them has a permanent river',
+              'They were the last three countries to join the UN',
+            ],
+            answer: 1,
+            fact:
+              'These are the only three countries on Earth entirely surrounded by ' +
+              'just one other country. Lesotho is ringed completely by South Africa, ' +
+              'and it’s the only country whose <em>entire</em> territory sits above ' +
+              '1,400m, which earns it the nickname “the Kingdom in the Sky”.',
+          },
+          {
+            type: 'compare',
+            kicker: 'Round 2: Bigger or smaller?',
+            question: 'Which country has more people?',
+            options: ['Nigeria', 'Russia'],
+            answer: 0,
+            fact:
+              'Nigeria has around 230 million people to Russia’s 144 million. ' +
+              'It’s growing so fast that it’s projected to overtake the United States ' +
+              'as the world’s third most populous country by 2050.',
+          },
+          {
+            type: 'shape',
+            kicker: 'Round 3: Name the shape',
+            question: 'Which country is this?',
+            image: 'assets/japan.svg',
+            options: ['Philippines', 'Japan', 'New Zealand', 'Indonesia'],
+            answer: 1,
+            flag: 'assets/jp.svg',
+            fact:
+              'Japan. In 2023 its government recounted the islands using modern ' +
+              'digital mapping, and the official total leapt from 6,852 to <strong>14,125</strong>. ' +
+              'The islands were always there. The mapping finally caught up.',
+          },
+        ],
+      }
+
+      const SHARE_URL =
+        location.origin && location.origin !== 'null' ? location.origin + location.pathname : ''
+
+      /* ------------------------------------------------------------------
+   STATE
+------------------------------------------------------------------- */
+      const stage = document.getElementById('stage')
+      const dotsEl = document.getElementById('dots')
+      const total = PUZZLE.rounds.length
+      let idx = 0
+      const results = []
+
+      document.getElementById('issue').textContent =
+        `Puzzle #${PUZZLE.number} · ${total} rounds · about two minutes`
+
+      /* ------------------------------------------------------------------
+   HELPERS
+------------------------------------------------------------------- */
+      function drawDots() {
+        dotsEl.hidden = false
+        dotsEl.innerHTML = PUZZLE.rounds
+          .map((_, i) => {
+            const cls = i < results.length ? 'done' : i === idx ? 'now' : ''
+            return `<span class="dot ${cls}"></span>`
+          })
+          .join('')
+      }
+
+      function buildGrid() {
+        return results.map((ok) => (ok ? '🟩' : '⬛')).join('')
+      }
+
+      function shareText() {
+        const score = results.filter(Boolean).length
+        let t = `🗺️ Geography Club #${PUZZLE.number}\n${buildGrid()} ${score}/${total}`
+        t += '\n\nThink you can beat that?'
+        if (SHARE_URL) t += `\n${SHARE_URL}`
+        return t
+      }
+
+      function verdictLine(score) {
+        if (score === total) return 'Flawless. Go on, gloat a little.'
+        if (score === total - 1) return 'So close. One got away.'
+        if (score === 0) return 'A clean sweep, of the wrong kind. Tomorrow’s another map.'
+        return 'Not bad. There’s room to argue about the rest.'
+      }
+
+      /* ------------------------------------------------------------------
+   SCREENS
+------------------------------------------------------------------- */
+      function renderIntro() {
+        dotsEl.hidden = true
+        stage.innerHTML = `
+    <h1>Three rounds.<br>Two minutes.</h1>
+    <p class="lede">A world connection, a head-to-head, and a shape to name.
+      No account, no timer. Just don’t scroll the comments first.</p>
+    <button class="btn" id="go">Start today’s puzzle</button>`
+        document.getElementById('go').onclick = () => {
+          idx = 0
+          renderRound()
+        }
+      }
+
+      function renderRound() {
+        drawDots()
+        const r = PUZZLE.rounds[idx]
+
+        let prompt = ''
+        if (r.type === 'links') {
+          prompt = `<div class="places">${r.places
+            .map((p) => `<div class="place">${p}</div>`)
+            .join('')}</div><h2>What do they have in common?</h2>`
+        } else if (r.type === 'shape') {
+          prompt = `<img class="shape" src="${r.image}" alt="Outline of a country">
+              <h2>${r.question}</h2>`
+        } else {
+          prompt = `<h2>${r.question}</h2>`
+        }
+
+        const pair = r.type === 'compare' ? ' pair' : ''
+        stage.innerHTML = `
+    <p class="kicker">${r.kicker}</p>
+    ${prompt}
+    <div class="opts${pair}" id="opts">${r.options
+      .map(
+        (o, i) =>
+          `<button class="opt" data-i="${i}"><span>${o}</span><span class="tick"></span></button>`,
+      )
+      .join('')}</div>
+    <div id="reveal"></div>`
+
+        stage.querySelectorAll('.opt').forEach((b) => {
+          b.onclick = () => choose(parseInt(b.dataset.i, 10))
+        })
+      }
+
+      function choose(picked) {
+        const r = PUZZLE.rounds[idx]
+        const ok = picked === r.answer
+        results.push(ok)
+        drawDots()
+
+        stage.querySelectorAll('.opt').forEach((b) => {
+          const i = parseInt(b.dataset.i, 10)
+          b.disabled = true
+          if (i === r.answer) {
+            b.classList.add('correct')
+            b.querySelector('.tick').textContent = '✓'
+          } else if (i === picked) {
+            b.classList.add('wrong')
+            b.querySelector('.tick').textContent = '✗'
+          } else {
+            b.classList.add('muted')
+          }
+        })
+
+        const last = idx === total - 1
+        const flag = r.flag ? `<img class="flag" src="${r.flag}" alt="">` : ''
+        document.getElementById('reveal').innerHTML = `
+    <div class="reveal">
+      <p class="verdict ${ok ? 'yes' : 'no'}">${ok ? 'Correct.' : 'Not this time.'}</p>
+      <p class="fact">${flag}${r.fact}</p>
+      <button class="btn" id="next">${last ? 'See your result' : 'Next round'}</button>
+    </div>`
+
+        const nextBtn = document.getElementById('next')
+        nextBtn.onclick = () => {
+          idx++
+          last ? renderResult() : renderRound()
+        }
+        nextBtn.focus({ preventScroll: true })
+      }
+
+      function renderResult() {
+        drawDots()
+        const score = results.filter(Boolean).length
+        stage.innerHTML = `
+    <p class="kicker">Your result</p>
+    <p class="score">${score}<small> / ${total}</small></p>
+    <p class="verdict-line">${verdictLine(score)}</p>
+    <div class="grid-preview">${buildGrid()}</div>
+    <button class="btn" id="copy">Share your results</button>
+    <button class="btn ghost" id="again">Play again</button>
+    <p class="share-hint">Paste in the Skool comments. The grid gives nothing away.</p>
+    <textarea id="fallback" class="sr" readonly></textarea>`
+
+        document.getElementById('copy').onclick = copyResult
+        document.getElementById('again').onclick = () => {
+          results.length = 0
+          idx = 0
+          renderIntro()
+        }
+      }
+
+      async function copyResult() {
+        const btn = document.getElementById('copy')
+        const text = shareText()
+        let done = false
+
+        try {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text)
+            done = true
+          }
+        } catch (e) {
+          /* fall through to the textarea path */
+        }
+
+        if (!done) {
+          // Older mobile browsers, and any page served over plain http.
+          const ta = document.getElementById('fallback')
+          ta.classList.remove('sr')
+          ta.style.cssText =
+            'width:100%;height:96px;margin-top:12px;font:inherit;font-size:14px;' +
+            'padding:10px;border:1.5px solid var(--line);border-radius:10px;' +
+            'background:var(--paper);color:var(--ink);resize:none'
+          ta.value = text
+          ta.focus()
+          ta.setSelectionRange(0, text.length)
+          try {
+            done = document.execCommand('copy')
+          } catch (e) {
+            done = false
+          }
+        }
+
+        btn.textContent = done ? 'Copied ✓' : 'Select and copy the text above'
+        setTimeout(() => {
+          btn.textContent = 'Share your results'
+        }, 2200)
+      }
+
+      renderIntro()
+    </script>
+  </body>
+</html>
