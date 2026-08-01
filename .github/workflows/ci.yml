@@ -102,15 +102,18 @@ jobs:
         run: curl -X POST "$CF_DEPLOY_HOOK_PORTAL"
 
   deploy-bh-systems:
-    name: Deploy bh-systems to Cloudflare
+    name: Deploy bh-systems to Cloudflare Workers
     runs-on: ubuntu-latest
     environment:
       name: Production
     needs: [typecheck-lint-test]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     env:
-      CF_DEPLOY_HOOK_BH_SYSTEMS: ${{ secrets.CF_DEPLOY_HOOK_BH_SYSTEMS }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
     steps:
-      - name: Trigger bh-systems deploy
-        run: curl -X POST "$CF_DEPLOY_HOOK_BH_SYSTEMS"
+      - uses: actions/checkout@v4
+
+      - name: Deploy bh-systems Worker
+        run: npx wrangler@4 deploy
+        working-directory: apps/bh-systems
