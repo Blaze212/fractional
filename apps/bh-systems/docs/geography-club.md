@@ -7,16 +7,22 @@ pastes back into a community thread.
 Built as a sample to show what a daily geography puzzle could look like as a
 link shared into a Skool community.
 
+Lives at **https://bh-systems.com/demos/geography-club/**, served as part of the
+bh-systems site rather than as its own Worker. Anything added under
+`apps/bh-systems/**` on `main` is deployed by `.github/workflows/deploy-bh-systems.yml`.
+
 ## Running it
 
 No build step, no dependencies, no backend. Open `index.html` in a browser, or
 serve the folder:
 
 ```bash
-python3 -m http.server 8000 --directory demos/geography-quiz
+npx serve apps/bh-systems/public
 ```
 
-The clipboard API needs a secure context, so on `http://` the Copy button falls
+Then visit `http://localhost:3000/demos/geography-club/`.
+
+The clipboard API needs a secure context, so on `http://` the share button falls
 back to a selectable textarea. Over `https://` (or `localhost`) it copies
 directly.
 
@@ -30,12 +36,17 @@ array, so adding a fourth round works without any other edit.
 ## Structure
 
 ```
-index.html       markup, styles and logic, all inline
-assets/
-  japan.svg      country outline for round 3
-  jp.svg         Japanese flag
-  og.png         1200x630 link-preview card
+public/demos/geography-club/
+  index.html     markup, styles and logic, all inline
+  assets/
+    japan.svg    country outline for round 3
+    jp.svg       Japanese flag
+    og.png       1200x630 link-preview card
 ```
+
+The Open Graph tags use absolute `https://bh-systems.com/...` URLs. Link-preview
+crawlers do not resolve relative `og:image` paths, and the preview card is what
+makes the link look intentional in a Skool comment. Update them if the path moves.
 
 ## Asset provenance
 

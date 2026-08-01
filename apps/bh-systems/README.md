@@ -5,7 +5,9 @@ Marketing site for the fractional AI practice. Static HTML/CSS, no build step.
 ## Layout
 
 - `public/` — the deployed site: `index.html` (AI Reliability & Scale, home), `creators.html` (Self-Serve AI for Creators), `styles.css`. **Only this folder is served.**
+- `public/demos/geography-club/` — a standalone daily geography quiz demo, live at `/demos/geography-club/`. See [docs/geography-club.md](docs/geography-club.md).
 - `ui/` — the React component library (design system), synced to Claude Design via design-sync. Not part of the deployed site.
+- `docs/` — notes on individual pages. Not served.
 
 ## Deploy (Cloudflare)
 
