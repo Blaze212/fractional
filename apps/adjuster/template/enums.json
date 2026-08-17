@@ -1,0 +1,247 @@
+{
+  "date_received": {
+    "label": "Date loss received",
+    "type": "date",
+    "section": "Assignment",
+    "required": true
+  },
+  "contacted_party_name": {
+    "label": "Contacted party",
+    "type": "string",
+    "section": "Assignment",
+    "required": true
+  },
+  "date_contacted": {
+    "label": "Date contacted",
+    "type": "date",
+    "section": "Assignment",
+    "required": true
+  },
+  "date_inspected": {
+    "label": "Date inspected",
+    "type": "date",
+    "section": "Assignment",
+    "required": true
+  },
+  "present_at_inspection": {
+    "label": "Present at inspection",
+    "type": "string",
+    "section": "Assignment",
+    "required": true
+  },
+  "mortgage_status": {
+    "label": "Mortgage status",
+    "type": "variant",
+    "section": "Mortgage",
+    "required": true,
+    "values": [
+      {
+        "key": "has_mortgage",
+        "label": "Has a mortgage",
+        "text": "I confirmed with the insured that their mortgage is through {{mortgage_company}}."
+      },
+      {
+        "key": "no_mortgage",
+        "label": "No mortgage",
+        "text": "I confirmed with the insured that there is not a mortgage on the property."
+      }
+    ]
+  },
+  "mortgage_company": {
+    "label": "Mortgage company",
+    "type": "string",
+    "section": "Mortgage",
+    "required": false
+  },
+  "date_of_loss": {
+    "label": "Date of loss",
+    "type": "date",
+    "section": "Origin",
+    "required": true
+  },
+  "origin_narrative": {
+    "label": "Cause of loss",
+    "type": "narrative",
+    "section": "Origin",
+    "required": true
+  },
+  "loss_cause": {
+    "label": "Loss cause (short phrase, e.g. \"storm\", \"wind\", \"lightning\")",
+    "type": "string",
+    "section": "Coverage",
+    "required": true
+  },
+  "coverage_determination": {
+    "label": "Coverage determination",
+    "type": "variant",
+    "section": "Coverage",
+    "required": true,
+    "values": [
+      {
+        "key": "storm_covered_no_concerns",
+        "label": "Covered, no concerns",
+        "text": "The damages to the insured's property are {{loss_cause}} related, which is covered under the insured's policy. Therefore, there are no coverage concerns that would affect this claim."
+      },
+      {
+        "key": "storm_covered_interior_excluded",
+        "label": "Exterior covered, interior excluded",
+        "text": "The damages to the insured's property are {{loss_cause}} related, which is covered under the insured's policy. However, the interior water damage was not caused by a storm-created opening. Therefore, there are no coverage concerns for the exterior of the dwelling, however coverage would not apply to the interior as it was not a direct result of a storm-created opening."
+      },
+      {
+        "key": "accidental_discharge_covered",
+        "label": "Accidental discharge, covered",
+        "text": "The damages to the insured's property are related to an accidental discharge of water from within a plumbing system, which is covered under the insured's policy. Therefore, there are no coverage concerns that would affect this claim."
+      },
+      {
+        "key": "coverage_issue",
+        "label": "Coverage issue / denial",
+        "text": "There is a coverage issue affecting this claim that requires carrier review before further handling proceeds."
+      }
+    ]
+  },
+  "dwelling_type": {
+    "label": "Dwelling type",
+    "type": "enum",
+    "section": "Risk",
+    "required": true,
+    "values": ["single family", "duplex", "multi family"]
+  },
+  "dwelling_stories": {
+    "label": "Dwelling stories",
+    "type": "enum",
+    "section": "Risk",
+    "required": true,
+    "values": ["one story", "two story", "three story", "four story"]
+  },
+  "year_built": {
+    "label": "Year built",
+    "type": "string",
+    "section": "Risk",
+    "required": false
+  },
+  "foundation_type": {
+    "label": "Foundation type",
+    "type": "enum",
+    "section": "Risk",
+    "required": true,
+    "values": ["crawlspace", "basement", "slab"]
+  },
+  "siding_type": {
+    "label": "Siding type",
+    "type": "enum",
+    "section": "Risk",
+    "required": true,
+    "values": [
+      "vinyl siding",
+      "stucco siding",
+      "a brick veneer",
+      "steel siding",
+      "aluminum siding",
+      "wood siding",
+      "fiber board siding",
+      "vertical wood siding",
+      "cedar wood siding",
+      "hardiplank siding",
+      "fiber cement siding"
+    ]
+  },
+  "square_footage": {
+    "label": "Interior square footage",
+    "type": "string",
+    "section": "Risk",
+    "required": true
+  },
+  "bedroom_count": {
+    "label": "Bedroom count",
+    "type": "enum",
+    "section": "Risk",
+    "required": true,
+    "values": ["1", "2", "3", "4", "5", "6"]
+  },
+  "bathroom_count": {
+    "label": "Bathroom count",
+    "type": "enum",
+    "section": "Risk",
+    "required": true,
+    "values": ["1", "2", "3", "4", "5", "6"]
+  },
+  "occupancy_status": {
+    "label": "Occupancy",
+    "type": "enum",
+    "section": "Risk",
+    "required": true,
+    "values": ["the insured", "a tenant", "tenants"]
+  },
+  "roof_covering_type": {
+    "label": "Roof covering type",
+    "type": "enum",
+    "section": "Roof",
+    "required": true,
+    "values": [
+      "20 year 3 tab shingles",
+      "25 year 3 tab shingles",
+      "30 year laminate shingles",
+      "40 year laminate shingles",
+      "50 year laminate shingles",
+      "Roll Roofing",
+      "Wood shingles",
+      "Cedar shakes",
+      "Metal roofing",
+      "Modified Bitumen",
+      "Built-Up",
+      "Slate",
+      "Membrane",
+      "Tile"
+    ]
+  },
+  "roof_age_years": {
+    "label": "Roof age (years)",
+    "type": "string",
+    "section": "Roof",
+    "required": true
+  },
+  "roof_pitch": {
+    "label": "Roof pitch",
+    "type": "enum",
+    "section": "Roof",
+    "required": true,
+    "values": [
+      "1/12",
+      "2/12",
+      "3/12",
+      "4/12",
+      "5/12",
+      "6/12",
+      "7/12",
+      "8/12",
+      "9/12",
+      "10/12",
+      "12/12",
+      "greater than 12/12"
+    ]
+  },
+  "roof_damage_narrative": {
+    "label": "Roof damage findings",
+    "type": "narrative",
+    "section": "Roof",
+    "required": false
+  },
+  "exterior_damage_narrative": {
+    "label": "Exterior damage findings",
+    "type": "narrative",
+    "section": "Exterior",
+    "required": false
+  },
+  "interior_damage_narrative": {
+    "label": "Interior damage findings",
+    "type": "narrative",
+    "section": "Interior",
+    "required": false
+  },
+  "mitigation_narrative": {
+    "label": "Mitigation details",
+    "type": "narrative",
+    "section": "Mitigation",
+    "required": false
+  }
+}

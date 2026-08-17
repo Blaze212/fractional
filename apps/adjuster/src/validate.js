@@ -8,7 +8,7 @@ function validateFields(fields, transcript, tagSchema) {
     var label = schema.label || tag
 
     if (!fieldHasSourceSpan(field)) {
-      result[tag] = needsInput(label)
+      result[tag] = schema.required === false ? omitted(label) : needsInput(label)
       return
     }
 
@@ -18,6 +18,11 @@ function validateFields(fields, transcript, tagSchema) {
     }
 
     if (schema.type === 'enum' && (schema.values || []).indexOf(field.value) === -1) {
+      result[tag] = needsInput(label)
+      return
+    }
+
+    if (schema.type === 'variant' && !variantKeyExists(schema.values, field.value)) {
       result[tag] = needsInput(label)
       return
     }
@@ -48,7 +53,17 @@ function spanExistsInTranscript(sourceSpan, normalizedTranscript) {
 }
 
 function needsInput(label) {
-  return { valid: false, label: label }
+  return { valid: false, empty: false, label: label }
+}
+
+function omitted(label) {
+  return { valid: true, empty: true, label: label }
+}
+
+function variantKeyExists(values, key) {
+  return (values || []).some(function (option) {
+    return option.key === key
+  })
 }
 
 function normalizeWhitespace(value) {
