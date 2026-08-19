@@ -76,6 +76,28 @@ because Barton is on Android and Brandon is on iPhone, and iOS blocks
 third-party apps from tapping call audio directly. A phone call behaves
 identically on both platforms; testing on one proves nothing about the other.
 
+## Known limitation — do not carry past this MVP
+
+`apps/bh-systems/public/texml/field-notes.xml` embeds `WEBHOOK_SECRET` in
+plain text, in the `t=` query param on every callback URL. This is only
+acceptable because the file is served with **no access control** at
+`https://bh-systems.com/texml/field-notes.xml`, so the secret is already
+fully public the moment it's live — committing it to git adds no exposure
+beyond what anyone can already `curl`. The spec's own risk table accepts
+this: worst case is a junk row in a private Google Sheet, nothing
+destructive is gated behind it.
+
+That reasoning does not survive past a single-user MVP. Before this expands
+beyond Brandon, or before it handles anything with a higher blast radius
+than "junk sheet row," replace this with one of:
+
+- Inject the secret at deploy time (a Cloudflare Pages build-time env var
+  templated into the static file) so it never sits in git history or a
+  fetchable file, or
+- Move to real webhook signature verification once there's a documented way
+  to check Telnyx's Ed25519 signature from Apps Script (or from wherever
+  this runs by then), rather than a shared-secret query param.
+
 ## Consequences
 
 - This repo now contains one non-TypeScript, non-Supabase surface. Anyone
