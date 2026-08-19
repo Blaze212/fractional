@@ -1,8 +1,10 @@
-// Telnyx TeXML's exact callback parameter names haven't been confirmed against a live
-// call yet (Stage 1 of the spec's test protocol does that). Every raw callback body is
-// logged to the Raw tab first, before any parsing, specifically so a field-name mismatch
-// here is debuggable rather than a silent no-op. firstParam() tries Telnyx's documented
-// name plus the Twilio-compatible name TeXML is modeled on, and takes whichever exists.
+// Confirmed against a live Stage 1 call (Raw tab, 2026-08-19): Telnyx sends
+// PascalCase field names — CallSessionId, From, RecordingUrl, RecordingDuration,
+// RecordingStartTime, TranscriptionText — not the snake_case call_session_id the
+// spec's draft assumed. firstParam() still checks multiple candidates per field as
+// a hedge, but the confirmed real name is listed first. Every raw callback body is
+// logged to the Raw tab before any parsing, so a future field-name drift is
+// debuggable rather than a silent no-op.
 function doPost(e) {
   var params = e.parameter
   appendRaw(params.event || 'unknown', JSON.stringify(params))
@@ -11,12 +13,12 @@ function doPost(e) {
     return ContentService.createTextOutput('Forbidden')
   }
 
-  var callSessionId = firstParam(params, ['call_session_id', 'CallSid'])
+  var callSessionId = firstParam(params, ['CallSessionId', 'CallSid', 'call_session_id'])
   if (!looksLikeTelnyxCallId(callSessionId)) {
     return ContentService.createTextOutput('Bad Request')
   }
 
-  var fromNumber = firstParam(params, ['from', 'From'])
+  var fromNumber = firstParam(params, ['From', 'from'])
   if (fromNumber && !isAllowedCaller(fromNumber)) {
     return ContentService.createTextOutput('Forbidden')
   }
@@ -29,10 +31,10 @@ function doPost(e) {
 }
 
 function handleRecording(callSessionId, params) {
-  var recordingUrl = firstParam(params, ['recording_url', 'RecordingUrl'])
-  var fromNumber = firstParam(params, ['from', 'From'])
-  var callStartedAt = firstParam(params, ['start_time', 'RecordingStartTime'])
-  var durationSec = firstParam(params, ['recording_duration', 'RecordingDuration'])
+  var recordingUrl = firstParam(params, ['RecordingUrl', 'recording_url'])
+  var fromNumber = firstParam(params, ['From', 'from'])
+  var callStartedAt = firstParam(params, ['RecordingStartTime', 'start_time'])
+  var durationSec = firstParam(params, ['RecordingDuration', 'recording_duration'])
 
   var audioDriveId = ''
   if (recordingUrl) {
@@ -53,7 +55,7 @@ function handleRecording(callSessionId, params) {
 }
 
 function handleTranscription(callSessionId, params) {
-  var transcript = firstParam(params, ['transcription_text', 'TranscriptionText'])
+  var transcript = firstParam(params, ['TranscriptionText', 'transcription_text'])
   var text = transcript || ''
 
   var fields = {
