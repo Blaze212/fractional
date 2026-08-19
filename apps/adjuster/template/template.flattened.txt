@@ -1,0 +1,51 @@
+ASSIGNMENT:
+This loss was received by Ibis Claim Services on {{date_received}}. Contact was made with {{contacted_party_name}} on {{date_contacted}} and the inspection was scheduled for {{date_inspected}}. The loss was inspected at the scheduled date and time. {{present_at_inspection}} was present during the inspection.
+
+MORTGAGE:
+{{mortgage_status}}
+
+ORIGIN:
+{{origin_narrative}}
+Date of loss: {{date_of_loss}}.
+
+COVERAGE:
+{{coverage_determination}}
+
+RISK INFORMATION:
+The dwelling is a {{dwelling_stories}}, {{dwelling_type}} structure. It was built in {{year_built}} on a {{foundation_type}} foundation. The dwelling is wood framed with {{siding_type}}, and composition shingle roofing. The interior of the dwelling measures approximately {{square_footage}} square feet with {{bedroom_count}} bedrooms and {{bathroom_count}} bathrooms. The home is currently occupied by {{occupancy_status}}.
+
+DWELLING INSPECTION
+
+Roof
+The shingles on the roof are a {{roof_covering_type}} that are approximately {{roof_age_years}} years old. The shingles are in average condition for their age. There is one layer of shingles with no drip edge present. The slopes on the roof are pitched at {{roof_pitch}}.
+My inspection of the roof found the following: {{roof_damage_narrative}}
+
+Exterior
+Inspection of the elevations around the dwelling found the following: {{exterior_damage_narrative}}
+
+Interior
+{{interior_damage_narrative}}
+
+OTHER STRUCTURES:
+Inspection found no storm related damages to any of the insured's other structures.
+
+PERSONAL PROPERTY:
+Inspection found no event related damages to any of the insured's personal property.
+
+MITIGATION:
+{{mitigation_narrative}}
+
+OVERHEAD & PROFIT:
+Overhead and profit have not been included as the repairs will not require the use of a general contractor.
+
+REGULATIONS AFFECTING THE LOSS:
+There are no local building ordinances that will affect the adjustment of this loss.
+
+SALVAGE & SUBROGATION:
+There are no subrogation possibilities as the damages are weather related. Any possible salvage value is negated by cost of removal, delivery, and sale.
+
+FURTHER HANDLING:
+We will need to confirm the carrier has accepted liability or if a denial of the claim will take place. Once that is confirmed, we will work on the following items to conclude this loss:
+
+CLAIM COMPLETION:
+At this time our claim handling has been completed and the claim is being forwarded to the carrier for their review and approval. Thank you for allowing Ibis Claim Services to assist in the handling of this loss. We look forward to working with you in the future.

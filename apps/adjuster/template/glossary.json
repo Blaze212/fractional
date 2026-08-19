@@ -1,0 +1,188 @@
+[
+  {
+    "term": "drip edge",
+    "definition": "metal flashing installed along roof edges to direct water away from the fascia"
+  },
+  { "term": "ridge", "definition": "the horizontal peak where two roof slopes meet" },
+  { "term": "ridge cap", "definition": "shingles or metal covering installed over the ridge" },
+  {
+    "term": "ridge vent",
+    "definition": "a ventilation strip installed along the ridge to exhaust attic air"
+  },
+  {
+    "term": "hip",
+    "definition": "the sloped external angle where two roof planes meet, running from ridge to eave"
+  },
+  { "term": "rake", "definition": "the sloped edge of a roof at the gable end" },
+  { "term": "eave", "definition": "the lower edge of a roof that overhangs the wall" },
+  {
+    "term": "fascia",
+    "definition": "the vertical board along the roof edge that trim and gutters attach to"
+  },
+  { "term": "soffit", "definition": "the underside of a roof overhang" },
+  {
+    "term": "valley",
+    "definition": "the internal angle where two roof slopes meet, channeling water downward"
+  },
+  {
+    "term": "flashing",
+    "definition": "thin metal used to seal roof joints against water intrusion"
+  },
+  {
+    "term": "step flashing",
+    "definition": "flashing installed in overlapping pieces where a roof meets a vertical wall"
+  },
+  {
+    "term": "counter-flashing",
+    "definition": "flashing that covers and seals the top edge of step flashing"
+  },
+  { "term": "underlayment", "definition": "the water-resistant layer installed beneath shingles" },
+  { "term": "felt", "definition": "traditional asphalt-saturated roofing underlayment material" },
+  {
+    "term": "ice and water shield",
+    "definition": "a self-adhering waterproof underlayment used at eaves and valleys"
+  },
+  {
+    "term": "starter strip",
+    "definition": "the first row of shingles installed along a roof edge"
+  },
+  { "term": "decking", "definition": "the structural roof sheathing that shingles are nailed to" },
+  {
+    "term": "exposed decking",
+    "definition": "roof decking left bare after shingles are removed or blown off"
+  },
+  {
+    "term": "granule loss",
+    "definition": "wearing away of the protective mineral coating on asphalt shingles"
+  },
+  { "term": "test square", "definition": "a marked area used to count hail hits per square foot" },
+  { "term": "hail hit", "definition": "a mark left on a shingle by hail impact" },
+  { "term": "creased", "definition": "a shingle bent or folded, typically from wind uplift" },
+  { "term": "blown off", "definition": "roofing material physically detached by wind" },
+  { "term": "3-tab shingle", "definition": "a flat, single-layer asphalt shingle style" },
+  {
+    "term": "laminate shingle",
+    "definition": "a multi-layer, dimensional asphalt shingle style, also called architectural shingle"
+  },
+  {
+    "term": "modified bitumen",
+    "definition": "a rubberized asphalt roofing membrane used on low-slope roofs"
+  },
+  {
+    "term": "built-up roofing",
+    "definition": "a low-slope roof system of alternating layers of felt and asphalt"
+  },
+  {
+    "term": "membrane roofing",
+    "definition": "a single-ply synthetic roofing material used on low-slope roofs"
+  },
+  { "term": "cedar shakes", "definition": "split wood roofing shingles" },
+  {
+    "term": "brick veneer",
+    "definition": "a single layer of brick over a wood or steel-framed wall, non-structural"
+  },
+  { "term": "hardiplank", "definition": "a brand of fiber cement lap siding" },
+  {
+    "term": "fiber cement siding",
+    "definition": "a durable siding material made from cement, sand, and cellulose fibers"
+  },
+  {
+    "term": "vertical wood siding",
+    "definition": "wood siding installed with vertical boards, e.g. board-and-batten"
+  },
+  {
+    "term": "downspout",
+    "definition": "the vertical pipe that carries water from a gutter to the ground"
+  },
+  {
+    "term": "gutter",
+    "definition": "a channel installed along the roof edge to collect and direct rainwater"
+  },
+  {
+    "term": "crawlspace foundation",
+    "definition": "a foundation with a shallow unfinished space between the ground and the first floor"
+  },
+  {
+    "term": "slab foundation",
+    "definition": "a foundation poured directly on the ground with no crawlspace or basement"
+  },
+  { "term": "joist", "definition": "a horizontal framing member that supports a floor or ceiling" },
+  {
+    "term": "sistering",
+    "definition": "reinforcing a damaged joist or rafter by attaching a new one alongside it"
+  },
+  { "term": "rafter", "definition": "a sloped structural member that supports a roof" },
+  {
+    "term": "truss",
+    "definition": "a prefabricated triangular structural framework supporting a roof"
+  },
+  {
+    "term": "sheathing",
+    "definition": "structural panels (often OSB or plywood) covering framing before a finish material is applied"
+  },
+  {
+    "term": "OSB",
+    "definition": "oriented strand board, an engineered wood panel used for sheathing"
+  },
+  { "term": "subfloor", "definition": "the structural layer beneath finished flooring" },
+  { "term": "drywall", "definition": "interior wall panel material, also called sheetrock" },
+  { "term": "baseboard", "definition": "interior trim installed along the bottom of a wall" },
+  {
+    "term": "crown molding",
+    "definition": "decorative interior trim installed where a wall meets the ceiling"
+  },
+  {
+    "term": "water intrusion",
+    "definition": "water entering a structure through an opening or failure"
+  },
+  {
+    "term": "moisture",
+    "definition": "dampness measured to assess whether water has penetrated a material"
+  },
+  {
+    "term": "saturation",
+    "definition": "a material fully soaked with water, typically requiring replacement rather than drying"
+  },
+  {
+    "term": "delamination",
+    "definition": "separation of layered material, often from water damage"
+  },
+  {
+    "term": "efflorescence",
+    "definition": "a white mineral deposit left on masonry after water evaporates"
+  },
+  { "term": "mold", "definition": "fungal growth resulting from sustained moisture" },
+  {
+    "term": "mitigation",
+    "definition": "emergency work performed to stop ongoing damage and dry a structure, e.g. water extraction"
+  },
+  { "term": "ACV", "definition": "actual cash value, replacement cost minus depreciation" },
+  {
+    "term": "RCV",
+    "definition": "replacement cost value, the cost to replace an item new without depreciation"
+  },
+  {
+    "term": "recoverable depreciation",
+    "definition": "depreciation paid back to the insured once repairs are completed"
+  },
+  {
+    "term": "non-recoverable depreciation",
+    "definition": "depreciation that is not paid back regardless of whether repairs occur"
+  },
+  {
+    "term": "overhead and profit",
+    "definition": "a percentage added to a repair estimate to cover a general contractor's supervision and profit when multiple trades are required"
+  },
+  {
+    "term": "betterment",
+    "definition": "an upgrade beyond original condition, which may reduce the amount paid"
+  },
+  {
+    "term": "subrogation",
+    "definition": "an insurer's right to recover costs from a third party responsible for the loss"
+  },
+  {
+    "term": "coinsurance penalty",
+    "definition": "a reduction in a claim payment when a property is insured below the required percentage of its value"
+  }
+]

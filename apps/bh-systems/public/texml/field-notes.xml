@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say voice="alice">Field notes. Start after the beep. Hang up when you are done.</Say>
+  <Record
+    action="https://script.google.com/macros/s/DEPLOY_ID/exec?t=SECRET&amp;event=action"
+    method="POST"
+    maxLength="900"
+    timeout="0"
+    playBeep="true"
+    format="mp3"
+    channels="single"
+    finishOnKey="#"
+    recordingStatusCallback="https://script.google.com/macros/s/DEPLOY_ID/exec?t=SECRET&amp;event=recording"
+    recordingStatusCallbackEvent="completed"
+    recordingStatusCallbackMethod="POST"
+    transcription="true"
+    transcriptionEngine="deepgram"
+    transcriptionModel="deepgram/nova-3"
+    transcriptionLanguage="en-US"
+    transcriptionCallback="https://script.google.com/macros/s/DEPLOY_ID/exec?t=SECRET&amp;event=transcription" />
+</Response>
