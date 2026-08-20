@@ -98,6 +98,35 @@ than "junk sheet row," replace this with one of:
   to check Telnyx's Ed25519 signature from Apps Script (or from wherever
   this runs by then), rather than a shared-secret query param.
 
+## Deployment pitfalls hit during Stage 1 setup
+
+Two `clasp`/manifest gotchas cost real debugging time getting the first
+deployment live; recording them so the next deploy (e.g. onto Brandon's
+account at migration) doesn't repeat it:
+
+- **`clasp create --rootDir .` silently overwrites an existing
+  `appsscript.json`** in that directory, including the `webapp` block. If
+  you run `clasp create` against a directory that already has this repo's
+  manifest checked out, diff `appsscript.json` against git immediately after
+  and restore it before the first `clasp push` — otherwise the deployment
+  has no web app entry point at all and every request to `/exec` 404s with
+  no indication why.
+- **`access: "ANYONE"` is not public.** It means "anyone with a Google
+  account" — an anonymous caller (Telnyx's webhook servers, `curl`, anything
+  that can't present Google credentials) gets a 401 "unable to open the
+  file" page instead of executing the script. A truly public web app, which
+  a third-party webhook requires, needs `access: "ANYONE_ANONYMOUS"`. This
+  repo's `appsscript.json` is set correctly; the failure mode above only
+  bites if that value regresses to `"ANYONE"` on some future redeploy.
+
+Both are silent failures — Apps Script gives no error pointing at either
+cause. The `Raw` tab (or a direct `curl` against the deployment's `/exec`
+URL) is the fastest way to tell "request never reached the script" (404),
+"reached Apps Script but rejected before running" (401), and "ran
+successfully" (the 302 redirect to `script.googleusercontent.com`, which is
+expected and harmless — see the TeXML contract section of the spec) apart
+from each other.
+
 ## Consequences
 
 - This repo now contains one non-TypeScript, non-Supabase surface. Anyone
