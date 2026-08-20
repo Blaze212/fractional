@@ -33,11 +33,27 @@ function getJobByCaptureId(captureId) {
   var sheet = getJobsSpreadsheet().getSheetByName(JOBS_TAB)
   var data = getSheetRows(sheet)
 
-  for (var i = 0; i < data.rows.length; i++) {
-    if (data.rows[i].capture_id === captureId) return data.rows[i]
+  var matches = data.rows.filter(function (row) {
+    return row.capture_id === captureId
+  })
+
+  // A sheet has no unique constraint, so duplicates are always possible: a race,
+  // a hand-pasted row, a restored backup. Taking the first match silently is what
+  // let duplicate captures go unnoticed for days. Still return the first, so
+  // behaviour is unchanged, but say so loudly.
+  if (matches.length > 1) {
+    logEvent('jobs.duplicate_capture_id', {
+      capture_id: captureId,
+      row_count: matches.length,
+      rows: matches
+        .map(function (row) {
+          return row._rowIndex
+        })
+        .join(','),
+    })
   }
 
-  return null
+  return matches[0] || null
 }
 
 // Telnyx fires recording, transcription, and call-progress callbacks for one call
