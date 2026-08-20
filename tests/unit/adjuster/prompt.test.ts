@@ -77,3 +77,35 @@ describe('buildPrompt', () => {
     expect(user).toContain(transcript)
   })
 })
+
+describe('variant fields in the tag list', () => {
+  it('lists allowed variant keys, which validateFields matches on exactly', () => {
+    const spec = {
+      mortgage_status: {
+        type: 'variant',
+        label: 'Mortgage',
+        values: [
+          { key: 'has_mortgage', text: 'a' },
+          { key: 'no_mortgage', text: 'b' },
+        ],
+      },
+    }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('allowed values: has_mortgage, no_mortgage')
+  })
+
+  it('does not leak the rendered variant text into the field list', () => {
+    const spec = {
+      mortgage_status: {
+        type: 'variant',
+        values: [{ key: 'has_mortgage', text: 'I confirmed the mortgage is through X.' }],
+      },
+    }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).not.toContain('I confirmed the mortgage is through X.')
+  })
+})

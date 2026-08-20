@@ -50,6 +50,17 @@ function formatTagList(templateSpec) {
       if (def.label) descriptor += ' — ' + def.label
       if (def.type === 'enum' && def.values)
         descriptor += ' — allowed values: ' + def.values.join(', ')
+      // Variant values are {key, text} pairs and the key is what validateFields
+      // matches on. Listing only enum values left the model guessing variant keys
+      // it had never been shown, so every variant field came back needing input.
+      if (def.type === 'variant' && def.values)
+        descriptor +=
+          ' — allowed values: ' +
+          def.values
+            .map(function (option) {
+              return option.key
+            })
+            .join(', ')
       return descriptor
     })
     .join('\n')

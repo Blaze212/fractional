@@ -37,6 +37,10 @@ function callOpenRouter(config) {
       type: 'json_schema',
       json_schema: { name: 'extraction', strict: true, schema: config.jsonSchema },
     },
+    // Without require_parameters OpenRouter is free to route to an endpoint that
+    // does not support structured outputs, and the request fails on the provider
+    // side rather than here. Documented at openrouter.ai/docs/features/structured-outputs.
+    provider: { require_parameters: true },
   }
 
   var options = {
@@ -95,27 +99,41 @@ function parseOpenRouterResponse(bodyText) {
   }
 }
 
+// strict: true means OpenAI-compatible structured output, which requires every
+// object to carry additionalProperties: false and to list every one of its
+// properties in required. Omitting either is rejected at request time with
+// invalid_json_schema, not degraded silently. value is typed as a string because
+// every consumer treats it as one — resolveTagsForDoc stringifies it, and the
+// enum and variant checks compare it against string keys.
 function buildExtractionSchema(templateSpec) {
   var fieldProperties = {}
+  var tags = Object.keys(templateSpec || {})
 
-  Object.keys(templateSpec || {}).forEach(function (tag) {
+  tags.forEach(function (tag) {
     fieldProperties[tag] = {
       type: 'object',
       properties: {
-        value: {},
+        value: { type: 'string' },
         source_span: { type: 'string' },
         confidence: { type: 'string', enum: ['high', 'low'] },
       },
       required: ['value', 'source_span', 'confidence'],
+      additionalProperties: false,
     }
   })
 
   return {
     type: 'object',
     properties: {
-      fields: { type: 'object', properties: fieldProperties },
+      fields: {
+        type: 'object',
+        properties: fieldProperties,
+        required: tags,
+        additionalProperties: false,
+      },
       unplaced_notes: { type: 'array', items: { type: 'string' } },
     },
     required: ['fields', 'unplaced_notes'],
+    additionalProperties: false,
   }
 }

@@ -40,6 +40,33 @@ function getJobByCaptureId(captureId) {
   return null
 }
 
+// Telnyx fires recording, transcription, and call-progress callbacks for one call
+// within about a second of each other, and Apps Script runs them as concurrent
+// isolates. Every caller that mutates the Jobs tab must hold this lock: without it
+// two handlers read the sheet, both miss the other's row, and both insert — or
+// worse, both resolve the same insert index and the second full-row write blanks
+// the first one's columns. That is how a captured transcript disappears while the
+// recording URL survives.
+function withJobLock(callback) {
+  var lock = LockService.getScriptLock()
+  if (!lock.tryLock(30000)) throw new Error('Timed out waiting for the job lock')
+
+  try {
+    return callback()
+  } finally {
+    // Sheet writes are buffered and are NOT guaranteed to be visible to another
+    // execution just because this one returned. Releasing the lock without
+    // flushing lets the next handler read a sheet that is missing the row this
+    // one just wrote, and it appends a duplicate instead of merging into it.
+    try {
+      SpreadsheetApp.flush()
+    } catch (err) {
+      console.error('sheet_flush_failed error=' + String(err))
+    }
+    lock.releaseLock()
+  }
+}
+
 function upsertJob(captureId, fields) {
   var sheet = getJobsSpreadsheet().getSheetByName(JOBS_TAB)
   var data = getSheetRows(sheet)
@@ -56,12 +83,13 @@ function upsertJob(captureId, fields) {
   }
 
   merged.created_at = now
-  var rowIndex = sheet.getLastRow() + 1
   var newRow = data.headers.map(function (header) {
     return header in merged ? merged[header] : ''
   })
-  sheet.getRange(rowIndex, 1, 1, newRow.length).setValues([newRow])
-  return rowIndex
+  // appendRow resolves the target row at write time. getLastRow() + setValues()
+  // resolves it at read time, which lets a concurrent insert land on the same row.
+  sheet.appendRow(newRow)
+  return sheet.getLastRow()
 }
 
 function writeRowFields(sheet, headers, rowIndex, fields) {
@@ -119,13 +147,15 @@ function promoteStaleAwaitingTranscript() {
   var cutoff = new Date(Date.now() - 15 * 60 * 1000)
 
   data.rows.forEach(function (row) {
-    if (row.status !== 'awaiting_transcript') return
+    if (row.status !== 'awaiting_transcript' && row.status !== 'awaiting_recording') return
     if (new Date(row.created_at) >= cutoff) return
 
-    writeRowFields(sheet, data.headers, row._rowIndex, {
-      status: 'pending',
-      transcript_source: 'deepgram-direct',
-    })
+    // awaiting_recording already holds a Telnyx transcript — only the audio is
+    // missing, so the source stays as recorded rather than being relabelled.
+    var fields = { status: 'pending' }
+    if (row.status === 'awaiting_transcript') fields.transcript_source = 'deepgram-direct'
+
+    writeRowFields(sheet, data.headers, row._rowIndex, fields)
   })
 }
 

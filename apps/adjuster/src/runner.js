@@ -1,26 +1,59 @@
 function runPipelineTick() {
+  var startedAt = Date.now()
   var lock = LockService.getScriptLock()
-  if (!lock.tryLock(5000)) return
+
+  if (!lock.tryLock(5000)) {
+    logEvent('runner.skipped', { reason: 'lock_unavailable' })
+    return
+  }
+
+  logEvent('runner.tick_start', {})
 
   try {
     reclaimStuckJobs()
     promoteStaleAwaitingTranscript()
     processOldestPendingJob()
+    logEvent('runner.tick_end', { ms: Date.now() - startedAt })
+  } catch (err) {
+    var described = describeError(err)
+    logEvent('runner.tick_failed', {
+      error: described.error,
+      stack: described.stack,
+      ms: Date.now() - startedAt,
+    })
+    throw err
   } finally {
+    SpreadsheetApp.flush()
     lock.releaseLock()
   }
 }
 
 function processOldestPendingJob() {
   var picked = getOldestPendingJob()
-  if (!picked.job) return
+
+  if (!picked.job) {
+    logEvent('runner.no_pending_jobs', {})
+    return
+  }
 
   var job = picked.job
+  logEvent('runner.job_leased', {
+    capture_id: job.capture_id,
+    attempt: Number(job.attempts || 0) + 1,
+    transcript_chars: Number(job.transcript_chars || 0),
+  })
+
   leaseJob(picked.sheet, picked.headers, job)
 
   try {
     runJobPipeline(job)
   } catch (e) {
+    var described = describeError(e)
+    logEvent('runner.job_threw', {
+      capture_id: job.capture_id,
+      error: described.error,
+      stack: described.stack,
+    })
     failJob(job, e.message)
   }
 }
@@ -30,6 +63,10 @@ function leaseJob(sheet, headers, job) {
     status: 'matching',
     lease_until: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     attempts: Number(job.attempts || 0) + 1,
+    // A new attempt starts clean. Without this the previous attempt's error text
+    // survives a successful run and reads as a live failure long after the job
+    // reached done.
+    error: '',
   })
 }
 
@@ -41,6 +78,14 @@ function runJobPipeline(job) {
         return c.claim_id === match.claim_id
       })[0]
     : null
+
+  logEvent('runner.matched', {
+    capture_id: job.capture_id,
+    claim_id: match.claim_id || '',
+    match_method: match.match_method,
+    match_confidence: match.match_confidence,
+    claims_considered: claims.length,
+  })
 
   upsertJob(job.capture_id, {
     claim_id: match.claim_id || '',
@@ -63,27 +108,58 @@ function runJobPipeline(job) {
     phraseBank: [],
   })
 
+  logEvent('runner.extracted', {
+    capture_id: job.capture_id,
+    model: extraction.model,
+    field_count: Object.keys(extraction.fields || {}).length,
+    unplaced_notes: (extraction.unplaced_notes || []).length,
+  })
+
   upsertJob(job.capture_id, { status: 'generating', model: extraction.model })
 
   var validated = validateFields(extraction.fields, job.transcript, tagSchema)
+  logEvent('runner.validated', {
+    capture_id: job.capture_id,
+    valid: Object.keys(validated).filter(function (t) {
+      return validated[t].valid
+    }).length,
+    needs_input: Object.keys(validated).filter(function (t) {
+      return !validated[t].valid
+    }).length,
+  })
   var latestJob = getJobByCaptureId(job.capture_id)
   var result = generateDoc(latestJob, claim, validated, tagSchema, extraction.unplaced_notes)
 
   if (result.status === 'failed') {
+    logEvent('runner.docgen_failed', { capture_id: job.capture_id, error: result.error })
     failJob(latestJob, result.error)
     return
   }
+
+  logEvent('runner.job_done', {
+    capture_id: job.capture_id,
+    doc_url: result.docUrl,
+    needs_input_count: result.needsInputCount,
+  })
 
   upsertJob(job.capture_id, {
     status: 'done',
     doc_url: result.docUrl,
     needs_input_count: result.needsInputCount,
+    error: '',
   })
 }
 
 function failJob(job, errorMessage) {
   var attempts = Number(job.attempts || 0)
   var status = attempts >= 3 ? 'failed' : 'pending'
+
+  logEvent('runner.job_failed', {
+    capture_id: job.capture_id,
+    attempts: attempts,
+    next_status: status,
+    error: String(errorMessage).slice(0, 1000),
+  })
 
   upsertJob(job.capture_id, { status: status, error: errorMessage })
 
