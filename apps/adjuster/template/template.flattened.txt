@@ -1,12 +1,12 @@
 ASSIGNMENT:
-This loss was received by Ibis Claim Services on {{date_received}}. Contact was made with {{contacted_party_name}} on {{date_contacted}} and the inspection was scheduled for {{date_inspected}}. The loss was inspected at the scheduled date and time. {{present_at_inspection}} {{present_at_inspection_verb}} present during the inspection.
+This loss was received by Ibis Claim Services on [DATE_RECEIVED]. Contact was made with {{contacted_party_name}} on [DATE_CONTACTED] and the inspection was scheduled for [DATE_INSPECTED]. The loss was inspected at the scheduled date and time. {{present_at_inspection}} {{present_at_inspection_verb}} present during the inspection.
 
 MORTGAGE:
 {{mortgage_status}}
 
 ORIGIN:
 {{origin_narrative}}
-Date of loss: {{date_of_loss}}.
+Date of loss: [DATE_LOSS].
 
 COVERAGE:
 The damages to the insured's property are {{coverage_cause_narrative}}, {{coverage_determination}}

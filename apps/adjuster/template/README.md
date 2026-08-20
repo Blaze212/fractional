@@ -199,3 +199,33 @@ hatch for one-off arguments like Galicia's warranty-based rewrite, and
 Coinsurance's "almost never applies" instruction) lives in `prompt.js`'s
 `FIELD_GUIDANCE` map, gated so a tag's guidance only appears in the prompt
 when that tag is actually present in the schema passed in.
+
+## Phase 1c — correction: `[DATE_RECEIVED]`/`[DATE_CONTACTED]`/`[DATE_INSPECTED]`/`[DATE_LOSS]` are not ours to fill
+
+The very first instruction behind this whole rework was that the blank
+template's square-bracket tokens (`[DATE_RECEIVED]`, `[DATE_CONTACTED]`,
+`[DATE_INSPECTED]`, `[DATE_LOSS]`) are Ibis's own merge-field markup —
+exact-match variables that stay in the final template as-is, not narrative
+content the voice-to-report pipeline extracts or fills. Phase 1 recorded
+that decision in the analysis docs but never actually applied it to
+`enums.json`/`template.flattened.txt` — `date_received`, `date_contacted`,
+`date_inspected`, and `date_of_loss` were left as ordinary `{{}}`
+LLM-extracted fields, carried over unchanged from Phase 0. Fixed now:
+
+- Removed `date_received`, `date_contacted`, `date_inspected`, and
+  `date_of_loss` from `enums.json` entirely — nothing else in the codebase
+  referenced them (checked before removing).
+- `template.flattened.txt` now has the literal tokens `[DATE_RECEIVED]`,
+  `[DATE_CONTACTED]`, `[DATE_INSPECTED]`, `[DATE_LOSS]` in place of the old
+  `{{date_received}}` etc. tags. These are inert to `docgen.js`'s
+  `{{tag}}`-only replacement regex and to `findLeftoverTags`'s
+  `{{\w+}}`-only leftover check, so they pass straight through untouched —
+  exactly the intended behavior.
+- Added a regression test (`template.test.ts`, "Ibis merge-field tokens
+  (not ours to fill)") asserting the four tokens stay literal text in the
+  template and that none of the four ever reappears as a schema field.
+
+`contacted_party_name` and `present_at_inspection`/
+`present_at_inspection_verb` are unaffected — the blank template only used
+blank underscores (`_____`) for those, not square brackets, so they were
+always genuinely ours to extract from the voice note.

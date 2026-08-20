@@ -1,25 +1,7 @@
 {
-  "date_received": {
-    "label": "Date loss received",
-    "type": "date",
-    "section": "Assignment",
-    "required": true
-  },
   "contacted_party_name": {
     "label": "Contacted party",
     "type": "string",
-    "section": "Assignment",
-    "required": true
-  },
-  "date_contacted": {
-    "label": "Date contacted",
-    "type": "date",
-    "section": "Assignment",
-    "required": true
-  },
-  "date_inspected": {
-    "label": "Date inspected",
-    "type": "date",
     "section": "Assignment",
     "required": true
   },
@@ -59,12 +41,6 @@
     "type": "string",
     "section": "Mortgage",
     "required": false
-  },
-  "date_of_loss": {
-    "label": "Date of loss",
-    "type": "date",
-    "section": "Origin",
-    "required": true
   },
   "origin_narrative": {
     "label": "Cause of loss",

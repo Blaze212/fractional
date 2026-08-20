@@ -88,3 +88,23 @@ describe('adjuster template / enums parity', () => {
     })
   })
 })
+
+// [DATE_RECEIVED], [DATE_CONTACTED], [DATE_INSPECTED], [DATE_LOSS] are Ibis's own
+// merge-field tokens from the original blank template, not fields our voice-to-report
+// pipeline extracts or fills. They must stay as literal square-bracket text in the
+// flattened template and must never become {{tags}} the LLM is asked to populate.
+describe('Ibis merge-field tokens (not ours to fill)', () => {
+  const ibisTokens = ['[DATE_RECEIVED]', '[DATE_CONTACTED]', '[DATE_INSPECTED]', '[DATE_LOSS]']
+
+  it('preserves every Ibis merge-field token as literal text in the flattened template', () => {
+    ibisTokens.forEach((token) => {
+      expect(templateText, `${token} missing from template.flattened.txt`).toContain(token)
+    })
+  })
+
+  it('never schemas a field for what an Ibis merge-field token already covers', () => {
+    ;['date_received', 'date_contacted', 'date_inspected', 'date_of_loss'].forEach((tag) => {
+      expect(tag in enums, `${tag} should not be an extractable field`).toBe(false)
+    })
+  })
+})
