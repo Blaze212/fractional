@@ -90,3 +90,89 @@ Drive files whenever these change.
 - Any Xactimate line-item content. Nothing from the estimate/pricing
   portions of the sample PDFs was mined — only narrative-section vocabulary
   went into `glossary.json`, consistent with the spec's non-goals.
+
+## Phase 1 — corrections against 11 filed reports (not just the blank template)
+
+Phase 0 cross-checked the blank template against 13 finished reports but
+largely kept the blank template's section structure. Phase 1 went back to
+11 actually-filed reports section by section (see
+`voice-to-report-generator/report-templates/ibis-report-pattern-analysis.md`
+and `ibis-report-template-reworked.md`, both local-only per `.gitignore`)
+and found several sections whose *structure*, not just field values, didn't
+match real usage.
+
+- **Coverage restructured.** Real reports write Coverage as a narrative
+  cause clause + a small templated determination, not a full canned
+  paragraph. Replaced `loss_cause` with `coverage_cause_narrative`
+  (narrative), shrank `coverage_determination` to 2 variants (`covered` /
+  `excluded`) holding just the determination sentence, and added
+  `coverage_supporting_detail` (optional) for cases like a freeze claim's
+  "we confirmed heat was maintained" addition. Known minor cosmetic gap:
+  when `coverage_supporting_detail` is empty, the rendered sentence has a
+  double space before "Therefore" (same class of rough edge as the
+  optional-field blank-heading issue below) — not worth a template-engine
+  change for one extra space.
+- **Roof restructured into a 3-way `roof_status` variant**
+  (`not_affected` / `shingle` / `other_material`), replacing the always-on
+  roof sentence. 4/11 real reports skip the whole subsection with one line;
+  shingle stays a full slot-filled template (`roof_covering_type` trimmed
+  to shingle-only values, plus new `roof_condition` enum); non-shingle
+  material (Smith's metal roof) falls back to one LLM-authored
+  `roof_narrative_freeform` field, since a fixed sentence can't flex for
+  arbitrary roofing material. `roof_covering_type`, `roof_condition`,
+  `roof_age_years`, `roof_pitch`, and `roof_damage_narrative` are only
+  required when `roof_status` is `shingle` — see `requiredWhen` below.
+- **Exterior restructured the same way** — `exterior_status`
+  (`not_affected` / `affected`) replaces the always-on exterior sentence;
+  `exterior_narrative` (renamed from `exterior_damage_narrative`) is only
+  required when affected.
+- **Personal Property templatized for the first time.** Was static
+  boilerplate in Phase 0. Now `personal_property_status`
+  (`none` / `damaged`) — the `damaged` branch always appends a literal
+  `[NEEDS INPUT: Confirm personal property list above against the
+  transcript before filing.]` after the narrative, even when the LLM
+  extracted a clean itemized list — financial/inventory accuracy here
+  warrants a forced second pass, not just a confidence-gated one.
+- **Mitigation's rough edge fixed.** Phase 0 flagged optional fields
+  rendering as a bare heading with nothing under it as "a known cosmetic
+  rough edge." `mitigation_status` (`none` / `present`) now drops the
+  `MITIGATION:` heading entirely when there's no mitigation vendor —
+  matches the real pattern (4/11 reports omit it heading-and-all, never a
+  bare heading).
+- **Overhead & Profit, Salvage & Subrogation, and Coinsurance templatized
+  for the first time** (`overhead_profit_narrative`, `subrogation_reason`,
+  `coinsurance_narrative`) — Phase 0 left these fully static. Real O&P
+  usage is 7 distinct wordings across 11 reports (including one case where
+  O&P is affirmatively *included*), so it's a narrative field, not a small
+  enum. Coinsurance appears in **zero** of 11 real reports — the blank
+  template's dollar figures ($326,176.97 ITV, etc.) are almost certainly
+  the same "real claim numbers baked in as static text" bug this README
+  already caught for Year Built/Foundation Type/Square Footage. Kept as a
+  required field (renders `[NEEDS INPUT: ...]` by default via the existing
+  validation path) rather than dropped, per Brandon's call — **follow up
+  with Brandon on whether Coinsurance should stay in the template at all**,
+  since there's zero real precedent for it across the whole sample set.
+- **Further Handling / Claim Completion: no change.** Confirmed to default
+  to Claim Completion's boilerplate (already how the static text renders);
+  Further Handling stays a manual edit for now, not LLM-driven.
+- **`requiredWhen` added to `validate.js`.** A field can now declare
+  `"requiredWhen": { "field": "<sibling tag>", "equals": "<value>" }` so
+  it's only required when a sibling variant resolved to a specific branch
+  — e.g. `roof_covering_type` only needs a value when `roof_status` is
+  `shingle`. Without this, every not-affected or non-shingle roof claim
+  would show phantom "needs input" counts for fields the rendered document
+  never actually references. `docgen.js` and the tag-list prompt logic
+  needed no changes — the branch that isn't chosen never has its `{{tag}}`
+  inserted into the document body at all, so an unused field's resolved
+  text (even `[NEEDS INPUT: ...]`) is simply never substituted.
+- **Not changed in this pass, deliberately:** Other Structures stays fully
+  static boilerplate (no decision made on templatizing it yet); Risk
+  Information's "composition shingle roofing" tail still hardcodes shingle
+  even though Roof itself now handles non-shingle material — same
+  Phase 0-flagged risk, just not resolved here; grammar/tone/voice
+  instructions (e.g. "was" vs. "were" for multi-person
+  `present_at_inspection`, narrative style for `roof_narrative_freeform`
+  and `overhead_profit_narrative`, the subrogation escape hatch for
+  one-off arguments like Galicia's warranty-based rewrite, interior
+  level-grouping) are prompt-phase work, not schema/template work, and
+  haven't been written into `prompt.js` yet.

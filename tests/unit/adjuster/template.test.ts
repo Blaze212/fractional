@@ -68,13 +68,13 @@ describe('adjuster template / enums parity', () => {
     })
   })
 
-  it('gives every variant option a key, label, and text', () => {
+  it('gives every variant option a key, label, and text (text may be an intentionally empty string, e.g. mitigation_status "none", to drop a whole section)', () => {
     Object.entries(enums).forEach(([tag, schema]) => {
       if (schema.type !== 'variant') return
       ;(schema.values as VariantOption[]).forEach((option) => {
         expect(option.key, `${tag} option missing key`).toBeTruthy()
         expect(option.label, `${tag} option ${option.key} missing label`).toBeTruthy()
-        expect(option.text, `${tag} option ${option.key} missing text`).toBeTruthy()
+        expect(typeof option.text, `${tag} option ${option.key} missing text`).toBe('string')
       })
     })
   })

@@ -65,9 +65,9 @@
     "section": "Origin",
     "required": true
   },
-  "loss_cause": {
-    "label": "Loss cause (short phrase, e.g. \"storm\", \"wind\", \"lightning\")",
-    "type": "string",
+  "coverage_cause_narrative": {
+    "label": "Coverage cause clause (e.g. \"storm related\", \"related to a burst plumbing line due to freezing\")",
+    "type": "narrative",
     "section": "Coverage",
     "required": true
   },
@@ -78,26 +78,22 @@
     "required": true,
     "values": [
       {
-        "key": "storm_covered_no_concerns",
+        "key": "covered",
         "label": "Covered, no concerns",
-        "text": "The damages to the insured's property are {{loss_cause}} related, which is covered under the insured's policy. Therefore, there are no coverage concerns that would affect this claim."
+        "text": "which is covered under the insured's policy. {{coverage_supporting_detail}} Therefore, there are no coverage concerns that would affect this claim."
       },
       {
-        "key": "storm_covered_interior_excluded",
-        "label": "Exterior covered, interior excluded",
-        "text": "The damages to the insured's property are {{loss_cause}} related, which is covered under the insured's policy. However, the interior water damage was not caused by a storm-created opening. Therefore, there are no coverage concerns for the exterior of the dwelling, however coverage would not apply to the interior as it was not a direct result of a storm-created opening."
-      },
-      {
-        "key": "accidental_discharge_covered",
-        "label": "Accidental discharge, covered",
-        "text": "The damages to the insured's property are related to an accidental discharge of water from within a plumbing system, which is covered under the insured's policy. Therefore, there are no coverage concerns that would affect this claim."
-      },
-      {
-        "key": "coverage_issue",
-        "label": "Coverage issue / denial",
-        "text": "There is a coverage issue affecting this claim that requires carrier review before further handling proceeds."
+        "key": "excluded",
+        "label": "Excluded / coverage does not apply",
+        "text": "which is excluded under the insured's policy. {{coverage_supporting_detail}} Therefore, coverage does not appear to be applicable to this loss."
       }
     ]
+  },
+  "coverage_supporting_detail": {
+    "label": "Coverage supporting detail (optional, e.g. confirming heat was maintained for a freeze claim)",
+    "type": "narrative",
+    "section": "Coverage",
+    "required": false
   },
   "dwelling_type": {
     "label": "Dwelling type",
@@ -111,7 +107,7 @@
     "type": "enum",
     "section": "Risk",
     "required": true,
-    "values": ["one story", "two story", "three story", "four story"]
+    "values": ["1 story", "2 story", "3 story", "4 story"]
   },
   "year_built": {
     "label": "Year built",
@@ -172,39 +168,66 @@
     "required": true,
     "values": ["the insured", "a tenant", "tenants"]
   },
+  "roof_status": {
+    "label": "Roof status",
+    "type": "variant",
+    "section": "Roof",
+    "required": true,
+    "values": [
+      {
+        "key": "not_affected",
+        "label": "Not affected",
+        "text": "The dwelling roof was not affected during this loss."
+      },
+      {
+        "key": "shingle",
+        "label": "Affected, shingle roof",
+        "text": "The shingles on the roof are a {{roof_covering_type}} that are approximately {{roof_age_years}} years old. The shingles are in {{roof_condition}} condition for their age. There is one layer of shingles with no drip edge present. The slopes on the roof are pitched at {{roof_pitch}}.\nMy inspection of the roof found the following: {{roof_damage_narrative}}"
+      },
+      {
+        "key": "other_material",
+        "label": "Affected, non-shingle roof",
+        "text": "{{roof_narrative_freeform}}"
+      }
+    ]
+  },
   "roof_covering_type": {
-    "label": "Roof covering type",
+    "label": "Roof covering type (shingle)",
     "type": "enum",
     "section": "Roof",
     "required": true,
+    "requiredWhen": { "field": "roof_status", "equals": "shingle" },
     "values": [
       "20 year 3 tab shingles",
       "25 year 3 tab shingles",
       "30 year laminate shingles",
       "40 year laminate shingles",
       "50 year laminate shingles",
-      "Roll Roofing",
       "Wood shingles",
-      "Cedar shakes",
-      "Metal roofing",
-      "Modified Bitumen",
-      "Built-Up",
-      "Slate",
-      "Membrane",
-      "Tile"
+      "Cedar shakes"
     ]
+  },
+  "roof_condition": {
+    "label": "Shingle condition",
+    "type": "enum",
+    "section": "Roof",
+    "required": true,
+    "requiredWhen": { "field": "roof_status", "equals": "shingle" },
+    "values": ["average", "below average"]
   },
   "roof_age_years": {
     "label": "Roof age (years)",
     "type": "string",
     "section": "Roof",
-    "required": true
+    "required": true,
+    "requiredWhen": { "field": "roof_status", "equals": "shingle" }
   },
   "roof_pitch": {
     "label": "Roof pitch",
     "type": "enum",
     "section": "Roof",
     "required": true,
+    "requiredWhen": { "field": "roof_status", "equals": "shingle" },
     "values": [
       "1/12",
       "2/12",
@@ -221,16 +244,43 @@
     ]
   },
   "roof_damage_narrative": {
-    "label": "Roof damage findings",
+    "label": "Roof damage findings (per slope, including undamaged slopes)",
     "type": "narrative",
     "section": "Roof",
-    "required": false
+    "required": true,
+    "requiredWhen": { "field": "roof_status", "equals": "shingle" }
   },
-  "exterior_damage_narrative": {
-    "label": "Exterior damage findings",
+  "roof_narrative_freeform": {
+    "label": "Roof findings, non-shingle material (full narrative — material, age, condition, layers, pitch, per-slope findings, conclusion)",
+    "type": "narrative",
+    "section": "Roof",
+    "required": true,
+    "requiredWhen": { "field": "roof_status", "equals": "other_material" }
+  },
+  "exterior_status": {
+    "label": "Exterior status",
+    "type": "variant",
+    "section": "Exterior",
+    "required": true,
+    "values": [
+      {
+        "key": "not_affected",
+        "label": "Not affected",
+        "text": "The dwelling exterior was not affected during this loss."
+      },
+      {
+        "key": "affected",
+        "label": "Affected",
+        "text": "Inspection of the elevations around the dwelling found the following: {{exterior_narrative}}"
+      }
+    ]
+  },
+  "exterior_narrative": {
+    "label": "Exterior damage findings (per elevation, including undamaged elevations)",
     "type": "narrative",
     "section": "Exterior",
-    "required": false
+    "required": true,
+    "requiredWhen": { "field": "exterior_status", "equals": "affected" }
   },
   "interior_damage_narrative": {
     "label": "Interior damage findings",
@@ -238,10 +288,67 @@
     "section": "Interior",
     "required": false
   },
+  "personal_property_status": {
+    "label": "Personal property status",
+    "type": "variant",
+    "section": "Personal Property",
+    "required": true,
+    "values": [
+      {
+        "key": "none",
+        "label": "No damage",
+        "text": "Inspection found no event related damages to any of the insured's personal property."
+      },
+      {
+        "key": "damaged",
+        "label": "Damaged",
+        "text": "{{personal_property_narrative}}\n\n[NEEDS INPUT: Confirm personal property list above against the transcript before filing.]"
+      }
+    ]
+  },
+  "personal_property_narrative": {
+    "label": "Personal property damage findings",
+    "type": "narrative",
+    "section": "Personal Property",
+    "required": true,
+    "requiredWhen": { "field": "personal_property_status", "equals": "damaged" }
+  },
+  "mitigation_status": {
+    "label": "Mitigation status",
+    "type": "variant",
+    "section": "Mitigation",
+    "required": true,
+    "values": [
+      { "key": "none", "label": "No mitigation vendor involved", "text": "" },
+      {
+        "key": "present",
+        "label": "Mitigation vendor involved",
+        "text": "MITIGATION:\n{{mitigation_narrative}}"
+      }
+    ]
+  },
   "mitigation_narrative": {
     "label": "Mitigation details",
     "type": "narrative",
     "section": "Mitigation",
     "required": false
+  },
+  "overhead_profit_narrative": {
+    "label": "Overhead & profit determination",
+    "type": "narrative",
+    "section": "Overhead & Profit",
+    "required": true
+  },
+  "subrogation_reason": {
+    "label": "Subrogation reason clause (e.g. \"weather related\", \"related to a 10 year old plumbing supply line that was not recently repaired\")",
+    "type": "narrative",
+    "section": "Salvage & Subrogation",
+    "required": true
+  },
+  "coinsurance_narrative": {
+    "label": "Coinsurance — no coinsurance penalty applies in most claims; confirm figures with Brandon if this one does",
+    "type": "narrative",
+    "section": "Coinsurance",
+    "required": true
   }
 }

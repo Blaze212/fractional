@@ -9,7 +9,7 @@ ORIGIN:
 Date of loss: {{date_of_loss}}.
 
 COVERAGE:
-{{coverage_determination}}
+The damages to the insured's property are {{coverage_cause_narrative}}, {{coverage_determination}}
 
 RISK INFORMATION:
 The dwelling is a {{dwelling_stories}}, {{dwelling_type}} structure. It was built in {{year_built}} on a {{foundation_type}} foundation. The dwelling is wood framed with {{siding_type}}, and composition shingle roofing. The interior of the dwelling measures approximately {{square_footage}} square feet with {{bedroom_count}} bedrooms and {{bathroom_count}} bathrooms. The home is currently occupied by {{occupancy_status}}.
@@ -17,11 +17,10 @@ The dwelling is a {{dwelling_stories}}, {{dwelling_type}} structure. It was buil
 DWELLING INSPECTION
 
 Roof
-The shingles on the roof are a {{roof_covering_type}} that are approximately {{roof_age_years}} years old. The shingles are in average condition for their age. There is one layer of shingles with no drip edge present. The slopes on the roof are pitched at {{roof_pitch}}.
-My inspection of the roof found the following: {{roof_damage_narrative}}
+{{roof_status}}
 
 Exterior
-Inspection of the elevations around the dwelling found the following: {{exterior_damage_narrative}}
+{{exterior_status}}
 
 Interior
 {{interior_damage_narrative}}
@@ -30,19 +29,21 @@ OTHER STRUCTURES:
 Inspection found no storm related damages to any of the insured's other structures.
 
 PERSONAL PROPERTY:
-Inspection found no event related damages to any of the insured's personal property.
+{{personal_property_status}}
 
-MITIGATION:
-{{mitigation_narrative}}
+{{mitigation_status}}
 
 OVERHEAD & PROFIT:
-Overhead and profit have not been included as the repairs will not require the use of a general contractor.
+{{overhead_profit_narrative}}
 
 REGULATIONS AFFECTING THE LOSS:
 There are no local building ordinances that will affect the adjustment of this loss.
 
 SALVAGE & SUBROGATION:
-There are no subrogation possibilities as the damages are weather related. Any possible salvage value is negated by cost of removal, delivery, and sale.
+There are no subrogation possibilities as the damages are {{subrogation_reason}}. Any possible salvage value is negated by cost of removal, delivery, and sale.
+
+COINSURANCE:
+{{coinsurance_narrative}}
 
 FURTHER HANDLING:
 We will need to confirm the carrier has accepted liability or if a denial of the claim will take place. Once that is confirmed, we will work on the following items to conclude this loss:

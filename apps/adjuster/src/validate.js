@@ -8,7 +8,7 @@ function validateFields(fields, transcript, tagSchema) {
     var label = schema.label || tag
 
     if (!fieldHasSourceSpan(field)) {
-      result[tag] = schema.required === false ? omitted(label) : needsInput(label)
+      result[tag] = isRequired(schema, fields) ? needsInput(label) : omitted(label)
       return
     }
 
@@ -42,6 +42,18 @@ function validateFields(fields, transcript, tagSchema) {
   })
 
   return result
+}
+
+// A field can declare requiredWhen: { field, equals } to only be required when a
+// sibling field (e.g. roof_status) resolved to a specific value — e.g. roof_covering_type
+// is only required when roof_status is "shingle", not when the roof wasn't affected at all.
+function isRequired(schema, fields) {
+  if (schema.requiredWhen) {
+    var sibling = (fields || {})[schema.requiredWhen.field]
+    var conditionMet = !!sibling && sibling.value === schema.requiredWhen.equals
+    if (!conditionMet) return false
+  }
+  return schema.required !== false
 }
 
 function fieldHasSourceSpan(field) {
