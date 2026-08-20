@@ -1,5 +1,5 @@
 ASSIGNMENT:
-This loss was received by Ibis Claim Services on {{date_received}}. Contact was made with {{contacted_party_name}} on {{date_contacted}} and the inspection was scheduled for {{date_inspected}}. The loss was inspected at the scheduled date and time. {{present_at_inspection}} was present during the inspection.
+This loss was received by Ibis Claim Services on {{date_received}}. Contact was made with {{contacted_party_name}} on {{date_contacted}} and the inspection was scheduled for {{date_inspected}}. The loss was inspected at the scheduled date and time. {{present_at_inspection}} {{present_at_inspection_verb}} present during the inspection.
 
 MORTGAGE:
 {{mortgage_status}}

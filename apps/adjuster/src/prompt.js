@@ -9,14 +9,18 @@ function buildPrompt(input) {
     "You are extracting structured fields from a field adjuster's spoken dictation of a property inspection.",
     'Every field you emit must include a source_span that is an exact, contiguous substring of the transcript.',
     'If the adjuster did not say something, omit that field entirely rather than inventing or inferring a value.',
-    'Anything said that does not fit a listed field goes into unplaced_notes instead of being discarded.',
+    'Anything said that does not fit a listed field goes into unplaced_notes instead of being discarded — common examples include tree removal, business personal property, additional living expense, loss of use, and references to a prior/previous claim.',
     'Set confidence to "low" whenever you are not certain the source_span supports the value.',
+    'For enum fields, choose the closest matching allowed value. If the transcript includes descriptive detail beyond what the closest value captures (e.g. "a 1 story with a room over the garage"), put the extra detail in unplaced_notes rather than distorting the enum choice or dropping the detail.',
   ].join('\n')
 
   var sections = [
     'Claim context:\n' + formatClaimBlock(claim),
     'Fields to extract:\n' + formatTagList(templateSpec),
   ]
+
+  var fieldGuidanceBlock = formatFieldGuidance(templateSpec)
+  if (fieldGuidanceBlock) sections.push('Field-specific guidance:\n' + fieldGuidanceBlock)
 
   var glossaryBlock = formatGlossary(glossary)
   if (glossaryBlock) sections.push('Trade glossary:\n' + glossaryBlock)
@@ -30,6 +34,45 @@ function buildPrompt(input) {
   sections.push('Transcript:\n' + transcript)
 
   return { system: system, user: sections.join('\n\n') }
+}
+
+// Guidance for specific tags, only surfaced when that tag is actually part of the
+// schema being extracted — keeps the prompt proportional to whatever templateSpec
+// is passed in rather than always dumping every section's guidance.
+var FIELD_GUIDANCE = {
+  present_at_inspection_verb:
+    'Set to "was" if present_at_inspection names exactly one person, "were" if it names more than one. Real Ibis reports often write "was" regardless of count — conjugate correctly anyway rather than copying that habit.',
+  roof_damage_narrative:
+    'List every slope you have information about, including slopes with no damage ("We did not observe any storm related damages on this slope."); do not omit undamaged slopes. Use whatever slope labels the transcript uses (e.g. "Front Slope", "Upper Front Slope", "Front Slope with Extension", a "Soft Metals" line) rather than forcing a fixed Front/Right/Back/Left layout. End with a repair-or-replace conclusion tied to the specific slope(s) and square footage found damaged.',
+  roof_narrative_freeform:
+    'The roof is not a shingle roof, so write the full passage yourself: covering material and age, condition, layer count, and pitch, then per-slope findings (every slope mentioned, including undamaged ones), then a repair-or-replace conclusion. Example shape, adapt to the actual transcript rather than copying it: "The roof has Metal roofing with a layer of asphalt shingles underneath that are approximately 20 years old. The panels are in average condition for their age. There is one layer of metal panels and two layers of shingles underneath the metal panels with no drip edge present. The slopes on the roof are pitched at 5/12. My inspection of the roof found no storm related damages present. However, we did observe two raised nails on the left extension ridge which could be the water intrusion point. Since no storm related damages were found to the roof surface, we did not include any repairs in our estimate."',
+  exterior_narrative:
+    'Cover all four elevations — Front, Right, Back, Left, in that order — even the ones with no damage ("We did not observe any storm related damages on this elevation."). Do not skip an elevation just because nothing was found on it.',
+  interior_damage_narrative:
+    'If the transcript describes a multi-level property, group rooms under level sub-headers ("Main Level", "Upper Level", "Basement Level") before listing the rooms on that level, rather than listing all rooms flat. If flooring damage in one room extends into an open-plan adjoining room, say so explicitly rather than listing the adjoining room as a separate, unrelated item.',
+  personal_property_narrative:
+    'Three cases: (1) the transcript lists specific damaged items — write them out; (2) the adjuster explicitly says they are unsure of the extent and will need additional inspection — use that deferred phrasing, do not invent a list; (3) damage is mentioned but nothing is itemized — leave this field unextracted (do not guess at items) so it gets flagged for manual input.',
+  overhead_profit_narrative:
+    'State a determination (not included / included / not yet, but likely) plus a claim-specific reason (number of trades involved, scope of work, caliber of home). If coverage_determination is "excluded", use "Due to the coverage issue, overhead and profit do not appear to be applicable to this loss." instead of reasoning about trades or scope.',
+  subrogation_reason:
+    'Normally just the reason clause completing "There are no subrogation possibilities as the damages are ___." (e.g. "weather related", "related to a 10 year old plumbing supply line that was not recently repaired"). If the transcript describes an unusual subrogation argument that does not fit this clause shape (e.g. a warranty-based argument), do not rewrite the whole sentence yourself — leave this field unextracted so Brandon writes it by hand.',
+  coinsurance_narrative:
+    'Coinsurance applies to almost no claims — only extract this field when the transcript explicitly states coinsurance figures or that a coinsurance penalty applies. Otherwise leave it unextracted.',
+  coverage_cause_narrative:
+    'A short clause describing why the damage is or is not covered (e.g. "storm related", "related to a burst plumbing line due to freezing", "related to an accidental discharge of water from within a plumbing system"). Echo the cause already described in origin_narrative, worded for a coverage sentence.',
+  coverage_supporting_detail:
+    'Optional — only fill this in when the adjuster states something that directly supports the coverage determination beyond the cause itself, e.g. confirming heat was maintained in the home for a freeze claim. Leave unextracted otherwise.',
+}
+
+function formatFieldGuidance(templateSpec) {
+  var lines = Object.keys(FIELD_GUIDANCE)
+    .filter(function (tag) {
+      return Object.prototype.hasOwnProperty.call(templateSpec, tag)
+    })
+    .map(function (tag) {
+      return '- ' + tag + ': ' + FIELD_GUIDANCE[tag]
+    })
+  return lines.join('\n')
 }
 
 function formatClaimBlock(claim) {

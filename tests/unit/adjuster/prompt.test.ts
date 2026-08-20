@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { loadGs } from './loadGs'
 
-const { buildPrompt } = loadGs('apps/adjuster/src/prompt.js')
+const { buildPrompt, formatFieldGuidance } = loadGs('apps/adjuster/src/prompt.js')
 
 const templateSpec = {
   roof_covering_type: {
@@ -75,6 +75,39 @@ describe('buildPrompt', () => {
     const { user } = buildPrompt({ transcript, templateSpec })
 
     expect(user).toContain(transcript)
+  })
+
+  it('instructs enum fields to send extra descriptive detail to unplaced_notes', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/unplaced_notes/)
+    expect(system).toMatch(/closest matching allowed value/i)
+  })
+
+  it('omits the field-specific guidance section when no relevant tags are present', () => {
+    const { user } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(user).not.toMatch(/field-specific guidance/i)
+  })
+})
+
+describe('field-specific guidance', () => {
+  it('surfaces guidance only for tags present in templateSpec', () => {
+    const spec = {
+      roof_damage_narrative: { label: 'Roof damage findings', type: 'narrative' },
+      coinsurance_narrative: { label: 'Coinsurance', type: 'narrative' },
+    }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('Field-specific guidance:')
+    expect(user).toContain('roof_damage_narrative:')
+    expect(user).toContain('coinsurance_narrative:')
+    expect(user).not.toContain('roof_narrative_freeform:')
+  })
+
+  it('formatFieldGuidance returns an empty string when nothing matches', () => {
+    expect(formatFieldGuidance({ some_unrelated_tag: { label: 'x', type: 'string' } })).toBe('')
   })
 })
 

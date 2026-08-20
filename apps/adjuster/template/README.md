@@ -98,7 +98,7 @@ largely kept the blank template's section structure. Phase 1 went back to
 11 actually-filed reports section by section (see
 `voice-to-report-generator/report-templates/ibis-report-pattern-analysis.md`
 and `ibis-report-template-reworked.md`, both local-only per `.gitignore`)
-and found several sections whose *structure*, not just field values, didn't
+and found several sections whose _structure_, not just field values, didn't
 match real usage.
 
 - **Coverage restructured.** Real reports write Coverage as a narrative
@@ -130,7 +130,7 @@ match real usage.
   boilerplate in Phase 0. Now `personal_property_status`
   (`none` / `damaged`) — the `damaged` branch always appends a literal
   `[NEEDS INPUT: Confirm personal property list above against the
-  transcript before filing.]` after the narrative, even when the LLM
+transcript before filing.]` after the narrative, even when the LLM
   extracted a clean itemized list — financial/inventory accuracy here
   warrants a forced second pass, not just a confidence-gated one.
 - **Mitigation's rough edge fixed.** Phase 0 flagged optional fields
@@ -143,7 +143,7 @@ match real usage.
   for the first time** (`overhead_profit_narrative`, `subrogation_reason`,
   `coinsurance_narrative`) — Phase 0 left these fully static. Real O&P
   usage is 7 distinct wordings across 11 reports (including one case where
-  O&P is affirmatively *included*), so it's a narrative field, not a small
+  O&P is affirmatively _included_), so it's a narrative field, not a small
   enum. Coinsurance appears in **zero** of 11 real reports — the blank
   template's dollar figures ($326,176.97 ITV, etc.) are almost certainly
   the same "real claim numbers baked in as static text" bug this README
@@ -169,10 +169,33 @@ match real usage.
   static boilerplate (no decision made on templatizing it yet); Risk
   Information's "composition shingle roofing" tail still hardcodes shingle
   even though Roof itself now handles non-shingle material — same
-  Phase 0-flagged risk, just not resolved here; grammar/tone/voice
-  instructions (e.g. "was" vs. "were" for multi-person
-  `present_at_inspection`, narrative style for `roof_narrative_freeform`
-  and `overhead_profit_narrative`, the subrogation escape hatch for
-  one-off arguments like Galicia's warranty-based rewrite, interior
-  level-grouping) are prompt-phase work, not schema/template work, and
-  haven't been written into `prompt.js` yet.
+  Phase 0-flagged risk, just not resolved here.
+
+## Phase 1b — prompt.js guidance + a template correction it exposed
+
+Writing the actual extraction-prompt content for Phase 1's new/changed
+fields surfaced one thing that couldn't be fixed in the prompt alone:
+`present_at_inspection` fed into a sentence with `" was present during the
+inspection."` hardcoded as static template text, so no prompt instruction
+could make the verb agree with a multi-person `present_at_inspection`
+value — the word "was" never went through the LLM at all. Added
+`present_at_inspection_verb` (enum: `was` / `were`) as its own tag, with
+the template line now reading `{{present_at_inspection}}
+{{present_at_inspection_verb}} present during the inspection.` — this is a
+schema/template change, not prompt content, even though the underlying
+decision ("was" vs. "were" should be grammatically correct, not copy the
+adjuster's habit of always saying "was") is a prompt-phase call.
+
+Everything else deferred at the end of Phase 1 is now in `prompt.js`:
+enum-preference + extra-detail-to-`unplaced_notes` guidance and ad hoc
+section examples (Tree Removal, Business Personal Property, Additional
+Living Expense, Loss of Use, prior/previous claims) live in the general
+`system` instructions; per-field guidance (roof slope/elevation
+completeness, the `roof_narrative_freeform` few-shot example for
+non-shingle roofs, interior level-grouping, Personal Property's three-way
+listed/deferred/unextracted logic, Overhead & Profit's determination+reason
+shape and coverage-issue cross-reference, the Salvage & Subrogation escape
+hatch for one-off arguments like Galicia's warranty-based rewrite, and
+Coinsurance's "almost never applies" instruction) lives in `prompt.js`'s
+`FIELD_GUIDANCE` map, gated so a tag's guidance only appears in the prompt
+when that tag is actually present in the schema passed in.

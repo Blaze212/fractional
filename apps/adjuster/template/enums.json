@@ -29,6 +29,13 @@
     "section": "Assignment",
     "required": true
   },
+  "present_at_inspection_verb": {
+    "label": "Present at inspection — was/were",
+    "type": "enum",
+    "section": "Assignment",
+    "required": true,
+    "values": ["was", "were"]
+  },
   "mortgage_status": {
     "label": "Mortgage status",
     "type": "variant",
