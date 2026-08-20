@@ -84,6 +84,34 @@ describe('buildPrompt', () => {
     expect(system).toMatch(/closest matching allowed value/i)
   })
 
+  it('instructs the empty-value convention instead of the impossible omit-the-field instruction', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/value "" and source_span ""/)
+    expect(system).toMatch(/NEEDS INPUT/)
+    expect(system).not.toMatch(/omit that field/i)
+  })
+
+  it('instructs spans to be copied verbatim including transcription errors', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/verbatim/i)
+    expect(system).toMatch(/transcription errors/i)
+  })
+
+  it('forbids choosing a status variant from silence', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/affirmative statement/i)
+    expect(system).toMatch(/silence/i)
+  })
+
+  it('forbids using the claim context as a source for field values', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/never as a source for field values/i)
+  })
+
   it('omits the field-specific guidance section when no relevant tags are present', () => {
     const { user } = buildPrompt({ transcript: 'anything', templateSpec })
 
@@ -104,6 +132,17 @@ describe('field-specific guidance', () => {
     expect(user).toContain('roof_damage_narrative:')
     expect(user).toContain('coinsurance_narrative:')
     expect(user).not.toContain('roof_narrative_freeform:')
+  })
+
+  it('tells mortgage_company to stay empty rather than guess a lender', () => {
+    const spec = {
+      mortgage_company: { label: 'Mortgage company', type: 'string' },
+    }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('mortgage_company:')
+    expect(user).toMatch(/never guess a lender/i)
   })
 
   it('formatFieldGuidance returns an empty string when nothing matches', () => {

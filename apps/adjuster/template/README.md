@@ -229,3 +229,25 @@ LLM-extracted fields, carried over unchanged from Phase 0. Fixed now:
 `present_at_inspection_verb` are unaffected — the blank template only used
 blank underscores (`_____`) for those, not square brackets, so they were
 always genuinely ours to extract from the voice note.
+
+## Phase 1d — system prompt reworked around the strict-schema reality
+
+The system prompt told the model to "omit that field entirely rather than
+inventing" a value — but `openrouter.js` requests `strict: true` structured
+output with every tag in `required`, so omission is impossible and a model
+with no evidence was being forced to invent. Rewritten around the
+empty-value convention (`value: ""`, `source_span: ""`), which
+`validate.js` already turns into `[NEEDS INPUT]` markers. The rewrite also
+adds: voice-transcription error expectations, verbatim-span rules (copy
+transcription errors, never splice), value-normalization limits, concrete
+high/low confidence criteria (torn → low), an affirmative-statement rule
+for status variants (silence is not "not_affected"), dates/claim
+numbers/carrier routed to `unplaced_notes`, and claim context as
+disambiguation only — with a mismatch note when the transcript names a
+different insured/address.
+
+Two schema gaps the prompt could not fix: `mortgage_company` and
+`mitigation_narrative` were optional, so a chosen `has_mortgage`/`present`
+branch with a missing value rendered silent blank text ("mortgage is
+through .") instead of flagging. Both are now
+`requiredWhen` their status branch is selected.

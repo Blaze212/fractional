@@ -14,6 +14,7 @@ type TagSchema = {
   type: 'date' | 'string' | 'enum' | 'narrative' | 'variant'
   section: string
   required: boolean
+  requiredWhen?: { field: string; equals: string }
   values?: string[] | VariantOption[]
 }
 
@@ -85,6 +86,23 @@ describe('adjuster template / enums parity', () => {
       expect(schema.type, `${tag} missing type`).toBeTruthy()
       expect(schema.section, `${tag} missing section`).toBeTruthy()
       expect(typeof schema.required, `${tag} missing explicit required flag`).toBe('boolean')
+    })
+  })
+})
+
+// Fields referenced only inside one variant branch must be required exactly when that
+// branch is chosen — otherwise a missing value renders as silent blank text (e.g.
+// "mortgage is through .") instead of a [NEEDS INPUT] marker the reviewer can see.
+describe('branch-dependent fields flag instead of rendering blank', () => {
+  const branchFields: Record<string, { field: string; equals: string }> = {
+    mortgage_company: { field: 'mortgage_status', equals: 'has_mortgage' },
+    mitigation_narrative: { field: 'mitigation_status', equals: 'present' },
+  }
+
+  Object.entries(branchFields).forEach(([tag, condition]) => {
+    it(`${tag} is required when ${condition.field} is ${condition.equals}`, () => {
+      expect(enums[tag].required).toBe(true)
+      expect(enums[tag].requiredWhen).toEqual(condition)
     })
   })
 })

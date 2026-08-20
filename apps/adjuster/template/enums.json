@@ -40,7 +40,8 @@
     "label": "Mortgage company",
     "type": "string",
     "section": "Mortgage",
-    "required": false
+    "required": true,
+    "requiredWhen": { "field": "mortgage_status", "equals": "has_mortgage" }
   },
   "origin_narrative": {
     "label": "Cause of loss",
@@ -314,7 +315,8 @@
     "label": "Mitigation details",
     "type": "narrative",
     "section": "Mitigation",
-    "required": false
+    "required": true,
+    "requiredWhen": { "field": "mitigation_status", "equals": "present" }
   },
   "overhead_profit_narrative": {
     "label": "Overhead & profit determination",
