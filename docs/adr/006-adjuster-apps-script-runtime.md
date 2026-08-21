@@ -76,6 +76,63 @@ because Barton is on Android and Brandon is on iPhone, and iOS blocks
 third-party apps from tapping call audio directly. A phone call behaves
 identically on both platforms; testing on one proves nothing about the other.
 
+## Resolved limitation — WEBHOOK_SECRET no longer sits in git
+
+`apps/bh-systems/public/texml/field-notes.xml` briefly embedded
+`WEBHOOK_SECRET` in plain text, in the `t=` query param on every callback
+URL. The original reasoning accepting that (recorded below for context) was
+that the file is served with **no access control** at
+`https://bh-systems.com/texml/field-notes.xml`, so the secret is already
+fully public the moment it's live — committing it to git adds no exposure
+beyond what anyone can already `curl`. The spec's own risk table accepted
+this: worst case is a junk row in a private Google Sheet, nothing
+destructive is gated behind it.
+
+That reasoning does not survive past a single-user MVP, so it was replaced
+before it needed to: `field-notes.xml`, `guided-intake.xml`, and
+`single-stage-aigather.xml` now carry `DEPLOY_ID`/`SECRET` placeholders in
+git, never the real values. `apps/bh-systems/scripts/deploy.sh` (run via
+`npm run deploy`) substitutes `GAS_DEPLOY_ID`/`WEBHOOK_SECRET` from the
+environment (or a gitignored `apps/bh-systems/.env`) into those files only
+for the duration of `wrangler deploy`, then restores the committed
+placeholders regardless of whether the deploy succeeded. The real
+deployment ID and webhook secret now exist only in the environment/`.env`,
+never in git history or a publicly fetchable file.
+
+Real webhook signature verification (checking Telnyx's Ed25519 signature
+from Apps Script instead of a shared-secret query param) is still not
+implemented — worth revisiting if this expands past Brandon or starts
+gating anything with a higher blast radius than "junk sheet row."
+
+## Deployment pitfalls hit during Stage 1 setup
+
+Two `clasp`/manifest gotchas cost real debugging time getting the first
+deployment live; recording them so the next deploy (e.g. onto Brandon's
+account at migration) doesn't repeat it:
+
+- **`clasp create --rootDir .` silently overwrites an existing
+  `appsscript.json`** in that directory, including the `webapp` block. If
+  you run `clasp create` against a directory that already has this repo's
+  manifest checked out, diff `appsscript.json` against git immediately after
+  and restore it before the first `clasp push` — otherwise the deployment
+  has no web app entry point at all and every request to `/exec` 404s with
+  no indication why.
+- **`access: "ANYONE"` is not public.** It means "anyone with a Google
+  account" — an anonymous caller (Telnyx's webhook servers, `curl`, anything
+  that can't present Google credentials) gets a 401 "unable to open the
+  file" page instead of executing the script. A truly public web app, which
+  a third-party webhook requires, needs `access: "ANYONE_ANONYMOUS"`. This
+  repo's `appsscript.json` is set correctly; the failure mode above only
+  bites if that value regresses to `"ANYONE"` on some future redeploy.
+
+Both are silent failures — Apps Script gives no error pointing at either
+cause. The `Raw` tab (or a direct `curl` against the deployment's `/exec`
+URL) is the fastest way to tell "request never reached the script" (404),
+"reached Apps Script but rejected before running" (401), and "ran
+successfully" (the 302 redirect to `script.googleusercontent.com`, which is
+expected and harmless — see the TeXML contract section of the spec) apart
+from each other.
+
 ## Consequences
 
 - This repo now contains one non-TypeScript, non-Supabase surface. Anyone
