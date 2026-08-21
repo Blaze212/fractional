@@ -4,18 +4,25 @@ function buildPrompt(input) {
   var templateSpec = input.templateSpec || {}
   var glossary = input.glossary || []
   var phraseBank = input.phraseBank || []
+  var liveExtraction = input.liveExtraction || null
+  var adjusterName = input.adjusterName || 'Brandon'
 
   var system = [
     "You are extracting structured fields from a field adjuster's spoken dictation of a property inspection. Your output pre-fills a report draft the adjuster reviews before filing: a field you leave empty costs him a few seconds of review, a field you guess wrong can end up in a filed insurance report.",
     'The transcript is an automated voice-to-text transcription of a phone call. Expect mis-transcribed words, missing or odd punctuation, and numbers spelled out as words ("six twelve" for a 6/12 pitch, "twenty-one fifty" for 2,150). Use the trade glossary to recognize garbled trade terms.',
+    'The adjuster dictating this call is ' +
+      adjusterName +
+      '. When the transcript uses "I" or "me" for the person narrating, that is ' +
+      adjusterName +
+      '. He is always the one who did the inspection, so do not list him as a present_at_inspection attendee just because he was there to dictate the call — only name him there if the transcript explicitly counts him among who was present the same way it would any other named individual.',
     'Extract only what the adjuster actually said. Never fill a field from inference, typical values, or outside knowledge. The response format requires every field to be present, so when the adjuster did not state a field, return it with value "" and source_span "" — empty fields are rendered as highlighted [NEEDS INPUT] markers for his review, which is always the correct outcome when the transcript is silent.',
     'Every filled field must include a source_span that is an exact, contiguous substring of the transcript. Copy it verbatim, including any transcription errors — do not paraphrase, correct, or splice separate sentences together. A span that does not appear in the transcript character for character (whitespace aside) invalidates the whole field. Use the shortest span that contains the evidence for the value.',
     'The value may normalize the spoken form found in the span (spelled-out numbers to digits, "six twelve" to "6/12") but must never add facts the span does not state. Narrative fields are written in the report\'s first-person-plural voice ("We observed...", "We will estimate to repair..."); their source_span is the contiguous passage of the transcript they are drawn from, and every fact in the narrative must appear in that passage.',
-    'Set confidence to "high" only when the source_span states the value directly. Set it to "low" whenever you interpreted a garbled word, did arithmetic or date reasoning, picked an approximate enum match, or chose between two plausible readings — low-confidence fields are routed to the adjuster for confirmation, so when torn between the two, choose "low".',
+    'Set confidence to "high" only when the source_span states the value directly and unambiguously. Set it to "medium" when you are confident in the value but had to do a small amount of work to get there — resolving a role reference (e.g. "the tenant") to a name stated elsewhere in the call, normalizing a mis-transcribed proper noun against the claim context, a safe arithmetic or date computation, or a close enum match. Medium-confidence fields are still filled in on the report, just highlighted for a quick human check. Set it to "low" whenever you are genuinely torn between two plausible readings or the evidence is too garbled to trust — low-confidence fields are routed to the adjuster for full confirmation instead of being filled in, so when torn between low and anything else, choose "low".',
     'For enum and variant fields, value must be exactly one of the allowed values, character for character. Choose the closest matching allowed value only when the transcript clearly supports it; if nothing said reasonably maps to any allowed value, return the field empty instead of forcing a bad fit. If the transcript includes descriptive detail beyond what the closest value captures (e.g. "a 1 story with a room over the garage"), put the extra detail in unplaced_notes rather than distorting the enum choice or dropping the detail.',
     'Status variants (roof, exterior, personal property, mitigation, mortgage) require an affirmative statement — "the roof was not affected", "there is no mortgage" — before you choose a value. Silence about a section is not evidence of "none" or "not_affected"; return the field empty instead.',
     'Anything said that does not fit a listed field goes into unplaced_notes instead of being discarded — common examples include dates (received, contacted, inspected, date of loss — these are merge fields filled outside this pipeline, not extraction targets), claim numbers, carrier names, tree removal, business personal property, additional living expense, loss of use, and references to a prior/previous claim. Write each note as one short, self-contained sentence the adjuster can act on.',
-    'The claim context identifies which claim this call was matched to. Use it to interpret references ("the insured", "the property") — never as a source for field values. If the transcript names a different insured or address than the claim context, add an unplaced_notes entry flagging the possible mismatch.',
+    'The claim context identifies which claim this call was matched to. Use it to interpret references ("the insured", "the property") and to correct the spelling of a proper noun the transcript clearly refers to but a transcription error garbled — e.g. a contact\'s name or a carrier that is a near-miss for one in the claim context. Never use it as a source for a value the transcript never actually mentions. If the transcript names a different insured, address, or carrier than the claim context, add an unplaced_notes entry flagging the possible mismatch instead of silently overriding it.',
   ].join('\n')
 
   var sections = [
@@ -37,13 +44,45 @@ function buildPrompt(input) {
 
   sections.push('Transcript:\n' + transcript)
 
+  var liveExtractionBlock = formatLiveExtraction(liveExtraction, templateSpec)
+  if (liveExtractionBlock) {
+    sections.push(
+      [
+        'Real-time call extraction (captured live, per question, by a separate assistant during the call):',
+        liveExtractionBlock,
+        'Cross-check every value above against the transcript. Where the transcript supports a value, extract it yourself from the transcript with a real source_span — never copy one of these values into a field without transcript evidence for it. Treat this list only as a hint for what to listen for, not as a source of truth on its own; where it disagrees with the transcript, the transcript wins.',
+      ].join('\n'),
+    )
+  }
+
   return { system: system, user: sections.join('\n\n') }
+}
+
+// liveExtraction is Dograh Notetaker's raw per-field export (see webhook.js's
+// handleDograhNotetaker) — keyed by the same tag names as templateSpec. Filtered
+// to templateSpec's keys so call metadata that rides along in the same object
+// (capture_id, transcript_url, call_disposition, ...) never leaks into the prompt.
+function formatLiveExtraction(liveExtraction, templateSpec) {
+  if (!liveExtraction) return ''
+
+  var lines = Object.keys(templateSpec)
+    .filter(function (tag) {
+      var value = liveExtraction[tag]
+      return value !== undefined && value !== null && value !== ''
+    })
+    .map(function (tag) {
+      return '- ' + tag + ': ' + liveExtraction[tag]
+    })
+
+  return lines.join('\n')
 }
 
 // Guidance for specific tags, only surfaced when that tag is actually part of the
 // schema being extracted — keeps the prompt proportional to whatever templateSpec
 // is passed in rather than always dumping every section's guidance.
 var FIELD_GUIDANCE = {
+  present_at_inspection:
+    'If the transcript identifies who was present only by role ("the tenant", "the property manager", "her son") without naming them, and that person\'s name is stated anywhere else in the call (e.g. during the assignment/contact discussion), resolve the role to the named individual and use their name here instead of the role. Use the source_span of the sentence that places them at the inspection, and set confidence to "medium" since this connects two separate mentions rather than reading one directly. If no name is ever given for that role anywhere in the transcript, keep the role phrase as said (e.g. "the tenant").',
   present_at_inspection_verb:
     'Set to "was" if present_at_inspection names exactly one person, "were" if it names more than one. Real Ibis reports often write "was" regardless of count — conjugate correctly anyway rather than copying that habit. Reuse the source_span of present_at_inspection since this field is derived from it.',
   mortgage_company:

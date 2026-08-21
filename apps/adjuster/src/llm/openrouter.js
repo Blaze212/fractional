@@ -1,5 +1,12 @@
 var OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 var OPENROUTER_RETRY_BACKOFF_MS = [5000, 15000]
+// Cloud Logging entries cap around 256KB — this is a safety backstop, not a
+// working limit; any real extraction response stays well under it. Unlike the
+// Sheets-cell-size discipline the rest of this codebase observes for anything
+// written to the Raw sheet, the full response/transcript here only ever goes
+// to console.log (see logServerOnly in log.js), so it doesn't need the much
+// tighter 45,000-char margin the Jobs sheet's transcript column uses.
+var SERVER_LOG_TRUNCATE_CHARS = 200000
 
 function extractFields(input) {
   var apiKey = input.apiKey
@@ -11,12 +18,16 @@ function extractFields(input) {
     templateSpec: input.templateSpec,
     glossary: input.glossary,
     phraseBank: input.phraseBank,
+    liveExtraction: input.liveExtraction,
+    adjusterName: input.adjusterName,
   })
 
   var response = callOpenRouter({
     apiKey: apiKey,
     model: model,
     fallbacks: fallbacks,
+    captureId: input.captureId,
+    transcript: input.transcript,
     messages: [
       { role: 'system', content: prompt.system },
       { role: 'user', content: prompt.user },
@@ -56,9 +67,37 @@ function callOpenRouter(config) {
   for (var attempt = 0; attempt <= OPENROUTER_RETRY_BACKOFF_MS.length; attempt++) {
     var response = UrlFetchApp.fetch(OPENROUTER_URL, options)
     var status = response.getResponseCode()
+    var bodyText = response.getContentText()
     lastResponse = response
 
-    if (status === 200) return parseOpenRouterResponse(response.getContentText())
+    // Full request/response pair for this attempt, together, so a bad extraction
+    // (e.g. the model working off a stale schema) can be diagnosed from one log
+    // line instead of cross-referencing the Jobs sheet's transcript column
+    // against a summary that only ever carried field_count/model/usage. This is
+    // the real server log (Apps Script Executions / Cloud Logging) — it does not
+    // go to the Raw sheet, which isn't built to hold payloads this size.
+    var transcriptText = String(config.transcript || '')
+    logServerOnly('openrouter.response', {
+      capture_id: config.captureId || '',
+      attempt: attempt + 1,
+      status: status,
+      model_requested: config.model,
+      transcript: transcriptText.slice(0, SERVER_LOG_TRUNCATE_CHARS),
+      response_body: bodyText.slice(0, SERVER_LOG_TRUNCATE_CHARS),
+    })
+
+    // Lighter, Sheet-visible trail — a fact that this attempt happened, not its
+    // full payload. The Raw sheet is for scanning, not for holding the response.
+    logEvent('openrouter.response_summary', {
+      capture_id: config.captureId || '',
+      attempt: attempt + 1,
+      status: status,
+      model_requested: config.model,
+      transcript_chars: transcriptText.length,
+      response_chars: bodyText.length,
+    })
+
+    if (status === 200) return parseOpenRouterResponse(bodyText)
 
     var retryable = status === 429 || status >= 500
     var hasBudget = attempt < OPENROUTER_RETRY_BACKOFF_MS.length
@@ -67,7 +106,7 @@ function callOpenRouter(config) {
       continue
     }
 
-    throw new Error('OpenRouter request failed: ' + status + ' ' + response.getContentText())
+    throw new Error('OpenRouter request failed: ' + status + ' ' + bodyText)
   }
 
   throw new Error('OpenRouter request failed after retries: ' + lastResponse.getResponseCode())
@@ -115,7 +154,7 @@ function buildExtractionSchema(templateSpec) {
       properties: {
         value: { type: 'string' },
         source_span: { type: 'string' },
-        confidence: { type: 'string', enum: ['high', 'low'] },
+        confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
       },
       required: ['value', 'source_span', 'confidence'],
       additionalProperties: false,

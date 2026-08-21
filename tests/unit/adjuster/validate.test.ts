@@ -96,6 +96,31 @@ describe('validateFields', () => {
 
     const result = validateFields(fields, transcript, tagSchema)
 
+    expect(result.roof_pitch).toEqual({
+      valid: false,
+      empty: false,
+      label: 'Roof pitch',
+      source_span: 'pitch is six twelve',
+    })
+  })
+
+  it('accepts a field with medium confidence, carrying the confidence through', () => {
+    const fields = {
+      roof_pitch: { value: '6/12', source_span: 'pitch is six twelve', confidence: 'medium' },
+    }
+
+    const result = validateFields(fields, transcript, tagSchema)
+
+    expect(result.roof_pitch).toMatchObject({ valid: true, value: '6/12', confidence: 'medium' })
+  })
+
+  it('does not surface a source_span for a fabricated (unverified) span', () => {
+    const fields = {
+      roof_pitch: { value: '8/12', source_span: 'pitch is eight twelve', confidence: 'low' },
+    }
+
+    const result = validateFields(fields, transcript, tagSchema)
+
     expect(result.roof_pitch).toEqual({ valid: false, empty: false, label: 'Roof pitch' })
   })
 

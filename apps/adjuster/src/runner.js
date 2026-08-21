@@ -87,6 +87,20 @@ function runJobPipeline(job) {
     claims_considered: claims.length,
   })
 
+  var tagSchema = loadEnums()
+  var isDograh = job.source === 'dograh'
+  // Dograh's Notetaker export (see webhook.js's handleDograhNotetaker) is a
+  // per-field value captured live during the call, with no verbatim span into
+  // the transcript — it used to skip the OpenRouter pass entirely and go
+  // straight to doc generation, which meant every field outside the small
+  // enum/variant set (validateDograhFields' only checkable case) was forced to
+  // NEEDS INPUT regardless of what Dograh actually captured. Feeding it into
+  // the same OpenRouter pass as a cross-check hint (see prompt.js's
+  // formatLiveExtraction) lets the model re-derive every field from the
+  // transcript itself, with a real source_span, using Dograh's export only to
+  // know what to listen for.
+  var liveExtraction = isDograh ? JSON.parse(job.dograh_fields || '{}') : null
+
   upsertJob(job.capture_id, {
     claim_id: match.claim_id || '',
     match_method: match.match_method,
@@ -94,18 +108,20 @@ function runJobPipeline(job) {
     status: match.match_method === 'ambiguous' ? 'needs_review' : 'extracting',
   })
 
-  var tagSchema = loadEnums()
   var glossary = loadGlossary()
 
   var extraction = extractFields({
     apiKey: getConfig('OPENROUTER_API_KEY'),
     model: getConfig('OPENROUTER_MODEL'),
     fallbacks: getConfigList('OPENROUTER_FALLBACKS', []),
+    captureId: job.capture_id,
     transcript: job.transcript,
     claim: claim,
     templateSpec: tagSchema,
     glossary: glossary,
     phraseBank: [],
+    liveExtraction: liveExtraction,
+    adjusterName: getOptionalConfig('ADJUSTER_NAME', 'Brandon'),
   })
 
   logEvent('runner.extracted', {
@@ -113,11 +129,13 @@ function runJobPipeline(job) {
     model: extraction.model,
     field_count: Object.keys(extraction.fields || {}).length,
     unplaced_notes: (extraction.unplaced_notes || []).length,
+    live_extraction_fields: liveExtraction ? Object.keys(liveExtraction).length : 0,
   })
 
   upsertJob(job.capture_id, { status: 'generating', model: extraction.model })
 
   var validated = validateFields(extraction.fields, job.transcript, tagSchema)
+  var unplacedNotes = extraction.unplaced_notes || []
   logEvent('runner.validated', {
     capture_id: job.capture_id,
     valid: Object.keys(validated).filter(function (t) {
@@ -127,8 +145,9 @@ function runJobPipeline(job) {
       return !validated[t].valid
     }).length,
   })
+
   var latestJob = getJobByCaptureId(job.capture_id)
-  var result = generateDoc(latestJob, claim, validated, tagSchema, extraction.unplaced_notes)
+  var result = generateDoc(latestJob, claim, validated, tagSchema, unplacedNotes)
 
   if (result.status === 'failed') {
     logEvent('runner.docgen_failed', { capture_id: job.capture_id, error: result.error })
