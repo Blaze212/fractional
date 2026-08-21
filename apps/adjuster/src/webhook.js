@@ -189,7 +189,7 @@ function handleRecording(callSessionId, params) {
   // that is arriving at the same moment.
   var audioDriveId = ''
   if (recordingUrl) {
-    audioDriveId = copyRecordingToDrive(recordingUrl, callSessionId)
+    audioDriveId = copyRecordingToDrive(recordingUrl, callSessionId, 'mp3')
   }
 
   return withJobLock(function () {
@@ -370,10 +370,19 @@ function looksLikeCallAnalyzed(params) {
 // loadEnums() already use, so no field-name translation happens here. capture_id
 // is the "dograh-{{workflow_run_id}}" string Dograh's payload template renders,
 // namespaced so it can never collide with a Telnyx CallSessionId in the same
-// Jobs sheet. Skips the audio-Drive-copy step Telnyx's handleRecording() does —
-// Dograh's recording_url is stored as-is; revisit if it turns out to be as
-// short-lived as Telnyx's S3 links.
+// Jobs sheet.
+//
+// The recording is copied into RECORDINGS_FOLDER_ID the same way Telnyx's
+// handleRecording() does — recording_url alone used to be stored as-is with
+// no Drive copy, which meant the audio was never actually saved anywhere
+// this app controls; if Dograh's link is as short-lived as Telnyx's S3 links
+// (or gets cleaned up on Dograh's end), that recording is gone for good. The
+// copy runs before the lock, same reasoning as handleRecording(): the fetch
+// and upload take seconds and shouldn't hold the lock that long.
 function handleDograhNotetaker(captureId, body) {
+  var recordingUrl = body.recording_url || ''
+  var audioDriveId = recordingUrl ? copyRecordingToDrive(recordingUrl, captureId, 'wav') : ''
+
   return withJobLock(function () {
     var tagSchema = loadEnums()
     var validated = validateDograhFields(body, tagSchema)
@@ -385,7 +394,8 @@ function handleDograhNotetaker(captureId, body) {
       duration_sec: Number(body.duration_sec) || '',
       call_started_at: body.call_time || '',
       call_ended_at: new Date().toISOString(),
-      recording_url: body.recording_url || '',
+      recording_url: recordingUrl,
+      audio_drive_id: audioDriveId,
       transcript: transcript.slice(0, 45000),
       transcript_source: 'dograh-notetaker',
       transcript_chars: transcript.length,
@@ -439,7 +449,18 @@ function handleAction() {
   ).setMimeType(ContentService.MimeType.XML)
 }
 
-function copyRecordingToDrive(recordingUrl, callSessionId) {
+// Telnyx's recordings are always mp3 (TeXML's <Record format="mp3">
+// confirms it) — its call site passes 'mp3' as the fallback below, not a
+// guess. Dograh's default looks to be wav, but nothing documents whether
+// that can change per workflow/account, so its call site passes 'wav' as
+// the fallback while still preferring whatever extension the URL itself
+// states, in case a given recording really is something else.
+function guessAudioExtension(recordingUrl, fallback) {
+  var match = /\.(mp3|wav|m4a|ogg|webm)(\?|$)/i.exec(recordingUrl || '')
+  return match ? match[1].toLowerCase() : fallback
+}
+
+function copyRecordingToDrive(recordingUrl, callSessionId, fallbackExtension) {
   var response = UrlFetchApp.fetch(recordingUrl, { muteHttpExceptions: true })
   if (response.getResponseCode() !== 200) {
     logEvent('webhook.recording_fetch_failed', {
@@ -450,7 +471,9 @@ function copyRecordingToDrive(recordingUrl, callSessionId) {
   }
 
   var folder = DriveApp.getFolderById(getConfig('RECORDINGS_FOLDER_ID'))
-  var file = folder.createFile(response.getBlob().setName(callSessionId + '.mp3'))
+  var extension = guessAudioExtension(recordingUrl, fallbackExtension || 'mp3')
+  var fileName = callSessionId + '.' + extension
+  var file = folder.createFile(response.getBlob().setName(fileName))
   return file.getId()
 }
 

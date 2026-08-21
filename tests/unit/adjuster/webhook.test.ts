@@ -261,6 +261,82 @@ describe('duplicate recording callbacks', () => {
   })
 })
 
+describe('Dograh Notetaker recording', () => {
+  function dograhPost(body: Record<string, unknown>) {
+    return {
+      parameter: { t: SECRET, event: 'dograh_notetaker' },
+      postData: { type: 'application/json', contents: JSON.stringify(body) },
+    }
+  }
+
+  function dograhHarness(overrides: Record<string, unknown> = {}) {
+    return harness({
+      loadEnums: () => ({}),
+      validateDograhFields: () => ({}),
+      ...overrides,
+    })
+  }
+
+  it('copies the recording into Drive and stores audio_drive_id, not just the raw URL', () => {
+    const { sandbox, jobs } = dograhHarness()
+
+    sandbox.doPost(
+      dograhPost({
+        capture_id: 'dograh-run-1',
+        recording_url: 'https://dograh.example/audio/run-1.mp3',
+        transcript_url: '',
+        duration_sec: 90,
+      }),
+    )
+
+    const job = jobs.get('dograh-run-1')!
+    expect(job.audio_drive_id).toBe('drive-1')
+    expect(job.recording_url).toBe('https://dograh.example/audio/run-1.mp3')
+  })
+
+  it.each([
+    ['https://dograh.example/audio.mp3', 'dograh-run-2.mp3'],
+    ['https://dograh.example/audio', 'dograh-run-3.wav'],
+  ])('names the Drive copy %s as %s, defaulting to wav with no extension', (url, expectedName) => {
+    const setName = vi.fn((name: string) => name)
+    const { sandbox } = dograhHarness({
+      UrlFetchApp: { fetch: () => ({ getResponseCode: () => 200, getBlob: () => ({ setName }) }) },
+    })
+    const captureId = expectedName.replace(/\.\w+$/, '')
+
+    sandbox.doPost(dograhPost({ capture_id: captureId, recording_url: url }))
+
+    expect(setName).toHaveBeenCalledWith(expectedName)
+  })
+
+  it('does not attempt a Drive copy when there is no recording_url', () => {
+    const fetch = vi.fn(() => ({
+      getResponseCode: () => 200,
+      getBlob: () => ({ setName: () => 'blob' }),
+    }))
+    const { sandbox, jobs } = dograhHarness({ UrlFetchApp: { fetch } })
+
+    sandbox.doPost(dograhPost({ capture_id: 'dograh-run-4', recording_url: '' }))
+
+    expect(fetch).not.toHaveBeenCalled()
+    expect(jobs.get('dograh-run-4')!.audio_drive_id).toBe('')
+  })
+
+  it('leaves audio_drive_id empty when the recording fetch fails, without failing the whole job', () => {
+    const { sandbox, jobs } = dograhHarness({
+      UrlFetchApp: { fetch: () => ({ getResponseCode: () => 403 }) },
+    })
+
+    sandbox.doPost(
+      dograhPost({ capture_id: 'dograh-run-5', recording_url: 'https://dograh.example/gone.mp3' }),
+    )
+
+    const job = jobs.get('dograh-run-5')!
+    expect(job.audio_drive_id).toBe('')
+    expect(job.status).toBe('pending')
+  })
+})
+
 describe('doGet', () => {
   it('answers a reachability probe and logs it', () => {
     const { sandbox, logged } = harness()
