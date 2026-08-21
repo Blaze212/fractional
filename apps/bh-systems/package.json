@@ -1,0 +1,7 @@
+{
+  "name": "bh-systems",
+  "private": true,
+  "scripts": {
+    "deploy": "bash scripts/deploy.sh"
+  }
+}

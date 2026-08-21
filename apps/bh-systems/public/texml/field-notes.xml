@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say voice="alice">Field notes. Start after the beep. Hang up when you are done.</Say>
+  <Say voice="Telnyx.Natural.brook">Field notes. Start after the beep. Hang up when you are done.</Say>
   <Record
     action="https://script.google.com/macros/s/DEPLOY_ID/exec?t=SECRET&amp;event=action"
     method="POST"

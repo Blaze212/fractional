@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Guided (section-by-section) field-notes call — alternative to field-notes.xml.
+  Not live: nothing currently points a Telnyx number's Voice URL at this file.
+
+  Unlike field-notes.xml, this file doesn't carry the actual call flow itself —
+  it just redirects into the webhook, which returns a fresh, dynamically built
+  TeXML document for every section (Record, Gather, or AIGather depending on
+  the section — see apps/adjuster/src/guidedFlow.js and
+  apps/adjuster/docs/telnyx-texml-interactive-ivr.md). That's what lets the
+  same Apps Script deployment serve both flows: field-notes.xml is itself the
+  whole call; this file is just the door into a state machine that lives in
+  webhook code, not in a static document.
+
+  The redirect target is /texml/gas on this same site, not script.google.com
+  directly — Apps Script's /exec endpoint always 302s to a
+  script.googleusercontent.com URL for the real body, and Telnyx's Redirect
+  fetch doesn't follow that hop. /texml/gas is a Worker (see ../../src/worker.js)
+  that does the following server-side and hands Telnyx one definitive response.
+
+  To try this flow: point a Telnyx number's Voice URL at this file instead of
+  field-notes.xml. To go back to the single-shot flow: point it back. Nothing
+  else changes — same webhook deployment, same Jobs sheet, same downstream
+  matcher/prompt/docgen pipeline either way.
+-->
+<Response>
+  <Redirect method="POST">https://www.bh-systems.com/texml/gas?t=SECRET&amp;event=guided_start</Redirect>
+</Response>
