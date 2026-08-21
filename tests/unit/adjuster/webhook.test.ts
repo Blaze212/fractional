@@ -12,41 +12,50 @@ function harness(overrides: Record<string, unknown> = {}) {
   const logged: string[] = []
   const lock = { held: 0, maxHeld: 0 }
 
-  const sandbox = loadGs(['apps/adjuster/src/log.js', 'apps/adjuster/src/webhook.js'], {
-    console: {
-      log: (line: string) => logged.push(line),
-      error: (line: string) => logged.push(line),
+  const sandbox = loadGs(
+    ['apps/adjuster/src/log.js', 'apps/adjuster/src/webhook.js', 'apps/adjuster/src/guidedFlow.js'],
+    {
+      console: {
+        log: (line: string) => logged.push(line),
+        error: (line: string) => logged.push(line),
+      },
+      getConfig: (key: string) => {
+        if (key === 'WEBHOOK_SECRET') return SECRET
+        if (key === 'RECORDINGS_FOLDER_ID') return 'folder-1'
+        throw new Error('Missing script property: ' + key)
+      },
+      getConfigList: () => ['+18176762145'],
+      appendRaw: (event: string, body: string) => raw.push({ event, body }),
+      getJobByCaptureId: (id: string) => jobs.get(id) ?? null,
+      upsertJob: (id: string, fields: Job) => {
+        jobs.set(id, { ...(jobs.get(id) ?? {}), ...fields })
+      },
+      withJobLock: (fn: () => unknown) => {
+        lock.held += 1
+        lock.maxHeld = Math.max(lock.maxHeld, lock.held)
+        try {
+          return fn()
+        } finally {
+          lock.held -= 1
+        }
+      },
+      ContentService: {
+        MimeType: { XML: 'XML' },
+        createTextOutput: (body: string) => ({ body, setMimeType: () => ({ body }) }),
+      },
+      UrlFetchApp: {
+        fetch: () => ({ getResponseCode: () => 200, getBlob: () => ({ setName: () => 'blob' }) }),
+      },
+      DriveApp: { getFolderById: () => ({ createFile: () => ({ getId: () => 'drive-1' }) }) },
+      Utilities: {
+        base64Decode: (value: string) => Buffer.from(value, 'base64'),
+        newBlob: (bytes: Buffer) => ({
+          getDataAsString: () => Buffer.from(bytes).toString('utf-8'),
+        }),
+      },
+      ...overrides,
     },
-    getConfig: (key: string) => {
-      if (key === 'WEBHOOK_SECRET') return SECRET
-      if (key === 'RECORDINGS_FOLDER_ID') return 'folder-1'
-      throw new Error('Missing script property: ' + key)
-    },
-    getConfigList: () => ['+18176762145'],
-    appendRaw: (event: string, body: string) => raw.push({ event, body }),
-    getJobByCaptureId: (id: string) => jobs.get(id) ?? null,
-    upsertJob: (id: string, fields: Job) => {
-      jobs.set(id, { ...(jobs.get(id) ?? {}), ...fields })
-    },
-    withJobLock: (fn: () => unknown) => {
-      lock.held += 1
-      lock.maxHeld = Math.max(lock.maxHeld, lock.held)
-      try {
-        return fn()
-      } finally {
-        lock.held -= 1
-      }
-    },
-    ContentService: {
-      MimeType: { XML: 'XML' },
-      createTextOutput: (body: string) => ({ body, setMimeType: () => ({ body }) }),
-    },
-    UrlFetchApp: {
-      fetch: () => ({ getResponseCode: () => 200, getBlob: () => ({ setName: () => 'blob' }) }),
-    },
-    DriveApp: { getFolderById: () => ({ createFile: () => ({ getId: () => 'drive-1' }) }) },
-    ...overrides,
-  })
+  )
 
   return { sandbox, jobs, raw, logged, lock }
 }

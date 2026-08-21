@@ -17,6 +17,23 @@ function logEvent(event, fields) {
   return line
 }
 
+// console.log alone — Apps Script Executions / Cloud Logging, the actual server
+// log stream. No Sheet write, so none of the Sheets-cell-size discipline logEvent's
+// callers otherwise need to observe. Use this for payloads that belong in the real
+// logs but are too large or too noisy for the Raw sheet (e.g. a full LLM response)
+// — pair it with a lighter logEvent() call carrying the Sheet-visible summary.
+function logServerOnly(event, fields) {
+  var line
+  try {
+    line = serializeLog(event, fields)
+  } catch (err) {
+    line = '{"event":"' + event + '","log_error":"' + String(err) + '"}'
+  }
+
+  console.log(line)
+  return line
+}
+
 function serializeLog(event, fields) {
   var payload = { ts: new Date().toISOString(), event: event }
   var source = fields || {}

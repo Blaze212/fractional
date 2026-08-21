@@ -251,3 +251,133 @@ Two schema gaps the prompt could not fix: `mortgage_company` and
 branch with a missing value rendered silent blank text ("mortgage is
 through .") instead of flagging. Both are now
 `requiredWhen` their status branch is selected.
+
+## Phase 2 — guided (section-by-section) call flow, exploratory, not live
+
+An alternative to the single continuous-narration call in
+`field-notes.xml`/`webhook.js`: the adjuster gets asked one short
+question per Ibis section instead of one open-ended "record your
+message" prompt. Design notes and the field→verb mapping are in
+`docs/telnyx-texml-interactive-ivr.md` and
+`template/interactive-call-script.txt`; the implementation is
+`src/guidedFlow.js` (dispatched from `webhook.js`) plus
+`apps/bh-systems/public/texml/guided-intake.xml` as the static entry
+point. Covered by `tests/unit/adjuster/guidedFlow.test.ts`.
+
+Not wired to any live Telnyx number — nothing changes for the existing
+flow, and swapping between the two is just pointing a Telnyx number's
+Voice URL at one static XML file or the other. Both write the same
+`transcript`/`status` shape to the Jobs sheet, so `matcher.js`,
+`prompt.js`, and `runner.js` need zero changes to consume a
+guided-flow job either way.
+
+Before this goes live:
+
+- **The Jobs sheet needs a new `guided_state` column** (a JSON blob
+  holding in-progress section state). `upsertJob()` throws on a
+  missing column, so this has to exist before a real call reaches it
+  — same category of prerequisite as `templateData.js`'s
+  `ENUMS_FILE_ID`/`GLOSSARY_FILE_ID` Script Properties above.
+- **The AIGather result parameter name is unconfirmed against a live
+  call.** Telnyx's docs describe "base64-encoded JSON" in the `action`
+  callback payload but not the field name it arrives under.
+  `parseAIGatherResult()` in `guidedFlow.js` checks several candidate
+  names as a hedge — replace with the confirmed name after one real
+  test call, the same confirm-against-a-live-call step `webhook.js`'s
+  own top-of-file comment documents having already done for
+  `CallSessionId`.
+- **A stuck `awaiting_section_transcripts` job has no promotion
+  sweep.** If a Record section's `transcriptionCallback` never lands,
+  that job sits forever — unlike the single-shot flow, which
+  `jobs.js`'s `promoteStaleAwaitingTranscript()` already recovers from
+  the equivalent stuck state after 15 minutes. Flagged in a comment
+  above `allSectionTranscriptsIn()` in `guidedFlow.js`.
+- **Gather/AIGather-resolved fields still pass back through
+  `prompt.js`'s LLM extraction**, via the stitched transcript, instead
+  of being merged into the final draft directly. That's deliberate for
+  now — it keeps the guided flow's output 100% pipeline-compatible
+  with zero changes to `runner.js`/`prompt.js` — but it means a field
+  already resolved exactly by a closed `Gather`/`AIGather` enum (e.g.
+  `coverage_determination`) is re-derived by the LLM from text like
+  `coverage_determination: covered` instead of being trusted outright.
+  Worth revisiting once this is closer to live.
+
+## Phase 3 — single-stage AIGather, a third call flow, exploratory, not live
+
+`apps/adjuster/docs/guided-flow-debugging-handoff.md` root-caused why
+`<AIGather>` can't be one section in Phase 2's chain: it's a Call
+Control REST command under the hood, its result arrives via a
+`call.ai_gather.ended` webhook event, not the verb's own `action`
+callback, and returning TeXML from that handler does not continue the
+call — confirmed on live calls, it hangs up regardless. That's fatal
+for a multi-section chain but irrelevant to a call with only one
+section: nothing needs to continue after the single `<AIGather>` turn
+finishes, since the call ending there is the desired behavior, not a
+failure to route around.
+
+`apps/bh-systems/public/texml/single-stage-aigather.xml` is that:
+one `<AIGather>` verb, one schema covering every Ibis template field
+in one flat object (no chaining, no `guided_state`), with a `Greeting`
+that asks for identity + carrier up front, invites the adjuster to
+narrate the whole report, and explicitly tells them they can end the
+call once they've said everything they know even if some fields go
+unanswered. Unlike Phase 2's per-section schemas, none of this
+schema's fields use `enum` — see the file's own header comment for
+why (short version: it wouldn't be enforced even if used, since
+Telnyx never delivers this schema's structured JSON back to us, only
+the raw conversation). `apps/adjuster/src/webhook.js`'s
+`handleSingleAIGatherEnded()` stitches that conversation into the
+same `transcript` shape every other flow already produces, so
+`matcher.js`/`prompt.js`/`runner.js` need zero changes. Covered by
+`tests/unit/adjuster/singleStageAIGather.test.ts`, including a
+regression test that a `call.ai_gather.ended` event for a genuinely
+in-progress guided-flow call session still routes to
+`handleGuidedAIGatherEnded()`, not this handler — the two flows share
+the same shape-detected event with no way to key off an `event`
+param, so `webhook.js`'s `isGuidedFlowCall()` routes between them by
+checking whether the call session already has a `guided_state` with
+`flow: 'guided'`.
+
+Live-tested against a real Telnyx number as of 2026-08-20. First two
+test calls lost their transcript entirely — the fix above
+(`isGuidedFlowCall()`) had only been pushed to this repo, not to the
+live Apps Script deployment (`clasp push` alone doesn't update what's
+live at the `/exec` URL; it needs `clasp deploy -i <the pinned
+deployment ID>` too, a trap this project's own debugging handoff doc
+already called out). Once actually deployed, this should route
+correctly — not yet re-confirmed against a live call at time of
+writing.
+
+Recording was added the same day via a per-Telnyx-number "record the
+whole call" toggle (Telnyx dashboard, outside this repo) rather than
+any TeXML change — `<AIGather>` has no `record` attribute and no
+TeXML-level way to record concurrently with it (checked against
+Telnyx's docs). The recording surfaces via a `CallStatus: "analyzed"`
+webhook event, shape-detected the same way as `call.ai_gather.ended`
+(no `event` param of our own) by `webhook.js`'s
+`looksLikeCallAnalyzed()`/`handleCallAnalyzed()`. Two things about
+this are still open, not resolved:
+
+- **The `Recordings` field's shape isn't documented anywhere in
+  Telnyx's public TeXML reference.** `firstRecordingUrl()` handles a
+  bare URL string or an object with a `url`/`recording_url`/
+  `download_url` key as a hedge, and `handleCallAnalyzed()` logs the
+  full raw payload via `logServerOnly()` on every call so the real
+  shape can be confirmed and the hedge tightened — same
+  confirm-against-a-live-call pattern as `CallSessionId`'s field name
+  and `guidedFlow.js`'s `parseAIGatherResult()`.
+- **Timing:** in the one real call observed, this event arrived ~14
+  minutes after `call.ai_gather.ended` — likely after `runner.js` has
+  already extracted fields and generated the doc from the AIGather
+  conversation alone. `handleCallAnalyzed()` still appends a
+  `[CALL RECORDING]` section to the job's `transcript` (merged with
+  the `[AIGATHER CONVERSATION]` section `handleSingleAIGatherEnded()`
+  writes, via the new `appendTranscriptSection()` helper — order-
+  independent, whichever event lands first) and sets `recording_url`,
+  so both sources of truth for what was said feed into the extraction
+  prompt together whenever they're both in before extraction happens.
+  But it does **not** re-trigger extraction or regenerate an
+  already-generated doc for a job the runner already finished before
+  the recording arrived. Whether a late recording should force
+  re-extraction is a real design decision, not made here — depends on
+  how consistently delayed this event turns out to be in practice.
