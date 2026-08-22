@@ -76,27 +76,33 @@ because Barton is on Android and Brandon is on iPhone, and iOS blocks
 third-party apps from tapping call audio directly. A phone call behaves
 identically on both platforms; testing on one proves nothing about the other.
 
-## Known limitation — do not carry past this MVP
+## Resolved limitation — WEBHOOK_SECRET no longer sits in git
 
-`apps/bh-systems/public/texml/field-notes.xml` embeds `WEBHOOK_SECRET` in
-plain text, in the `t=` query param on every callback URL. This is only
-acceptable because the file is served with **no access control** at
+`apps/bh-systems/public/texml/field-notes.xml` briefly embedded
+`WEBHOOK_SECRET` in plain text, in the `t=` query param on every callback
+URL. The original reasoning accepting that (recorded below for context) was
+that the file is served with **no access control** at
 `https://bh-systems.com/texml/field-notes.xml`, so the secret is already
 fully public the moment it's live — committing it to git adds no exposure
-beyond what anyone can already `curl`. The spec's own risk table accepts
+beyond what anyone can already `curl`. The spec's own risk table accepted
 this: worst case is a junk row in a private Google Sheet, nothing
 destructive is gated behind it.
 
-That reasoning does not survive past a single-user MVP. Before this expands
-beyond Brandon, or before it handles anything with a higher blast radius
-than "junk sheet row," replace this with one of:
+That reasoning does not survive past a single-user MVP, so it was replaced
+before it needed to: `field-notes.xml`, `guided-intake.xml`, and
+`single-stage-aigather.xml` now carry `DEPLOY_ID`/`SECRET` placeholders in
+git, never the real values. `apps/bh-systems/scripts/deploy.sh` (run via
+`npm run deploy`) substitutes `GAS_DEPLOY_ID`/`WEBHOOK_SECRET` from the
+environment (or a gitignored `apps/bh-systems/.env`) into those files only
+for the duration of `wrangler deploy`, then restores the committed
+placeholders regardless of whether the deploy succeeded. The real
+deployment ID and webhook secret now exist only in the environment/`.env`,
+never in git history or a publicly fetchable file.
 
-- Inject the secret at deploy time (a Cloudflare Pages build-time env var
-  templated into the static file) so it never sits in git history or a
-  fetchable file, or
-- Move to real webhook signature verification once there's a documented way
-  to check Telnyx's Ed25519 signature from Apps Script (or from wherever
-  this runs by then), rather than a shared-secret query param.
+Real webhook signature verification (checking Telnyx's Ed25519 signature
+from Apps Script instead of a shared-secret query param) is still not
+implemented — worth revisiting if this expands past Brandon or starts
+gating anything with a higher blast radius than "junk sheet row."
 
 ## Deployment pitfalls hit during Stage 1 setup
 

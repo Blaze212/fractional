@@ -14,6 +14,7 @@ type TagSchema = {
   type: 'date' | 'string' | 'enum' | 'narrative' | 'variant'
   section: string
   required: boolean
+  requiredWhen?: { field: string; equals: string }
   values?: string[] | VariantOption[]
 }
 
@@ -68,13 +69,13 @@ describe('adjuster template / enums parity', () => {
     })
   })
 
-  it('gives every variant option a key, label, and text', () => {
+  it('gives every variant option a key, label, and text (text may be an intentionally empty string, e.g. mitigation_status "none", to drop a whole section)', () => {
     Object.entries(enums).forEach(([tag, schema]) => {
       if (schema.type !== 'variant') return
       ;(schema.values as VariantOption[]).forEach((option) => {
         expect(option.key, `${tag} option missing key`).toBeTruthy()
         expect(option.label, `${tag} option ${option.key} missing label`).toBeTruthy()
-        expect(option.text, `${tag} option ${option.key} missing text`).toBeTruthy()
+        expect(typeof option.text, `${tag} option ${option.key} missing text`).toBe('string')
       })
     })
   })
@@ -85,6 +86,42 @@ describe('adjuster template / enums parity', () => {
       expect(schema.type, `${tag} missing type`).toBeTruthy()
       expect(schema.section, `${tag} missing section`).toBeTruthy()
       expect(typeof schema.required, `${tag} missing explicit required flag`).toBe('boolean')
+    })
+  })
+})
+
+// Fields referenced only inside one variant branch must be required exactly when that
+// branch is chosen — otherwise a missing value renders as silent blank text (e.g.
+// "mortgage is through .") instead of a [NEEDS INPUT] marker the reviewer can see.
+describe('branch-dependent fields flag instead of rendering blank', () => {
+  const branchFields: Record<string, { field: string; equals: string }> = {
+    mitigation_narrative: { field: 'mitigation_status', equals: 'present' },
+  }
+
+  Object.entries(branchFields).forEach(([tag, condition]) => {
+    it(`${tag} is required when ${condition.field} is ${condition.equals}`, () => {
+      expect(enums[tag].required).toBe(true)
+      expect(enums[tag].requiredWhen).toEqual(condition)
+    })
+  })
+})
+
+// [DATE_RECEIVED], [DATE_CONTACTED], [DATE_INSPECTED], [DATE_LOSS] are Ibis's own
+// merge-field tokens from the original blank template, not fields our voice-to-report
+// pipeline extracts or fills. They must stay as literal square-bracket text in the
+// flattened template and must never become {{tags}} the LLM is asked to populate.
+describe('Ibis merge-field tokens (not ours to fill)', () => {
+  const ibisTokens = ['[DATE_RECEIVED]', '[DATE_CONTACTED]', '[DATE_INSPECTED]', '[DATE_LOSS]']
+
+  it('preserves every Ibis merge-field token as literal text in the flattened template', () => {
+    ibisTokens.forEach((token) => {
+      expect(templateText, `${token} missing from template.flattened.txt`).toContain(token)
+    })
+  })
+
+  it('never schemas a field for what an Ibis merge-field token already covers', () => {
+    ;['date_received', 'date_contacted', 'date_inspected', 'date_of_loss'].forEach((tag) => {
+      expect(tag in enums, `${tag} should not be an extractable field`).toBe(false)
     })
   })
 })
