@@ -139,7 +139,7 @@
 Do this pass exactly once, after the light wrap up and before End Call:
 
 - If every topic and variable is covered, move straight to End Call.
-- If any topics or variables are missing, ask one natural question covering all of them at once, e.g. \"Before we wrap up, we didn't get to cover a few things - [missing topics in plain language]. Want to go through those now?\" Do not read it out as a list of field names.
+- If any topics or variables are missing, ask one natural question covering all of them at once, e.g. "Before we wrap up, we didn't get to cover a few things - [missing topics in plain language]. Want to go through those now?" Do not read it out as a list of field names.
 - If they say yes, ask about each missing topic one at a time, the same way you did earlier in the call.
 - If they say no, thank them and move to End Call.
 - Do not repeat this pass a second time in the same call, whether they said yes or no.
