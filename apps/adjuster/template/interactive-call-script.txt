@@ -66,21 +66,27 @@ out there, had my guy with me too."
 
 2. MORTGAGE
 ------------
-[AIGATHER] — fields: mortgage_status, mortgage_company (only if has one)
+[GATHER] — field: mortgage_status
 IVR: "Does the insured have a mortgage on the property?"
 
-Adjuster: "No." — or — "Yeah, it's through Chase."
-  (system) — one exchange resolves the branch and the company name
-  together. No separate yes/no step, no follow-up question when the
-  answer already contains everything.
+Adjuster: "No." — or — "Yeah, there is one."
+  (system) — only the yes/no branch is captured here; the lender name
+  is not asked. It renders as the literal [XM8_MORTGAGEE1] merge
+  token in the Ibis template, filled outside this pipeline — same
+  pattern as the date tokens below (README.md "Phase 1c").
 
 
 3. ORIGIN
 ----------
-[RECORD] — field: origin_narrative
-IVR: "What happened — walk me through the cause of loss."
+[RECORD] — fields: origin_narrative, origin_damage_narrative
+IVR: "What happened — walk me through the cause of loss and what
+damage it caused."
 
 Adjuster: (free narration)
+  (system) — one free narration, two fields: the extraction pass
+  splits the cause (origin_narrative) from what was actually damaged
+  as a result (origin_damage_narrative), same as COVERAGE splits one
+  answer into cause/determination/detail.
 
 
 4. COVERAGE
@@ -105,20 +111,21 @@ covered peril."
 5. RISK INFORMATION
 ---------------------
 [AIGATHER] — fields: dwelling_type, dwelling_stories, foundation_type,
-             square_footage, bedroom_count, bathroom_count, occupancy_status
-IVR: "Give me the dwelling — stories, type, foundation, square
-footage, bedrooms, bathrooms, and who's living there."
+             occupancy_status
+IVR: "Give me the dwelling — stories, type, foundation, and who's
+living there."
 
-Adjuster: "One story ranch, single family, slab foundation, about
-twenty-one fifty square feet, four bed two bath, owner occupied."
-  (system) — dwelling_type/dwelling_stories/bedroom_count/bathroom_count
-  are free text/number here, not a closed list — "apartment," "a story
-  and a half," a 7-bedroom house are all real answers a fixed enum
-  would reject. bedroom_count/bathroom_count parse to integers.
-  foundation_type and occupancy_status stay genuinely closed (3 options
-  each, no real edge cases seen). One AIGather turn re-asks only
-  whatever's still missing once the adjuster stops talking — this is
-  the section with the most required fields (7), so that matters.
+Adjuster: "One story ranch, single family, slab foundation, owner
+occupied."
+  (system) — dwelling_type/dwelling_stories are free text here, not a
+  closed list — "apartment," "a story and a half" are both real
+  answers a fixed enum would reject. foundation_type and
+  occupancy_status stay genuinely closed (3 options each, no real
+  edge cases seen).
+
+  NOTE: square_footage/bedroom_count/bathroom_count are NOT asked
+  here — that data comes from the matched calendar invite / claim
+  data, not the call.
 
 IVR: "What's the siding, and roughly what year was it built?"
 
@@ -130,33 +137,47 @@ not sure on the year."
 
 6. DWELLING INSPECTION — ROOF
 --------------------------------
-[GATHER] — field: roof_status (branch)
+[GATHER] — field: roof_status (branch: affected or not)
 IVR: "Roof — affected or not?"
 
 Adjuster: "Not affected." → skip to section 7, nothing else renders.
-Adjuster: "Yeah." / "It's a mess up there." → continue to 6a/6b.
+Adjuster: "Yeah." / "It's a mess up there." → continue to 6a.
   (system) — kept as a plain Gather, not folded into the AIGather
   below, because this branch decides which schema the next turn even
   uses (shingle vs. non-shingle vs. nothing) — it needs to resolve
   before the follow-up question can be built.
 
-6a. (roof_status = shingle)
+6a. (roof_status affected)
+[GATHER] — field: roof_status (branch: shingle vs. other_material)
+IVR: "Is the roof composition shingle roofing?"
+
+Adjuster: "Yes." → continue to 6b.
+Adjuster: "No." → continue to 6c.
+  (system) — explicit yes/no gate so the material branch is confirmed
+  rather than inferred from free narration.
+
+6b. (roof_status = shingle)
 [AIGATHER] — fields: roof_covering_type, roof_age_years, roof_condition,
              roof_pitch, roof_damage_narrative
-IVR: "Tell me about the roof — material, age, condition, pitch, and
-what you found slope by slope, including anything with no damage."
+IVR: "Tell me about the roof — shingle type, actual age, condition,
+pitch, and what you found slope by slope, including anything with no
+damage."
 
 Adjuster: (free narration covering all of it in one go, e.g. "Thirty
 year architectural laminate, call it twelve years old, average
 condition, six twelve pitch. Above the garage the decking and
 shingles are burned straight through, twelve by fourteen...")
+  (system) — roof_age_years is the roof's actual age, always asked
+  explicitly and separately from the shingle type/rating — a "20 year"
+  or "30 year laminate" shingle names a product warranty class, not
+  how old the roof is. If the adjuster only gives the rating, follow
+  up: "And about how old is the roof itself?"
 GO TO 7
 
-6b. (roof_status = other_material)
+6c. (roof_status = other_material)
 [RECORD] — field: roof_narrative_freeform
-IVR: "It's not shingle, so just describe the whole thing — material,
-age, condition, layers, pitch, per-slope findings, and your
-conclusion."
+IVR: "Please provide more details — material, age, condition, layers,
+pitch, per-slope findings, and your conclusion."
 
 Adjuster: (free narration)
 GO TO 7

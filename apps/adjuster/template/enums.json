@@ -27,24 +27,23 @@
       {
         "key": "has_mortgage",
         "label": "Has a mortgage",
-        "text": "I confirmed with the insured that their mortgage is through {{mortgage_company}}."
+        "text": "I confirmed with [XM8_INSURED_NAME] that their mortgage is through [XM8_MORTGAGEE1]."
       },
       {
         "key": "no_mortgage",
         "label": "No mortgage",
-        "text": "I confirmed with the insured that there is not a mortgage on the property."
+        "text": "There is not a mortgage on the property."
       }
     ]
   },
-  "mortgage_company": {
-    "label": "Mortgage company",
-    "type": "string",
-    "section": "Mortgage",
-    "required": true,
-    "requiredWhen": { "field": "mortgage_status", "equals": "has_mortgage" }
-  },
   "origin_narrative": {
     "label": "Cause of loss",
+    "type": "narrative",
+    "section": "Origin",
+    "required": true
+  },
+  "origin_damage_narrative": {
+    "label": "Resulting damage (what was damaged)",
     "type": "narrative",
     "section": "Origin",
     "required": true

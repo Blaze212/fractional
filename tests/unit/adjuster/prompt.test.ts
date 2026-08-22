@@ -160,17 +160,6 @@ describe('field-specific guidance', () => {
     expect(user).not.toContain('roof_narrative_freeform:')
   })
 
-  it('tells mortgage_company to stay empty rather than guess a lender', () => {
-    const spec = {
-      mortgage_company: { label: 'Mortgage company', type: 'string' },
-    }
-
-    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
-
-    expect(user).toContain('mortgage_company:')
-    expect(user).toMatch(/never guess a lender/i)
-  })
-
   it('formatFieldGuidance returns an empty string when nothing matches', () => {
     expect(formatFieldGuidance({ some_unrelated_tag: { label: 'x', type: 'string' } })).toBe('')
   })

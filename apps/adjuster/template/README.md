@@ -381,3 +381,53 @@ this are still open, not resolved:
   the recording arrived. Whether a late recording should force
   re-extraction is a real design decision, not made here — depends on
   how consistently delayed this event turns out to be in practice.
+
+## Phase 4 — XM8 merge tokens for mortgagee and insured name
+
+Following the same "not ours to fill" pattern established in Phase 1c
+for the date fields, Ibis's XM8/Xactimate integration now supplies two
+more merge fields directly: `[XM8_MORTGAGEE1]` (the lender name) and
+`[XM8_INSURED_NAME]` (the insured's legal name). Both are literal
+square-bracket tokens left untouched by `docgen.js`'s `{{tag}}`-only
+replacement, exactly like `[DATE_LOSS]`.
+
+- `mortgage_status`'s `has_mortgage` text changed from `"...their
+mortgage is through {{mortgage_company}}."` to `"I confirmed with
+[XM8_INSURED_NAME] that their mortgage is through
+[XM8_MORTGAGEE1]."`; `no_mortgage` changed to the literal `"There is
+not a mortgage on the property."` (dropped the "I confirmed with the
+  insured that" lead-in per the call script's exact wording).
+- `mortgage_company` is removed from `enums.json` and `prompt.js`'s
+  `FIELD_GUIDANCE` entirely — the call no longer asks who the lender
+  is, only whether one exists, since XM8 supplies the name.
+- ORIGIN's two lines (`{{origin_narrative}}` + a separate `Date of
+loss: [DATE_LOSS].` line) collapsed into one sentence: `"Damage
+occurred due to {{origin_narrative}} on [DATE_LOSS], resulting in
+damage to {{origin_damage_narrative}}."` `[DATE_LOSS]` stays a
+  literal, untouched token per Phase 1c. `origin_damage_narrative` is
+  a new field (what was actually damaged) split out from
+  `origin_narrative` (the cause only) — one free-narration call-script
+  answer still yields both, the same way COVERAGE splits one answer
+  into cause/determination/detail.
+- The call script (`dograh-script.md`, `interactive-call-script.txt`)
+  no longer asks for square footage, bedroom count, or bathroom count
+  — those are meant to come from matched calendar/claim data instead.
+  **That mapping does not exist yet anywhere in this codebase** (the
+  only non-transcript context actually wired in is `prompt.js`'s
+  `formatClaimBlock()`, sourced from the Claims Google Sheet, which
+  carries neither square footage nor bed/bath counts today). Until
+  that's built, these three fields will render as `[NEEDS INPUT]` on
+  every report.
+- The roof section now asks an explicit "Is the roof composition
+  shingle roofing?" yes/no gate before branching to the shingle
+  dropdown-paragraph flow or a freeform "Please provide more details"
+  follow-up, and both call scripts + `prompt.js`'s guidance call out
+  that a shingle's warranty rating (e.g. "20 year", "30 year
+  laminate") is a product class, not the roof's actual age — age is
+  always asked for explicitly and separately.
+
+Not yet touched: `guidedFlow.js` (Phase 2, explicitly not wired live)
+and `apps/bh-systems/public/texml/single-stage-aigather.xml` (Phase 3)
+still reference the old `mortgage_company` field and don't reflect
+these wording changes — both are exploratory/non-Dograh call flows,
+out of scope for this pass.

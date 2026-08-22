@@ -95,7 +95,6 @@ describe('adjuster template / enums parity', () => {
 // "mortgage is through .") instead of a [NEEDS INPUT] marker the reviewer can see.
 describe('branch-dependent fields flag instead of rendering blank', () => {
   const branchFields: Record<string, { field: string; equals: string }> = {
-    mortgage_company: { field: 'mortgage_status', equals: 'has_mortgage' },
     mitigation_narrative: { field: 'mitigation_status', equals: 'present' },
   }
 

@@ -5,8 +5,7 @@ MORTGAGE:
 {{mortgage_status}}
 
 ORIGIN:
-{{origin_narrative}}
-Date of loss: [DATE_LOSS].
+Damage occurred due to {{origin_narrative}} on [DATE_LOSS], resulting in damage to {{origin_damage_narrative}}.
 
 COVERAGE:
 The damages to the insured's property are {{coverage_cause_narrative}}, {{coverage_determination}}
