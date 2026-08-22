@@ -28,10 +28,8 @@
    Variables to track:
    - Mortgage status (has one or not)
 
-   NOTE: never ask who the lender is. The lender name renders as the literal
-   [XM8_MORTGAGEE1] merge token in the Ibis template, filled outside this
-   pipeline — same pattern as the date tokens below. Only the yes/no branch
-   is ours to capture.
+   NOTE: never ask who the lender is — that's already filled in automatically
+   from the document template. Only ask whether a mortgage exists.
 
 3. **Origin information**
    - Gather a narrative of the origin of the loss, including what damage resulted.
@@ -43,9 +41,9 @@
    - Cause of loss narrative
    - Resulting damage narrative (what was actually damaged)
 
-   NOTE: never ask for the date of the loss. It renders as the literal
-   [DATE_LOSS] merge token in the Ibis template, filled outside this
-   pipeline — asking and discarding the answer wastes the call.
+   NOTE: never ask for the date of the loss — that's already filled in
+   automatically from the document template. Asking and discarding the
+   answer wastes the call.
 
 4. **Coverage**
    - Identify the cause of damages and coverage determination.
