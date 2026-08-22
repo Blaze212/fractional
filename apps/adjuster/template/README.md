@@ -410,14 +410,17 @@ damage to {{origin_damage_narrative}}."` `[DATE_LOSS]` stays a
   answer still yields both, the same way COVERAGE splits one answer
   into cause/determination/detail.
 - The call script (`dograh-script.md`, `interactive-call-script.txt`)
-  no longer asks for square footage, bedroom count, or bathroom count
-  — those are meant to come from matched calendar/claim data instead.
+  no longer asks for year built, square footage, bedroom count, or
+  bathroom count — those are meant to come from matched calendar/claim
+  data instead. `year_built` is also dropped from `dograh-script.md`'s
+  bottom "Variables to Track" block, same as the other three.
   **That mapping does not exist yet anywhere in this codebase** (the
   only non-transcript context actually wired in is `prompt.js`'s
   `formatClaimBlock()`, sourced from the Claims Google Sheet, which
-  carries neither square footage nor bed/bath counts today). Until
-  that's built, these three fields will render as `[NEEDS INPUT]` on
-  every report.
+  carries none of these four fields today). Until that's built, these
+  four fields will render as `[NEEDS INPUT]` on every report
+  (`year_built` is `required: false` in `enums.json`, so it just
+  renders blank instead).
 - The roof section now asks an explicit "Is the roof composition
   shingle roofing?" yes/no gate before branching to the shingle
   dropdown-paragraph flow or a freeform "Please provide more details"

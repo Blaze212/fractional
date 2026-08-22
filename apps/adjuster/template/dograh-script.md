@@ -60,21 +60,20 @@
    - Gather details about the dwelling's structure, siding, and occupancy status. Ask over a couple questions.
 
    Relevant Questions:
-   - Could you describe the dwelling structure — stories, type, year built, and foundation type?
-   - What is the siding type?
+   - Could you describe the dwelling structure — dwelling type, stories?
+   - And the siding, and foundation type?
    - Who currently occupies the property?
 
    Variables to track:
    - Dwelling type
    - Dwelling stories
-   - Year built
    - Foundation type
    - Siding type
    - Occupancy
 
-   NOTE: do not ask for square footage, bedroom count, or bathroom count.
-   That data comes from the matched calendar invite / claim data, not the
-   call.
+   NOTE: do not ask for year built, square footage, bedroom count, or
+   bathroom count. That data comes from the matched calendar invite / claim
+   data, not the call.
 
 6. **Inspection Findings:**
    - Discuss the condition of the roof, exterior, and any interior damages. Ask over a couple questions, You many probe into each of these 3 major section..
@@ -103,7 +102,7 @@
 
    Relevant Questions:
    - Was mitigation involved, and what actions were taken for mitigation?
-   - What is the status of personal property?
+   - What is the status of personal property? (If yes, ask for more details. E.g. "Can you provide more details about the personal property damage?")
 
    Variables to track:
    - Personal property status
@@ -132,10 +131,10 @@
    - Is there anything else you'd like to document about the claim?
 
    Variables to track:
-   - None — this section has no dedicated field; it's a freeform catch-all, and anything gathered here should be filed under whichever section 1–8 it actually belongs to.
+   - This section has no dedicated field; it's a freeform catch-all, and anything gathered here should be filed under whichever section 1–8 it actually belongs to.
 
 10. **Highlight Missing Information**
-    The topics in sections 1 through 9 above are all extracted from this conversation once the call ends. A topic with no clear answer becomes a gap someone has to chase down by hand later, so before moving to End Call, do one silent pass over sections 1 through 9 and note which topics you never got a clear answer to. Do not count a topic as missing if the caller explicitly told you it does not apply (e.g. no mortgage, roof not affected, no mitigation vendor, nothing to report on interior damage) — only count topics you simply never asked about or that came back unclear.
+    The topics in sections 1 through 9 above are all extracted from this conversation once the call ends. A topic with no clear answer becomes a gap someone has to chase down by hand later, so before moving to End Call, do one silent pass over sections 1 through 9 and note which topics you never got a clear answer to. Do not count a topic as missing if the caller explicitly told you it does not apply (e.g. no mortgage, roof not affected, no mitigation vendor, nothing to report on interior damage) — only count topics/variables you simply never asked about or that came back unclear.
 
 Do this pass exactly once, after the light wrap up and before End Call:
 
@@ -196,12 +195,8 @@ Move to End Call only when the caller is done, there is nothing else to discuss,
     "coverage_supporting_detail": { "label": "Coverage supporting detail (optional, e.g. confirming heat was maintained for a freeze claim)" },
     "dwelling_type": { "label": "Dwelling type" },
     "dwelling_stories": { "label": "Dwelling stories" },
-    "year_built": { "label": "Year built" },
     "foundation_type": { "label": "Foundation type" },
     "siding_type": { "label": "Siding type" },
-    "square_footage": { "label": "Interior square footage" },
-    "bedroom_count": { "label": "Bedroom count" },
-    "bathroom_count": { "label": "Bathroom count" },
     "occupancy_status": { "label": "Occupancy" },
     "roof_status": { "label": "Roof status" },
     "roof_covering_type": { "label": "Roof covering type (shingle)" },

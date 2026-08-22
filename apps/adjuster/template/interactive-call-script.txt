@@ -123,16 +123,15 @@ occupied."
   occupancy_status stay genuinely closed (3 options each, no real
   edge cases seen).
 
-  NOTE: square_footage/bedroom_count/bathroom_count are NOT asked
-  here — that data comes from the matched calendar invite / claim
-  data, not the call.
+  NOTE: year_built/square_footage/bedroom_count/bathroom_count are NOT
+  asked here — that data comes from the matched calendar invite /
+  claim data, not the call.
 
-IVR: "What's the siding, and roughly what year was it built?"
+IVR: "What's the siding?"
 
-Adjuster: "Brick veneer, built in ninety-eight." — or — "Vinyl siding,
-not sure on the year."
+Adjuster: "Brick veneer." — or — "Vinyl siding."
   (system) — siding_type free text with example guidance (same
-  reasoning as dwelling_type); year_built [SKIP-OK].
+  reasoning as dwelling_type).
 
 
 6. DWELLING INSPECTION — ROOF
