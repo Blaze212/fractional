@@ -29,7 +29,7 @@ var GUIDED_SECTIONS = [
     verb: 'record',
     say: "Hi, you've called the claim line. Let's walk the Ibis template. Who's the insured, and what's the property address?",
     maxLength: 45,
-    next: 'assignment',
+    next: 'claim_info',
   },
   {
     id: 'claim_info',
