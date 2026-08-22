@@ -1,4 +1,4 @@
-# Dograh workflow — live draft snapshot
+# Dograh workflow — local mirror
 
 Local mirror of the Dograh-hosted voice workflow **"Note Taker - inbound"**
 (workflow id `10551`), pulled via the `dograh` MCP server
@@ -6,18 +6,27 @@ Local mirror of the Dograh-hosted voice workflow **"Note Taker - inbound"**
 the actual live agent config is diffable in git instead of only living on
 Dograh's platform.
 
-**Keep this in sync by hand.** There is no automated pull/push — whenever
-someone edits the workflow directly in Dograh, or someone here pushes an
-edit via `save_workflow`, re-pull with `get_workflow_code` and update this
-file (and `dograh-script.md`, see below) in the same commit.
+**There is no automatic sync in either direction.** Nothing watches Dograh
+for a publish/edit and nothing here pushes on save. This file is only ever
+as current as its last manual pull — see the publish log below for when
+that last happened and what the state was at that time. `get_workflow`
+(not `get_workflow_code`) returns a `version` field of `"draft"` or
+`"published"` for whatever is currently live/being edited — that's the
+only way to check current state, and it has to be checked on demand, by
+asking Claude to re-pull or by checking in Dograh's UI directly.
 
-## Version state (as of this snapshot)
+**Whenever the workflow changes on either side** — someone edits directly
+in Dograh, someone here pushes via `save_workflow`, or someone publishes a
+draft — re-pull with `get_workflow_code`/`get_workflow`, update this file
+and `dograh-script.md` (see below) to match, and add a line to the publish
+log.
 
-- **Published / live for real calls: version 3.** Not touched by this sync
-  — `save_workflow` only ever writes the draft; a separate publish step
-  (not done here) would be needed to make draft changes live.
-- **Draft: version 4.** This file mirrors the draft, which is what
-  `save_workflow` edits and what a future publish would promote to live.
+## Publish log
+
+| Date       | Event                            | Version          | Notes                                                                                                                                                                                                                                       |
+| ---------- | -------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-08-22 | Synced draft via `save_workflow` | draft v4         | Brought the draft in line with `enums.json`'s XM8/origin-split changes. Published v3 (pre-sync schema) was still live for real calls at this point.                                                                                         |
+| 2026-08-22 | Verified via `get_workflow`      | **published v4** | v4 (the synced version above) is now published and live for real calls — published by someone outside this session, not via any tool available here. This file's "Node graph"/node sections below reflect v4's content, now confirmed live. |
 
 ## Node graph
 
