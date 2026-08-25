@@ -23,4 +23,13 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/texml/gas"],
   },
+  // Workers Logs — every invocation (plus console.error output like the
+  // proxy failure log in src/worker.js) shows up in the dashboard's Logs tab
+  // and via `wrangler tail`, without needing a tail session running live.
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+    },
+  },
 }
