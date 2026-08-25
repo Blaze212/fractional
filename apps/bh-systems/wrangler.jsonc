@@ -12,9 +12,15 @@
   "name": "bh-systems",
   "compatibility_date": "2026-06-03",
   "main": "./src/worker.js",
+  // run_worker_first: without it, Cloudflare's static-asset/SPA-fallback layer
+  // answers /texml/gas directly (GET gets index.html, POST gets a bare 405)
+  // and src/worker.js's fetch() handler — the actual proxy to Apps Script —
+  // never runs. Scoped to just this path so the rest of the site still serves
+  // as plain static assets.
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
+    "run_worker_first": ["/texml/gas"],
   },
 }
