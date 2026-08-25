@@ -90,3 +90,347 @@ Drive files whenever these change.
 - Any Xactimate line-item content. Nothing from the estimate/pricing
   portions of the sample PDFs was mined — only narrative-section vocabulary
   went into `glossary.json`, consistent with the spec's non-goals.
+
+## Phase 1 — corrections against 11 filed reports (not just the blank template)
+
+Phase 0 cross-checked the blank template against 13 finished reports but
+largely kept the blank template's section structure. Phase 1 went back to
+11 actually-filed reports section by section (see
+`voice-to-report-generator/report-templates/ibis-report-pattern-analysis.md`
+and `ibis-report-template-reworked.md`, both local-only per `.gitignore`)
+and found several sections whose _structure_, not just field values, didn't
+match real usage.
+
+- **Coverage restructured.** Real reports write Coverage as a narrative
+  cause clause + a small templated determination, not a full canned
+  paragraph. Replaced `loss_cause` with `coverage_cause_narrative`
+  (narrative), shrank `coverage_determination` to 2 variants (`covered` /
+  `excluded`) holding just the determination sentence, and added
+  `coverage_supporting_detail` (optional) for cases like a freeze claim's
+  "we confirmed heat was maintained" addition. Known minor cosmetic gap:
+  when `coverage_supporting_detail` is empty, the rendered sentence has a
+  double space before "Therefore" (same class of rough edge as the
+  optional-field blank-heading issue below) — not worth a template-engine
+  change for one extra space.
+- **Roof restructured into a 3-way `roof_status` variant**
+  (`not_affected` / `shingle` / `other_material`), replacing the always-on
+  roof sentence. 4/11 real reports skip the whole subsection with one line;
+  shingle stays a full slot-filled template (`roof_covering_type` trimmed
+  to shingle-only values, plus new `roof_condition` enum); non-shingle
+  material (Smith's metal roof) falls back to one LLM-authored
+  `roof_narrative_freeform` field, since a fixed sentence can't flex for
+  arbitrary roofing material. `roof_covering_type`, `roof_condition`,
+  `roof_age_years`, `roof_pitch`, and `roof_damage_narrative` are only
+  required when `roof_status` is `shingle` — see `requiredWhen` below.
+- **Exterior restructured the same way** — `exterior_status`
+  (`not_affected` / `affected`) replaces the always-on exterior sentence;
+  `exterior_narrative` (renamed from `exterior_damage_narrative`) is only
+  required when affected.
+- **Personal Property templatized for the first time.** Was static
+  boilerplate in Phase 0. Now `personal_property_status`
+  (`none` / `damaged`) — the `damaged` branch always appends a literal
+  `[NEEDS INPUT: Confirm personal property list above against the
+transcript before filing.]` after the narrative, even when the LLM
+  extracted a clean itemized list — financial/inventory accuracy here
+  warrants a forced second pass, not just a confidence-gated one.
+- **Mitigation's rough edge fixed.** Phase 0 flagged optional fields
+  rendering as a bare heading with nothing under it as "a known cosmetic
+  rough edge." `mitigation_status` (`none` / `present`) now drops the
+  `MITIGATION:` heading entirely when there's no mitigation vendor —
+  matches the real pattern (4/11 reports omit it heading-and-all, never a
+  bare heading).
+- **Overhead & Profit, Salvage & Subrogation, and Coinsurance templatized
+  for the first time** (`overhead_profit_narrative`, `subrogation_reason`,
+  `coinsurance_narrative`) — Phase 0 left these fully static. Real O&P
+  usage is 7 distinct wordings across 11 reports (including one case where
+  O&P is affirmatively _included_), so it's a narrative field, not a small
+  enum. Coinsurance appears in **zero** of 11 real reports — the blank
+  template's dollar figures ($326,176.97 ITV, etc.) are almost certainly
+  the same "real claim numbers baked in as static text" bug this README
+  already caught for Year Built/Foundation Type/Square Footage. Kept as a
+  required field (renders `[NEEDS INPUT: ...]` by default via the existing
+  validation path) rather than dropped, per Brandon's call — **follow up
+  with Brandon on whether Coinsurance should stay in the template at all**,
+  since there's zero real precedent for it across the whole sample set.
+- **Further Handling / Claim Completion: no change.** Confirmed to default
+  to Claim Completion's boilerplate (already how the static text renders);
+  Further Handling stays a manual edit for now, not LLM-driven.
+- **`requiredWhen` added to `validate.js`.** A field can now declare
+  `"requiredWhen": { "field": "<sibling tag>", "equals": "<value>" }` so
+  it's only required when a sibling variant resolved to a specific branch
+  — e.g. `roof_covering_type` only needs a value when `roof_status` is
+  `shingle`. Without this, every not-affected or non-shingle roof claim
+  would show phantom "needs input" counts for fields the rendered document
+  never actually references. `docgen.js` and the tag-list prompt logic
+  needed no changes — the branch that isn't chosen never has its `{{tag}}`
+  inserted into the document body at all, so an unused field's resolved
+  text (even `[NEEDS INPUT: ...]`) is simply never substituted.
+- **Not changed in this pass, deliberately:** Other Structures stays fully
+  static boilerplate (no decision made on templatizing it yet); Risk
+  Information's "composition shingle roofing" tail still hardcodes shingle
+  even though Roof itself now handles non-shingle material — same
+  Phase 0-flagged risk, just not resolved here.
+
+## Phase 1b — prompt.js guidance + a template correction it exposed
+
+Writing the actual extraction-prompt content for Phase 1's new/changed
+fields surfaced one thing that couldn't be fixed in the prompt alone:
+`present_at_inspection` fed into a sentence with `" was present during the
+inspection."` hardcoded as static template text, so no prompt instruction
+could make the verb agree with a multi-person `present_at_inspection`
+value — the word "was" never went through the LLM at all. Added
+`present_at_inspection_verb` (enum: `was` / `were`) as its own tag, with
+the template line now reading `{{present_at_inspection}}
+{{present_at_inspection_verb}} present during the inspection.` — this is a
+schema/template change, not prompt content, even though the underlying
+decision ("was" vs. "were" should be grammatically correct, not copy the
+adjuster's habit of always saying "was") is a prompt-phase call.
+
+Everything else deferred at the end of Phase 1 is now in `prompt.js`:
+enum-preference + extra-detail-to-`unplaced_notes` guidance and ad hoc
+section examples (Tree Removal, Business Personal Property, Additional
+Living Expense, Loss of Use, prior/previous claims) live in the general
+`system` instructions; per-field guidance (roof slope/elevation
+completeness, the `roof_narrative_freeform` few-shot example for
+non-shingle roofs, interior level-grouping, Personal Property's three-way
+listed/deferred/unextracted logic, Overhead & Profit's determination+reason
+shape and coverage-issue cross-reference, the Salvage & Subrogation escape
+hatch for one-off arguments like Galicia's warranty-based rewrite, and
+Coinsurance's "almost never applies" instruction) lives in `prompt.js`'s
+`FIELD_GUIDANCE` map, gated so a tag's guidance only appears in the prompt
+when that tag is actually present in the schema passed in.
+
+## Phase 1c — correction: `[DATE_RECEIVED]`/`[DATE_CONTACTED]`/`[DATE_INSPECTED]`/`[DATE_LOSS]` are not ours to fill
+
+The very first instruction behind this whole rework was that the blank
+template's square-bracket tokens (`[DATE_RECEIVED]`, `[DATE_CONTACTED]`,
+`[DATE_INSPECTED]`, `[DATE_LOSS]`) are Ibis's own merge-field markup —
+exact-match variables that stay in the final template as-is, not narrative
+content the voice-to-report pipeline extracts or fills. Phase 1 recorded
+that decision in the analysis docs but never actually applied it to
+`enums.json`/`template.flattened.txt` — `date_received`, `date_contacted`,
+`date_inspected`, and `date_of_loss` were left as ordinary `{{}}`
+LLM-extracted fields, carried over unchanged from Phase 0. Fixed now:
+
+- Removed `date_received`, `date_contacted`, `date_inspected`, and
+  `date_of_loss` from `enums.json` entirely — nothing else in the codebase
+  referenced them (checked before removing).
+- `template.flattened.txt` now has the literal tokens `[DATE_RECEIVED]`,
+  `[DATE_CONTACTED]`, `[DATE_INSPECTED]`, `[DATE_LOSS]` in place of the old
+  `{{date_received}}` etc. tags. These are inert to `docgen.js`'s
+  `{{tag}}`-only replacement regex and to `findLeftoverTags`'s
+  `{{\w+}}`-only leftover check, so they pass straight through untouched —
+  exactly the intended behavior.
+- Added a regression test (`template.test.ts`, "Ibis merge-field tokens
+  (not ours to fill)") asserting the four tokens stay literal text in the
+  template and that none of the four ever reappears as a schema field.
+
+`contacted_party_name` and `present_at_inspection`/
+`present_at_inspection_verb` are unaffected — the blank template only used
+blank underscores (`_____`) for those, not square brackets, so they were
+always genuinely ours to extract from the voice note.
+
+## Phase 1d — system prompt reworked around the strict-schema reality
+
+The system prompt told the model to "omit that field entirely rather than
+inventing" a value — but `openrouter.js` requests `strict: true` structured
+output with every tag in `required`, so omission is impossible and a model
+with no evidence was being forced to invent. Rewritten around the
+empty-value convention (`value: ""`, `source_span: ""`), which
+`validate.js` already turns into `[NEEDS INPUT]` markers. The rewrite also
+adds: voice-transcription error expectations, verbatim-span rules (copy
+transcription errors, never splice), value-normalization limits, concrete
+high/low confidence criteria (torn → low), an affirmative-statement rule
+for status variants (silence is not "not_affected"), dates/claim
+numbers/carrier routed to `unplaced_notes`, and claim context as
+disambiguation only — with a mismatch note when the transcript names a
+different insured/address.
+
+Two schema gaps the prompt could not fix: `mortgage_company` and
+`mitigation_narrative` were optional, so a chosen `has_mortgage`/`present`
+branch with a missing value rendered silent blank text ("mortgage is
+through .") instead of flagging. Both are now
+`requiredWhen` their status branch is selected.
+
+## Phase 2 — guided (section-by-section) call flow, exploratory, not live
+
+An alternative to the single continuous-narration call in
+`field-notes.xml`/`webhook.js`: the adjuster gets asked one short
+question per Ibis section instead of one open-ended "record your
+message" prompt. Design notes and the field→verb mapping are in
+`docs/telnyx-texml-interactive-ivr.md` and
+`template/interactive-call-script.txt`; the implementation is
+`src/guidedFlow.js` (dispatched from `webhook.js`) plus
+`apps/bh-systems/public/texml/guided-intake.xml` as the static entry
+point. Covered by `tests/unit/adjuster/guidedFlow.test.ts`.
+
+Not wired to any live Telnyx number — nothing changes for the existing
+flow, and swapping between the two is just pointing a Telnyx number's
+Voice URL at one static XML file or the other. Both write the same
+`transcript`/`status` shape to the Jobs sheet, so `matcher.js`,
+`prompt.js`, and `runner.js` need zero changes to consume a
+guided-flow job either way.
+
+Before this goes live:
+
+- **The Jobs sheet needs a new `guided_state` column** (a JSON blob
+  holding in-progress section state). `upsertJob()` throws on a
+  missing column, so this has to exist before a real call reaches it
+  — same category of prerequisite as `templateData.js`'s
+  `ENUMS_FILE_ID`/`GLOSSARY_FILE_ID` Script Properties above.
+- **The AIGather result parameter name is unconfirmed against a live
+  call.** Telnyx's docs describe "base64-encoded JSON" in the `action`
+  callback payload but not the field name it arrives under.
+  `parseAIGatherResult()` in `guidedFlow.js` checks several candidate
+  names as a hedge — replace with the confirmed name after one real
+  test call, the same confirm-against-a-live-call step `webhook.js`'s
+  own top-of-file comment documents having already done for
+  `CallSessionId`.
+- **A stuck `awaiting_section_transcripts` job has no promotion
+  sweep.** If a Record section's `transcriptionCallback` never lands,
+  that job sits forever — unlike the single-shot flow, which
+  `jobs.js`'s `promoteStaleAwaitingTranscript()` already recovers from
+  the equivalent stuck state after 15 minutes. Flagged in a comment
+  above `allSectionTranscriptsIn()` in `guidedFlow.js`.
+- **Gather/AIGather-resolved fields still pass back through
+  `prompt.js`'s LLM extraction**, via the stitched transcript, instead
+  of being merged into the final draft directly. That's deliberate for
+  now — it keeps the guided flow's output 100% pipeline-compatible
+  with zero changes to `runner.js`/`prompt.js` — but it means a field
+  already resolved exactly by a closed `Gather`/`AIGather` enum (e.g.
+  `coverage_determination`) is re-derived by the LLM from text like
+  `coverage_determination: covered` instead of being trusted outright.
+  Worth revisiting once this is closer to live.
+
+## Phase 3 — single-stage AIGather, a third call flow, exploratory, not live
+
+`apps/adjuster/docs/guided-flow-debugging-handoff.md` root-caused why
+`<AIGather>` can't be one section in Phase 2's chain: it's a Call
+Control REST command under the hood, its result arrives via a
+`call.ai_gather.ended` webhook event, not the verb's own `action`
+callback, and returning TeXML from that handler does not continue the
+call — confirmed on live calls, it hangs up regardless. That's fatal
+for a multi-section chain but irrelevant to a call with only one
+section: nothing needs to continue after the single `<AIGather>` turn
+finishes, since the call ending there is the desired behavior, not a
+failure to route around.
+
+`apps/bh-systems/public/texml/single-stage-aigather.xml` is that:
+one `<AIGather>` verb, one schema covering every Ibis template field
+in one flat object (no chaining, no `guided_state`), with a `Greeting`
+that asks for identity + carrier up front, invites the adjuster to
+narrate the whole report, and explicitly tells them they can end the
+call once they've said everything they know even if some fields go
+unanswered. Unlike Phase 2's per-section schemas, none of this
+schema's fields use `enum` — see the file's own header comment for
+why (short version: it wouldn't be enforced even if used, since
+Telnyx never delivers this schema's structured JSON back to us, only
+the raw conversation). `apps/adjuster/src/webhook.js`'s
+`handleSingleAIGatherEnded()` stitches that conversation into the
+same `transcript` shape every other flow already produces, so
+`matcher.js`/`prompt.js`/`runner.js` need zero changes. Covered by
+`tests/unit/adjuster/singleStageAIGather.test.ts`, including a
+regression test that a `call.ai_gather.ended` event for a genuinely
+in-progress guided-flow call session still routes to
+`handleGuidedAIGatherEnded()`, not this handler — the two flows share
+the same shape-detected event with no way to key off an `event`
+param, so `webhook.js`'s `isGuidedFlowCall()` routes between them by
+checking whether the call session already has a `guided_state` with
+`flow: 'guided'`.
+
+Live-tested against a real Telnyx number as of 2026-08-20. First two
+test calls lost their transcript entirely — the fix above
+(`isGuidedFlowCall()`) had only been pushed to this repo, not to the
+live Apps Script deployment (`clasp push` alone doesn't update what's
+live at the `/exec` URL; it needs `clasp deploy -i <the pinned
+deployment ID>` too, a trap this project's own debugging handoff doc
+already called out). Once actually deployed, this should route
+correctly — not yet re-confirmed against a live call at time of
+writing.
+
+Recording was added the same day via a per-Telnyx-number "record the
+whole call" toggle (Telnyx dashboard, outside this repo) rather than
+any TeXML change — `<AIGather>` has no `record` attribute and no
+TeXML-level way to record concurrently with it (checked against
+Telnyx's docs). The recording surfaces via a `CallStatus: "analyzed"`
+webhook event, shape-detected the same way as `call.ai_gather.ended`
+(no `event` param of our own) by `webhook.js`'s
+`looksLikeCallAnalyzed()`/`handleCallAnalyzed()`. Two things about
+this are still open, not resolved:
+
+- **The `Recordings` field's shape isn't documented anywhere in
+  Telnyx's public TeXML reference.** `firstRecordingUrl()` handles a
+  bare URL string or an object with a `url`/`recording_url`/
+  `download_url` key as a hedge, and `handleCallAnalyzed()` logs the
+  full raw payload via `logServerOnly()` on every call so the real
+  shape can be confirmed and the hedge tightened — same
+  confirm-against-a-live-call pattern as `CallSessionId`'s field name
+  and `guidedFlow.js`'s `parseAIGatherResult()`.
+- **Timing:** in the one real call observed, this event arrived ~14
+  minutes after `call.ai_gather.ended` — likely after `runner.js` has
+  already extracted fields and generated the doc from the AIGather
+  conversation alone. `handleCallAnalyzed()` still appends a
+  `[CALL RECORDING]` section to the job's `transcript` (merged with
+  the `[AIGATHER CONVERSATION]` section `handleSingleAIGatherEnded()`
+  writes, via the new `appendTranscriptSection()` helper — order-
+  independent, whichever event lands first) and sets `recording_url`,
+  so both sources of truth for what was said feed into the extraction
+  prompt together whenever they're both in before extraction happens.
+  But it does **not** re-trigger extraction or regenerate an
+  already-generated doc for a job the runner already finished before
+  the recording arrived. Whether a late recording should force
+  re-extraction is a real design decision, not made here — depends on
+  how consistently delayed this event turns out to be in practice.
+
+## Phase 4 — XM8 merge tokens for mortgagee and insured name
+
+Following the same "not ours to fill" pattern established in Phase 1c
+for the date fields, Ibis's XM8/Xactimate integration now supplies two
+more merge fields directly: `[XM8_MORTGAGEE1]` (the lender name) and
+`[XM8_INSURED_NAME]` (the insured's legal name). Both are literal
+square-bracket tokens left untouched by `docgen.js`'s `{{tag}}`-only
+replacement, exactly like `[DATE_LOSS]`.
+
+- `mortgage_status`'s `has_mortgage` text changed from `"...their
+mortgage is through {{mortgage_company}}."` to `"I confirmed with
+[XM8_INSURED_NAME] that their mortgage is through
+[XM8_MORTGAGEE1]."`; `no_mortgage` changed to the literal `"There is
+not a mortgage on the property."` (dropped the "I confirmed with the
+  insured that" lead-in per the call script's exact wording).
+- `mortgage_company` is removed from `enums.json` and `prompt.js`'s
+  `FIELD_GUIDANCE` entirely — the call no longer asks who the lender
+  is, only whether one exists, since XM8 supplies the name.
+- ORIGIN's two lines (`{{origin_narrative}}` + a separate `Date of
+loss: [DATE_LOSS].` line) collapsed into one sentence: `"Damage
+occurred due to {{origin_narrative}} on [DATE_LOSS], resulting in
+damage to {{origin_damage_narrative}}."` `[DATE_LOSS]` stays a
+  literal, untouched token per Phase 1c. `origin_damage_narrative` is
+  a new field (what was actually damaged) split out from
+  `origin_narrative` (the cause only) — one free-narration call-script
+  answer still yields both, the same way COVERAGE splits one answer
+  into cause/determination/detail.
+- The call script (`dograh-script.md`, `interactive-call-script.txt`)
+  no longer asks for year built, square footage, bedroom count, or
+  bathroom count — those are meant to come from matched calendar/claim
+  data instead. `year_built` is also dropped from `dograh-script.md`'s
+  bottom "Variables to Track" block, same as the other three.
+  **That mapping does not exist yet anywhere in this codebase** (the
+  only non-transcript context actually wired in is `prompt.js`'s
+  `formatClaimBlock()`, sourced from the Claims Google Sheet, which
+  carries none of these four fields today). Until that's built, these
+  four fields will render as `[NEEDS INPUT]` on every report
+  (`year_built` is `required: false` in `enums.json`, so it just
+  renders blank instead).
+- The roof section now asks an explicit "Is the roof composition
+  shingle roofing?" yes/no gate before branching to the shingle
+  dropdown-paragraph flow or a freeform "Please provide more details"
+  follow-up, and both call scripts + `prompt.js`'s guidance call out
+  that a shingle's warranty rating (e.g. "20 year", "30 year
+  laminate") is a product class, not the roof's actual age — age is
+  always asked for explicitly and separately.
+
+Not yet touched: `guidedFlow.js` (Phase 2, explicitly not wired live)
+and `apps/bh-systems/public/texml/single-stage-aigather.xml` (Phase 3)
+still reference the old `mortgage_company` field and don't reflect
+these wording changes — both are exploratory/non-Dograh call flows,
+out of scope for this pass.

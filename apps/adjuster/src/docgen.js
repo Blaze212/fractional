@@ -13,15 +13,16 @@ function generateDoc(job, claim, validated, tagSchema, unplacedNotes) {
   // Pass 1: variant tags expand to stored paragraph text, which may itself contain
   // other {{tags}} (e.g. coverage_determination's text references {{loss_cause}}).
   Object.keys(resolved).forEach(function (tag) {
-    if (resolved[tag].isVariant) replaceTag(body, tag, resolved[tag].text)
+    if (resolved[tag].isVariant) replaceTag(body, tag, resolved[tag])
   })
 
   // Pass 2: every remaining leaf tag, including ones newly exposed by pass 1.
   Object.keys(resolved).forEach(function (tag) {
-    if (!resolved[tag].isVariant) replaceTag(body, tag, resolved[tag].text)
+    if (!resolved[tag].isVariant) replaceTag(body, tag, resolved[tag])
   })
 
   highlightNeedsInput(body)
+  highlightMediumConfidence(body)
   appendUnplacedNotes(body, unplacedNotes)
   doc.saveAndClose()
 
@@ -39,6 +40,15 @@ function generateDoc(job, claim, validated, tagSchema, unplacedNotes) {
   return { status: 'done', docUrl: copy.getUrl(), needsInputCount: needsInputCount }
 }
 
+// Confidence tiers coming out of validateFields/validateDograhFields: "high"
+// renders plainly, "low" (and anything else invalid) renders as a
+// [NEEDS INPUT] placeholder, "medium" renders the real value but flagged
+// yellow for a quick human check (see highlightMediumConfidence). A
+// low-confidence field that still carries a source_span (see validate.js's
+// needsInput) had real, verified transcript text behind it — just enough
+// that the model wasn't sure how to render it — so that snippet rides along
+// on the placeholder as a "heard" hint instead of leaving the adjuster to
+// start from zero.
 function resolveTagsForDoc(validated, tagSchema) {
   var resolved = {}
 
@@ -48,7 +58,8 @@ function resolveTagsForDoc(validated, tagSchema) {
     var isVariant = schema.type === 'variant'
 
     if (!field || !field.valid) {
-      resolved[tag] = { isVariant: isVariant, text: '[NEEDS INPUT: ' + schema.label + ']' }
+      var heard = field && field.source_span ? ' — heard: "' + field.source_span + '"' : ''
+      resolved[tag] = { isVariant: isVariant, text: '[NEEDS INPUT: ' + schema.label + heard + ']' }
       return
     }
 
@@ -57,6 +68,8 @@ function resolveTagsForDoc(validated, tagSchema) {
       return
     }
 
+    var needsReview = field.confidence === 'medium'
+
     if (isVariant) {
       var option = (schema.values || []).filter(function (o) {
         return o.key === field.value
@@ -64,18 +77,40 @@ function resolveTagsForDoc(validated, tagSchema) {
       resolved[tag] = {
         isVariant: true,
         text: option ? option.text : '[NEEDS INPUT: ' + schema.label + ']',
+        needsReview: needsReview && !!option,
       }
       return
     }
 
-    resolved[tag] = { isVariant: false, text: String(field.value) }
+    resolved[tag] = {
+      isVariant: false,
+      text: String(field.value),
+      needsReview: needsReview,
+      sourceSpan: field.source_span,
+    }
   })
 
   return resolved
 }
 
-function replaceTag(body, tag, value) {
+// Sentinel characters wrapped around medium-confidence text so it can be
+// found and highlighted after insertion, then stripped — mirrors how
+// [NEEDS INPUT: ...] is a plain-text marker highlightNeedsInput finds and
+// styles, except here the wrapped text is the real value and the markers
+// themselves must not survive into the final doc.
+var REVIEW_MARK_START = ''
+var REVIEW_MARK_END = ''
+
+function markForReview(text, sourceSpan) {
+  var heard = sourceSpan ? ' [heard: "' + sourceSpan + '"]' : ''
+  return REVIEW_MARK_START + text + heard + REVIEW_MARK_END
+}
+
+function replaceTag(body, tag, resolvedTag) {
   var pattern = '\\{\\{' + tag + '\\}\\}'
+  var value = resolvedTag.needsReview
+    ? markForReview(resolvedTag.text, resolvedTag.sourceSpan)
+    : resolvedTag.text
   var safeValue = String(value).replace(/\$/g, '$$$$')
   body.replaceText(pattern, safeValue)
 }
@@ -118,6 +153,27 @@ function highlightNeedsInput(body) {
     var end = found.getEndOffsetInclusive()
     range.asText().setBackgroundColor(start, end, '#FFFF00')
     found = body.findText('\\[NEEDS INPUT:[^\\]]*\\]', found)
+  }
+}
+
+// Medium-confidence values are inserted already wrapped in REVIEW_MARK_START/
+// END (see markForReview). Unlike [NEEDS INPUT: ...], the marker characters
+// are not meant to survive into the final doc — only the highlight is.
+function highlightMediumConfidence(body) {
+  var pattern = REVIEW_MARK_START + '[^' + REVIEW_MARK_END + ']*' + REVIEW_MARK_END
+  var found = body.findText(pattern)
+
+  while (found) {
+    var range = found.getElement()
+    var text = range.asText()
+    var start = found.getStartOffset()
+    var end = found.getEndOffsetInclusive()
+    text.setBackgroundColor(start, end, '#FFFF00')
+    // Delete the trailing marker before the leading one so the earlier
+    // index isn't shifted out from under the second deleteText call.
+    text.deleteText(end, end)
+    text.deleteText(start, start)
+    found = body.findText(pattern)
   }
 }
 
