@@ -18,10 +18,14 @@ export default {
 // fetch() here follows the redirect server-side (its default behavior) and
 // hands Telnyx one definitive response instead.
 async function proxyToAppsScript(request, url, env) {
-  const target = new URL(env.GAS_EXEC_URL)
-  target.search = url.search
-
   try {
+    // Constructing the target URL can throw just as easily as the fetch can
+    // (e.g. GAS_EXEC_URL unset or not a full absolute URL) — it has to be
+    // inside this try, or a bad secret crashes the whole Worker invocation
+    // (Cloudflare error 1101) instead of hitting the fallback below.
+    const target = new URL(env.GAS_EXEC_URL)
+    target.search = url.search
+
     const upstream = await fetch(target, {
       method: request.method,
       headers: {
@@ -35,8 +39,12 @@ async function proxyToAppsScript(request, url, env) {
       headers: { 'content-type': upstream.headers.get('content-type') || 'text/xml' },
     })
   } catch (err) {
-    // Apps Script cold start / timeout / network blip: leave the caller with
-    // a clean hangup instead of an "Application error".
+    // Apps Script cold start / timeout / network blip / bad GAS_EXEC_URL:
+    // leave the caller with a clean hangup instead of an "Application error",
+    // but still surface the failure — visible via `wrangler tail` or the
+    // Workers Logs tab in the Cloudflare dashboard, since nothing else here
+    // reports a proxy failure anywhere.
+    console.error('texml/gas proxy failed:', String(err))
     return new Response(
       '<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="Telnyx.Natural.brook">' +
         'Sorry, something went wrong on our end. Please call back.</Say><Hangup/></Response>',
