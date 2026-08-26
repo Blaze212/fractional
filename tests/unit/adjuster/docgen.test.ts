@@ -106,3 +106,46 @@ describe('resolveTagsForDoc', () => {
     expect(resolved.roof_pitch).toMatchObject({ text: '' })
   })
 })
+
+describe('insertHeaderBlock', () => {
+  const { insertHeaderBlock } = loadGs('apps/adjuster/src/docgen.js')
+
+  function fakeBody() {
+    const paragraphs: string[] = []
+    return {
+      paragraphs,
+      insertParagraph: (_index: number, text: string) => {
+        paragraphs.push(text)
+        return { editAsText: () => ({ setBold: () => {} }) }
+      },
+      insertHorizontalRule: () => {},
+    }
+  }
+
+  const job = {
+    capture_id: 'dograh-1',
+    call_started_at: '2026-08-26T18:04:00Z',
+    duration_sec: 610,
+    match_method: 'exact',
+    match_confidence: 'high',
+    model: 'test-model',
+  }
+
+  it('links back to the call folder holding the audio and transcripts', () => {
+    const body = fakeBody()
+
+    insertHeaderBlock(body, { ...job, call_folder_id: 'folder-9' }, null, 0)
+
+    expect(body.paragraphs[0]).toContain(
+      'Call folder: https://drive.google.com/drive/folders/folder-9',
+    )
+  })
+
+  it('omits the line entirely for a job that predates per-call foldering', () => {
+    const body = fakeBody()
+
+    insertHeaderBlock(body, job, null, 0)
+
+    expect(body.paragraphs[0]).not.toContain('Call folder:')
+  })
+})

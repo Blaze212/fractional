@@ -12,6 +12,7 @@ function runPipelineTick() {
   try {
     reclaimStuckJobs()
     promoteStaleAwaitingTranscript()
+    ensureTranscriptionColumns()
     processOldestPendingJob()
     logEvent('runner.tick_end', { ms: Date.now() - startedAt })
   } catch (err) {
@@ -28,8 +29,28 @@ function runPipelineTick() {
   }
 }
 
+function ensureTranscriptionColumns() {
+  var added = ensureJobsColumns(JOBS_TRANSCRIPTION_COLUMNS)
+  if (added.length > 0) logEvent('runner.jobs_columns_added', { columns: added.join(',') })
+}
+
+// The pipeline is a two-stage machine driven by status (see docs/specs/012):
+// stage A matches the claim and produces the master transcript, stage B extracts
+// and generates the doc. Splitting them keeps each Apps Script execution short
+// enough for the 6-minute cap — two ASR round-trips plus a long-context merge
+// plus extraction plus docgen do not reliably fit in one — and makes each stage
+// independently retryable.
+//
+// One tick advances one job by one stage, and 'transcribed' is preferred over
+// 'pending' so work already in flight drains before new work starts.
 function processOldestPendingJob() {
-  var picked = getOldestPendingJob()
+  var picked = getOldestJobByStatus('transcribed')
+  var stage = 'extract'
+
+  if (!picked.job) {
+    picked = getOldestPendingJob()
+    stage = 'transcribe'
+  }
 
   if (!picked.job) {
     logEvent('runner.no_pending_jobs', {})
@@ -39,18 +60,21 @@ function processOldestPendingJob() {
   var job = picked.job
   logEvent('runner.job_leased', {
     capture_id: job.capture_id,
+    stage: stage,
     attempt: Number(job.attempts || 0) + 1,
     transcript_chars: Number(job.transcript_chars || 0),
   })
 
-  leaseJob(picked.sheet, picked.headers, job)
+  leaseJob(picked.sheet, picked.headers, job, stage === 'transcribe' ? 'matching' : 'extracting')
 
   try {
-    runJobPipeline(job)
+    if (stage === 'transcribe') runTranscriptionStage(job)
+    else runExtractionStage(job)
   } catch (e) {
     var described = describeError(e)
     logEvent('runner.job_threw', {
       capture_id: job.capture_id,
+      stage: stage,
       error: described.error,
       stack: described.stack,
     })
@@ -58,9 +82,9 @@ function processOldestPendingJob() {
   }
 }
 
-function leaseJob(sheet, headers, job) {
+function leaseJob(sheet, headers, job, status) {
   writeRowFields(sheet, headers, job._rowIndex, {
-    status: 'matching',
+    status: status,
     lease_until: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     attempts: Number(job.attempts || 0) + 1,
     // A new attempt starts clean. Without this the previous attempt's error text
@@ -70,14 +94,62 @@ function leaseJob(sheet, headers, job) {
   })
 }
 
-function runJobPipeline(job) {
+// Stage A. Matching moved here from the old single-stage pipeline because the
+// merge call needs claim context, and because the claim's proper nouns are the
+// highest-value keyterms to bias both ASR calls with.
+//
+// The old pipeline wrote a transient 'needs_review' status on an ambiguous match
+// and then carried straight on to extraction, overwriting it moments later.
+// Status now drives the stage machine, so a job parked there would never be
+// picked up again; ambiguity is surfaced by match_method on the sheet and by the
+// "Contested" line docgen already puts in the draft's header, as it was before.
+function runTranscriptionStage(job) {
   var claims = getClaims()
+  var match = resolveClaimMatch(job, claims)
+
+  var claim = match.claim_id
+    ? claims.filter(function (c) {
+        return c.claim_id === match.claim_id
+      })[0]
+    : null
+
+  logEvent('runner.matched', {
+    capture_id: job.capture_id,
+    claim_id: match.claim_id || '',
+    match_method: match.match_method,
+    match_confidence: match.match_confidence,
+    claims_considered: claims.length,
+  })
+
+  upsertJob(job.capture_id, {
+    claim_id: match.claim_id || '',
+    match_method: match.match_method,
+    match_confidence: match.match_confidence,
+    status: 'transcribing',
+  })
+
+  // The job row was read before the match was written, so hand the pass the
+  // match it will otherwise record as blank in the call manifest.
+  var transcription = runTranscriptionPass(
+    Object.assign({}, job, { match_method: match.match_method }),
+    claim,
+  )
+
+  // attempts resets on a clean stage handoff so stage B gets its own retry
+  // budget rather than inheriting whatever stage A spent out of the same 3.
+  upsertJob(
+    job.capture_id,
+    Object.assign({ status: 'transcribed', lease_until: '', attempts: 0 }, transcription),
+  )
+}
+
+// Deterministic matching can't confirm a claim, or is torn between two —
+// fall back to an LLM pass that tolerates misheard names/addresses the exact
+// scoring in matcher.js can't. A failed LLM call is logged and the
+// deterministic (possibly "none") result stands rather than failing the job.
+function resolveClaimMatch(job, claims) {
   var match = matchClaim(job.call_started_at, job.transcript, claims)
 
-  // Deterministic matching can't confirm a claim, or is torn between two —
-  // fall back to an LLM pass that tolerates misheard names/addresses the exact
-  // scoring in matcher.js can't. A failed LLM call is logged and the
-  // deterministic (possibly "none") result stands rather than failing the job.
   if (match.match_method === 'none' || match.match_method === 'ambiguous') {
     try {
       var llmMatch = matchClaimWithLlm(job.call_started_at, job.transcript, claims)
@@ -98,19 +170,19 @@ function runJobPipeline(job) {
     }
   }
 
-  var claim = match.claim_id
+  return match
+}
+
+// Stage B. Its input changed — the master transcript when stage A produced an
+// accepted one and the mode is live, otherwise whatever raw source stage A
+// resolved to — but its contract did not: extract, validate spans, generate.
+function runExtractionStage(job) {
+  var claims = getClaims()
+  var claim = job.claim_id
     ? claims.filter(function (c) {
-        return c.claim_id === match.claim_id
+        return c.claim_id === job.claim_id
       })[0]
     : null
-
-  logEvent('runner.matched', {
-    capture_id: job.capture_id,
-    claim_id: match.claim_id || '',
-    match_method: match.match_method,
-    match_confidence: match.match_confidence,
-    claims_considered: claims.length,
-  })
 
   var tagSchema = loadEnums()
   var isDograh = job.source === 'dograh'
@@ -133,11 +205,15 @@ function runJobPipeline(job) {
       ? Object.assign({}, calendarFields, dograhFields)
       : null
 
-  upsertJob(job.capture_id, {
-    claim_id: match.claim_id || '',
-    match_method: match.match_method,
-    match_confidence: match.match_confidence,
-    status: match.match_method === 'ambiguous' ? 'needs_review' : 'extracting',
+  // Decided in stage A and recorded on the job, so this stage never re-derives
+  // it. haystack is the master's turn texts with the speaker labels stripped —
+  // see buildSpanHaystack — or simply the transcript itself on any raw path.
+  var input = resolveExtractionTranscript(job)
+
+  logEvent('runner.extraction_input', {
+    capture_id: job.capture_id,
+    source: input.source,
+    transcript_chars: input.transcript.length,
   })
 
   var glossary = loadGlossary()
@@ -147,7 +223,8 @@ function runJobPipeline(job) {
     model: getConfig('OPENROUTER_MODEL'),
     fallbacks: getConfigList('OPENROUTER_FALLBACKS', []),
     captureId: job.capture_id,
-    transcript: job.transcript,
+    transcript: input.transcript,
+    transcriptSource: input.source,
     claim: claim,
     templateSpec: tagSchema,
     glossary: glossary,
@@ -166,7 +243,7 @@ function runJobPipeline(job) {
 
   upsertJob(job.capture_id, { status: 'generating', model: extraction.model })
 
-  var validated = validateFields(extraction.fields, job.transcript, tagSchema)
+  var validated = validateFields(extraction.fields, input.haystack, tagSchema)
   // Backstop for the fixed set of property facts the transcript is unlikely to
   // ever state — see applyCalendarFallback's own comment for why the
   // transcript-corroboration rule is deliberately skipped for just these tags.
@@ -201,6 +278,7 @@ function runJobPipeline(job) {
     status: 'done',
     doc_url: result.docUrl,
     needs_input_count: result.needsInputCount,
+    lease_until: '',
     error: '',
   })
 }

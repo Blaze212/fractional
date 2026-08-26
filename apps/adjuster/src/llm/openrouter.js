@@ -20,6 +20,7 @@ function extractFields(input) {
     phraseBank: input.phraseBank,
     liveExtraction: input.liveExtraction,
     adjusterName: input.adjusterName,
+    transcriptSource: input.transcriptSource,
   })
 
   var response = callOpenRouter({
@@ -38,15 +39,24 @@ function extractFields(input) {
   return response
 }
 
+// schemaName and logLabel exist so the master-transcript merge (see
+// llm/masterTranscript.js) reuses this function's retry, model-fallback, and
+// dual-sink logging instead of duplicating them. Both default to what the
+// extraction path already sent, so that path is unchanged.
 function callOpenRouter(config) {
   var models = [config.model].concat(config.fallbacks || [])
+  var logLabel = config.logLabel || 'openrouter'
   var payload = {
     model: config.model,
     models: models,
     messages: config.messages,
     response_format: {
       type: 'json_schema',
-      json_schema: { name: 'extraction', strict: true, schema: config.jsonSchema },
+      json_schema: {
+        name: config.schemaName || 'extraction',
+        strict: true,
+        schema: config.jsonSchema,
+      },
     },
     // Without require_parameters OpenRouter is free to route to an endpoint that
     // does not support structured outputs, and the request fails on the provider
@@ -77,7 +87,7 @@ function callOpenRouter(config) {
     // the real server log (Apps Script Executions / Cloud Logging) — it does not
     // go to the Raw sheet, which isn't built to hold payloads this size.
     var transcriptText = String(config.transcript || '')
-    logServerOnly('openrouter.response', {
+    logServerOnly(logLabel + '.response', {
       capture_id: config.captureId || '',
       attempt: attempt + 1,
       status: status,
@@ -88,7 +98,7 @@ function callOpenRouter(config) {
 
     // Lighter, Sheet-visible trail — a fact that this attempt happened, not its
     // full payload. The Raw sheet is for scanning, not for holding the response.
-    logEvent('openrouter.response_summary', {
+    logEvent(logLabel + '.response_summary', {
       capture_id: config.captureId || '',
       attempt: attempt + 1,
       status: status,
@@ -130,6 +140,9 @@ function parseOpenRouterResponse(bodyText) {
   return {
     fields: parsed.fields || {},
     unplaced_notes: parsed.unplaced_notes || [],
+    // The parsed body verbatim, for callers whose schema is not the extraction
+    // schema (see llm/masterTranscript.js).
+    content: parsed,
     model: body.model,
     usage: {
       input_tokens: body.usage ? body.usage.prompt_tokens : undefined,

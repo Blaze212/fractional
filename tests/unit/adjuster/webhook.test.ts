@@ -44,6 +44,14 @@ function harness(overrides: Record<string, unknown> = {}) {
         createTextOutput: (body: string) => ({ body, setMimeType: () => ({ body }) }),
       },
       getClaims: () => [],
+      ensureJobsColumns: () => [],
+      JOBS_TRANSCRIPTION_COLUMNS: ['call_folder_id'],
+      // Loaded from transcription.js at runtime; stubbed off by default here so
+      // the flat-folder path stays covered. The call-folder suite injects real
+      // ones.
+      getOrCreateCallFolder: () => null,
+      writeCallArtifact: () => '',
+      writeManifest: () => '',
       UrlFetchApp: {
         fetch: () => ({ getResponseCode: () => 200, getBlob: () => ({ setName: () => 'blob' }) }),
       },
@@ -335,6 +343,136 @@ describe('Dograh Notetaker recording', () => {
     const job = jobs.get('dograh-run-5')!
     expect(job.audio_drive_id).toBe('')
     expect(job.status).toBe('pending')
+  })
+
+  describe('per-call artifact folder', () => {
+    function folderHarness(overrides: Record<string, unknown> = {}) {
+      const artifacts: Array<{ name: string; content: string }> = []
+      const manifests: Record<string, unknown>[] = []
+      const setName = vi.fn((name: string) => name)
+      const createFile = vi.fn(() => ({ getId: () => 'audio-file-1' }))
+      const callFolder = { getId: () => 'call-folder-1', createFile }
+
+      const built = dograhHarness({
+        getOrCreateCallFolder: vi.fn(() => callFolder),
+        writeCallArtifact: (_folder: unknown, name: string, content: string) => {
+          artifacts.push({ name, content })
+          return 'artifact-' + name
+        },
+        writeManifest: (_folder: unknown, manifest: Record<string, unknown>) => {
+          manifests.push(manifest)
+          return 'manifest-1'
+        },
+        UrlFetchApp: {
+          fetch: () => ({
+            getResponseCode: () => 200,
+            getContentText: () => 'the roof is a six twelve',
+            getBlob: () => ({ setName }),
+          }),
+        },
+        DriveApp: {
+          getFolderById: vi.fn(() => ({ createFile: () => ({ getId: () => 'flat-1' }) })),
+        },
+        ...overrides,
+      })
+
+      return { ...built, artifacts, manifests, setName, createFile }
+    }
+
+    it('puts the audio in the call folder as audio.<ext>, not in the flat recordings folder', () => {
+      const { sandbox, jobs, setName, createFile } = folderHarness()
+
+      sandbox.doPost(
+        dograhPost({
+          capture_id: 'dograh-run-6',
+          recording_url: 'https://dograh.example/audio/run-6.wav',
+          call_time: '2026-08-26T18:04:00Z',
+        }),
+      )
+
+      expect(setName).toHaveBeenCalledWith('audio.wav')
+      expect(createFile).toHaveBeenCalledTimes(1)
+      expect(sandbox.DriveApp.getFolderById).not.toHaveBeenCalled()
+      expect(jobs.get('dograh-run-6')!.call_folder_id).toBe('call-folder-1')
+    })
+
+    it('writes the Dograh transcript and an opening manifest into the call folder', () => {
+      const { sandbox, artifacts, manifests } = folderHarness()
+
+      sandbox.doPost(
+        dograhPost({
+          capture_id: 'dograh-run-7',
+          recording_url: 'https://dograh.example/audio/run-7.wav',
+          transcript_url: 'https://dograh.example/transcript/run-7',
+          call_time: '2026-08-26T18:04:00Z',
+          duration_sec: 610,
+        }),
+      )
+
+      expect(artifacts).toEqual([
+        { name: 'transcript-dograh.txt', content: 'the roof is a six twelve' },
+      ])
+      expect(manifests[0]).toMatchObject({
+        capture_id: 'dograh-run-7',
+        source: 'dograh',
+        duration_sec: 610,
+        audio_drive_id: 'audio-file-1',
+        runs: [],
+      })
+    })
+
+    it('falls back to the flat recordings folder when no call folder can be made', () => {
+      const { sandbox, jobs, setName } = folderHarness({ getOrCreateCallFolder: () => null })
+
+      sandbox.doPost(
+        dograhPost({
+          capture_id: 'dograh-run-8',
+          recording_url: 'https://dograh.example/audio/run-8.wav',
+        }),
+      )
+
+      expect(setName).toHaveBeenCalledWith('dograh-run-8.wav')
+      expect(sandbox.DriveApp.getFolderById).toHaveBeenCalled()
+      expect(jobs.get('dograh-run-8')!.call_folder_id).toBe('')
+    })
+
+    it('still records the call when Drive throws on the folder', () => {
+      const { sandbox, jobs, logged } = folderHarness({
+        getOrCreateCallFolder: () => {
+          throw new Error('Drive quota exceeded')
+        },
+      })
+
+      sandbox.doPost(
+        dograhPost({
+          capture_id: 'dograh-run-9',
+          recording_url: 'https://dograh.example/audio/run-9.wav',
+        }),
+      )
+
+      expect(events(logged)).toContain('dograh.call_folder_failed')
+      expect(jobs.get('dograh-run-9')!.status).toBe('pending')
+      expect(jobs.get('dograh-run-9')!.audio_drive_id).toBe('flat-1')
+    })
+
+    it('still records the call when writing an artifact throws', () => {
+      const { sandbox, jobs, logged } = folderHarness({
+        writeCallArtifact: () => {
+          throw new Error('Drive quota exceeded')
+        },
+      })
+
+      sandbox.doPost(
+        dograhPost({
+          capture_id: 'dograh-run-10',
+          recording_url: 'https://dograh.example/audio/run-10.wav',
+          transcript_url: 'https://dograh.example/transcript/run-10',
+        }),
+      )
+
+      expect(events(logged)).toContain('dograh.call_artifacts_failed')
+      expect(jobs.get('dograh-run-10')!.status).toBe('pending')
+    })
   })
 })
 

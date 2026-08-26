@@ -133,6 +133,11 @@ function insertHeaderBlock(body, job, claim, needsInputCount) {
   lines.push('Model: ' + job.model)
   lines.push('Needs input: ' + needsInputCount)
   if (job.audio_drive_id) lines.push('Audio: https://drive.google.com/file/d/' + job.audio_drive_id)
+  // The draft keeps landing in DRAFTS_FOLDER_ID where Brandon already looks for
+  // it; this is the way back to everything else the call produced.
+  if (job.call_folder_id) {
+    lines.push('Call folder: https://drive.google.com/drive/folders/' + job.call_folder_id)
+  }
 
   var paragraph = body.insertParagraph(0, lines.join('\n'))
   paragraph.editAsText().setBold(true)
