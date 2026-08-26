@@ -1,0 +1,14 @@
+# Vocabulary / context hints for stt-transcribe.mjs
+# Lines starting with # are ignored. Blank lines are ignored.
+# Everything else is joined with ", " and sent as the biasing string.
+# Whisper caps this at ~224 tokens (~896 chars), so put the highest-value
+# proper nouns first. Qwen and GPT Transcribe accept much more.
+
+CareerSystems
+Supabase
+OpenRouter
+Cloudflare Pages
+Barton Holdridge
+fractional
+edge function
+Doppler
