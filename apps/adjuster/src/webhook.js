@@ -49,8 +49,9 @@ function doPost(e) {
 // Reachability probe. Hitting the deployment URL in a browser or with curl proves
 // the URL is live and running current code without needing a call from Telnyx.
 function doGet() {
-  logEvent('webhook.ping', {})
-  return ContentService.createTextOutput('adjuster-webhook ok')
+  var responseBody = 'adjuster-webhook ok'
+  logEvent('webhook.ping', { response_body: responseBody })
+  return ContentService.createTextOutput(responseBody)
 }
 
 function routeWebhook(event, params, e) {

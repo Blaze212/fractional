@@ -345,5 +345,6 @@ describe('doGet', () => {
 
     expect(response.body).toBe('adjuster-webhook ok')
     expect(events(logged)).toEqual(['webhook.ping'])
+    expect(logged[0]).toContain('"response_body":"adjuster-webhook ok"')
   })
 })
