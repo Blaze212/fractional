@@ -476,6 +476,110 @@ describe('Dograh Notetaker recording', () => {
   })
 })
 
+describe('Manual recording inject', () => {
+  function manualPost(body: Record<string, unknown>) {
+    return {
+      parameter: { t: SECRET, event: 'manual_recording_inject' },
+      postData: { type: 'application/json', contents: JSON.stringify(body) },
+    }
+  }
+
+  function manualHarness(overrides: Record<string, unknown> = {}) {
+    return harness({
+      loadEnums: () => ({}),
+      validateDograhFields: () => ({}),
+      ...overrides,
+    })
+  }
+
+  it('denies a payload missing a transcript', () => {
+    const { sandbox, jobs } = manualHarness()
+
+    sandbox.doPost(manualPost({ capture_id: 'manual-1', audio_base64: 'YWJj' }))
+
+    expect(jobs.has('manual-1')).toBe(false)
+  })
+
+  it('denies a payload missing audio', () => {
+    const { sandbox, jobs } = manualHarness()
+
+    sandbox.doPost(manualPost({ capture_id: 'manual-2', transcript: 'hello' }))
+
+    expect(jobs.has('manual-2')).toBe(false)
+  })
+
+  it('denies a payload missing a capture_id', () => {
+    const { sandbox, jobs } = manualHarness()
+
+    sandbox.doPost(manualPost({ transcript: 'hello', audio_base64: 'YWJj' }))
+
+    expect(jobs.size).toBe(0)
+  })
+
+  it('writes a pending dograh-sourced job from raw transcript text and base64 audio', () => {
+    const { sandbox, jobs } = manualHarness()
+
+    sandbox.doPost(
+      manualPost({
+        capture_id: 'manual-3',
+        transcript: 'the roof is a six twelve',
+        audio_base64: Buffer.from('fake-audio').toString('base64'),
+        audio_extension: 'wav',
+        call_time: '2026-08-26T18:04:00Z',
+        duration_sec: 610,
+        call_disposition: 'completed',
+      }),
+    )
+
+    const job = jobs.get('manual-3')!
+    expect(job).toMatchObject({
+      source: 'dograh',
+      status: 'pending',
+      transcript: 'the roof is a six twelve',
+      transcript_source: 'manual-test-inject',
+      transcript_chars: 24,
+      audio_drive_id: 'drive-1',
+      call_started_at: '2026-08-26T18:04:00Z',
+      duration_sec: 610,
+      call_disposition: 'completed',
+    })
+  })
+
+  it('puts the audio and transcript into the per-call folder when one is available', () => {
+    const createFile = vi.fn(() => ({ getId: () => 'audio-file-1' }))
+    const callFolder = { getId: () => 'call-folder-1', createFile }
+    const newBlob = vi.fn((bytes: Buffer) => ({
+      getDataAsString: () => Buffer.from(bytes).toString('utf-8'),
+    }))
+    const artifacts: Array<{ name: string; content: string }> = []
+
+    const { sandbox, jobs } = manualHarness({
+      getOrCreateCallFolder: vi.fn(() => callFolder),
+      Utilities: { base64Decode: (value: string) => Buffer.from(value, 'base64'), newBlob },
+      writeCallArtifact: (_folder: unknown, name: string, content: string) => {
+        artifacts.push({ name, content })
+        return 'artifact-' + name
+      },
+      writeManifest: () => 'manifest-1',
+    })
+
+    sandbox.doPost(
+      manualPost({
+        capture_id: 'manual-4',
+        transcript: 'the roof is a six twelve',
+        audio_base64: Buffer.from('fake-audio').toString('base64'),
+      }),
+    )
+
+    expect(createFile).toHaveBeenCalledTimes(1)
+    expect(newBlob).toHaveBeenCalledWith(expect.anything(), 'audio/wav', 'audio.wav')
+    expect(artifacts).toEqual([
+      { name: 'transcript-dograh.txt', content: 'the roof is a six twelve' },
+    ])
+    expect(jobs.get('manual-4')!.call_folder_id).toBe('call-folder-1')
+  })
+})
+
 describe('Dograh Pre-Call Data Fetch', () => {
   function preCallPost(fromNumber = '+18176762145') {
     return {
