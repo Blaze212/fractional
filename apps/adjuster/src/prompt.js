@@ -1,3 +1,18 @@
+// What the extractor is actually reading. Keyed by what resolveExtractionTranscript
+// (transcription.js) resolved to; a Telnyx job has no entry here and gets the
+// unchanged prompt. The turn-bounded-span sentence applies only to the merged
+// master, since it is the only input with turns — a raw fallback transcript is
+// flat text and the span haystack is simply that transcript.
+var TRANSCRIPT_SOURCE_FRAMING = {
+  master:
+    "The transcript below is a master transcript: three independent machine transcriptions of the same recording — two batch models and the call's own real-time stream — reconciled into one and labelled turn by turn. Every word in it was produced by one of those transcriptions; no wording was authored during reconciliation, so it is still machine-transcribed audio and the source_span rule applies to it unchanged. A source_span must lie entirely within a single turn: never build one that runs across a turn boundary or that includes a speaker label.",
+  elevenlabs:
+    'The transcript below is a single batch machine transcription of the call recording (ElevenLabs Scribe v2), re-read from the saved audio after the call. It is flat text with no speaker labels or turn structure.',
+  qwen: 'The transcript below is a single batch machine transcription of the call recording (Qwen3 ASR Flash), re-read from the saved audio after the call. It is flat text with no speaker labels or turn structure.',
+  dograh:
+    "The transcript below is the call's real-time streaming transcription, produced live during the call as the adjuster spoke.",
+}
+
 function buildPrompt(input) {
   var transcript = input.transcript
   var claim = input.claim
@@ -6,6 +21,7 @@ function buildPrompt(input) {
   var phraseBank = input.phraseBank || []
   var liveExtraction = input.liveExtraction || null
   var adjusterName = input.adjusterName || 'Brandon'
+  var transcriptSource = input.transcriptSource || ''
 
   var system = [
     "You are extracting structured fields from a field adjuster's spoken dictation of a property inspection. Your output pre-fills a report draft the adjuster reviews before filing: a field you leave empty costs him a few seconds of review, a field you guess wrong can end up in a filed insurance report.",
@@ -22,8 +38,13 @@ function buildPrompt(input) {
     'For enum and variant fields, value must be exactly one of the allowed values, character for character. Choose the closest matching allowed value only when the transcript clearly supports it; if nothing said reasonably maps to any allowed value, return the field empty instead of forcing a bad fit. If the transcript includes descriptive detail beyond what the closest value captures (e.g. "a 1 story with a room over the garage"), put the extra detail in unplaced_notes rather than distorting the enum choice or dropping the detail.',
     'Status variants (roof, exterior, personal property, mitigation, mortgage) require an affirmative statement — "the roof was not affected", "there is no mortgage" — before you choose a value. Silence about a section is not evidence of "none" or "not_affected"; return the field empty instead.',
     'Anything said that does not fit a listed field goes into unplaced_notes instead of being discarded — common examples include dates (received, contacted, inspected, date of loss — these are merge fields filled outside this pipeline, not extraction targets), claim numbers, carrier names, tree removal, business personal property, additional living expense, loss of use, and references to a prior/previous claim. Write each note as one short, self-contained sentence the adjuster can act on.',
+    TRANSCRIPT_SOURCE_FRAMING[transcriptSource] || '',
     'The claim context identifies which claim this call was matched to. Use it to interpret references ("the insured", "the property") and to correct the spelling of a proper noun the transcript clearly refers to but a transcription error garbled — e.g. a contact\'s name or a carrier that is a near-miss for one in the claim context. When the claim context includes an exact-match insured name, treat that spelling as authoritative over anything the call\'s voice-to-text produced — the insured\'s own name should never ride on transcription accuracy. Never use it as a source for a value the transcript never actually mentions. If the transcript names a different insured, address, or carrier than the claim context, add an unplaced_notes entry flagging the possible mismatch instead of silently overriding it.',
-  ].join('\n')
+  ]
+    .filter(function (line) {
+      return line
+    })
+    .join('\n')
 
   var sections = [
     'Claim context:\n' + formatClaimBlock(claim),

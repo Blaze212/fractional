@@ -261,3 +261,56 @@ describe('live extraction (Dograh Notetaker / calendar cross-check)', () => {
     expect(formatLiveExtraction({}, templateSpec)).toBe('')
   })
 })
+
+describe('transcript source framing', () => {
+  it('tells the model the master is reconciled and that spans must stay inside one turn', () => {
+    const { system } = buildPrompt({
+      transcript: 'anything',
+      templateSpec,
+      transcriptSource: 'master',
+    })
+
+    expect(system).toContain('master transcript')
+    expect(system).toContain('no wording was authored during reconciliation')
+    expect(system).toContain('entirely within a single turn')
+  })
+
+  it.each([
+    ['elevenlabs', 'ElevenLabs Scribe v2'],
+    ['qwen', 'Qwen3 ASR Flash'],
+  ])('names %s as the single source on a fallback path', (source, label) => {
+    const { system } = buildPrompt({
+      transcript: 'anything',
+      templateSpec,
+      transcriptSource: source,
+    })
+
+    expect(system).toContain(label)
+    // The turn rule only applies to the master; a raw transcript is flat text.
+    expect(system).not.toContain('entirely within a single turn')
+  })
+
+  it('describes the Dograh transcript as the real-time one', () => {
+    const { system } = buildPrompt({
+      transcript: 'anything',
+      templateSpec,
+      transcriptSource: 'dograh',
+    })
+
+    expect(system).toContain('real-time streaming transcription')
+    expect(system).not.toContain('entirely within a single turn')
+  })
+
+  it('leaves the prompt exactly as it was when no source is named (Telnyx)', () => {
+    const withoutSource = buildPrompt({ transcript: 'anything', templateSpec })
+    const withEmptySource = buildPrompt({
+      transcript: 'anything',
+      templateSpec,
+      transcriptSource: '',
+    })
+
+    expect(withoutSource.system).toBe(withEmptySource.system)
+    expect(withoutSource.system).not.toContain('master transcript')
+    expect(withoutSource.system).not.toContain('ElevenLabs')
+  })
+})

@@ -177,3 +177,63 @@ describe('callOpenRouter logging', () => {
     expect((entry.fields.response_body as string).length).toBe(200000)
   })
 })
+
+describe('callOpenRouter generalization', () => {
+  const body = JSON.stringify({
+    model: 'test-model',
+    choices: [
+      { message: { content: JSON.stringify({ turns: [{ speaker: 'agent', text: 'hi' }] }) } },
+    ],
+  })
+
+  function call(sandbox: Record<string, any>, extra: Record<string, unknown> = {}) {
+    return sandbox.callOpenRouter({
+      apiKey: 'k',
+      model: 'test-model',
+      captureId: 'dograh-1',
+      messages: [{ role: 'user', content: 'x' }],
+      jsonSchema: { type: 'object' },
+      ...extra,
+    })
+  }
+
+  it('defaults to the extraction schema name and the openrouter log label', () => {
+    const { sandbox, logged, serverLogged } = harness([{ status: 200, body }])
+    let sent: Record<string, any> = {}
+    sandbox.UrlFetchApp.fetch = (_url: string, options: { payload: string }) => {
+      sent = JSON.parse(options.payload)
+      return { getResponseCode: () => 200, getContentText: () => body }
+    }
+
+    call(sandbox)
+
+    expect(sent.response_format.json_schema.name).toBe('extraction')
+    expect(serverLogged[0].event).toBe('openrouter.response')
+    expect(logged[0].event).toBe('openrouter.response_summary')
+  })
+
+  it('routes another caller under its own schema name and log label', () => {
+    const { sandbox, logged, serverLogged } = harness([{ status: 200, body }])
+    let sent: Record<string, any> = {}
+    sandbox.UrlFetchApp.fetch = (_url: string, options: { payload: string }) => {
+      sent = JSON.parse(options.payload)
+      return { getResponseCode: () => 200, getContentText: () => body }
+    }
+
+    call(sandbox, { schemaName: 'master_transcript', logLabel: 'master_transcript' })
+
+    expect(sent.response_format.json_schema.name).toBe('master_transcript')
+    expect(sent.response_format.json_schema.strict).toBe(true)
+    expect(serverLogged[0].event).toBe('master_transcript.response')
+    expect(logged[0].event).toBe('master_transcript.response_summary')
+  })
+
+  it('hands the parsed body back verbatim for a non-extraction schema', () => {
+    const { sandbox } = harness([{ status: 200, body }])
+
+    const result = call(sandbox, { schemaName: 'master_transcript' })
+
+    expect(result.content.turns).toEqual([{ speaker: 'agent', text: 'hi' }])
+    expect(result.model).toBe('test-model')
+  })
+})

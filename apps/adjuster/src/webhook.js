@@ -401,15 +401,30 @@ function looksLikeCallAnalyzed(params) {
 // and upload take seconds and shouldn't hold the lock that long.
 function handleDograhNotetaker(captureId, body) {
   var recordingUrl = body.recording_url || ''
-  var audioDriveId = recordingUrl ? copyRecordingToDrive(recordingUrl, captureId, 'wav') : ''
+  // Per-call artifact folder (see transcription.js). It is created here, before
+  // the claim is known, so it is named "unmatched" until stage A renames it.
+  // Drive trouble here must never cost us the webhook, so it degrades to null
+  // and every consumer falls back to the flat RECORDINGS_FOLDER_ID.
+  var callFolder = tryGetCallFolder({ capture_id: captureId, call_started_at: body.call_time })
+  var audioDriveId = recordingUrl
+    ? copyRecordingToDrive(recordingUrl, captureId, 'wav', callFolder)
+    : ''
 
   return withJobLock(function () {
     var tagSchema = loadEnums()
     var validated = validateDograhFields(body, tagSchema)
     var transcript = fetchDograhTranscript(body.transcript_url)
 
+    tryWriteCallArtifacts(callFolder, captureId, body, transcript, audioDriveId)
+
+    // The transcription columns postdate every Jobs sheet in existence and
+    // writeRowFields throws on a header it can't find, so they have to exist
+    // before call_folder_id below is written into an already-present row.
+    ensureJobsColumns(JOBS_TRANSCRIPTION_COLUMNS)
+
     upsertJob(captureId, {
       source: 'dograh',
+      call_folder_id: callFolder ? callFolder.getId() : '',
       call_disposition: body.call_disposition || '',
       duration_sec: Number(body.duration_sec) || '',
       call_started_at: body.call_time || '',
@@ -426,6 +441,43 @@ function handleDograhNotetaker(captureId, body) {
 
     return ContentService.createTextOutput('OK')
   })
+}
+
+function tryGetCallFolder(job) {
+  try {
+    return getOrCreateCallFolder(job, null)
+  } catch (err) {
+    logEvent('dograh.call_folder_failed', {
+      capture_id: job.capture_id,
+      error: String(err),
+    })
+    return null
+  }
+}
+
+// Everything known at webhook time goes into the folder now, so a call that
+// never reaches stage A still leaves an inspectable record behind.
+function tryWriteCallArtifacts(folder, captureId, body, transcript, audioDriveId) {
+  if (!folder) return
+
+  try {
+    if (transcript) writeCallArtifact(folder, 'transcript-dograh.txt', transcript)
+
+    writeManifest(folder, {
+      capture_id: captureId,
+      source: 'dograh',
+      created_at: new Date().toISOString(),
+      call_started_at: body.call_time || '',
+      duration_sec: Number(body.duration_sec) || 0,
+      call_disposition: body.call_disposition || '',
+      recording_url: body.recording_url || '',
+      audio_drive_id: audioDriveId,
+      transcript_chars: transcript.length,
+      runs: [],
+    })
+  } catch (err) {
+    logEvent('dograh.call_artifacts_failed', { capture_id: captureId, error: String(err) })
+  }
 }
 
 // UNCONFIRMED AGAINST A LIVE CALL: Dograh's docs describe transcript_url only as
@@ -580,7 +632,12 @@ function guessAudioExtension(recordingUrl, fallback) {
   return match ? match[1].toLowerCase() : fallback
 }
 
-function copyRecordingToDrive(recordingUrl, callSessionId, fallbackExtension) {
+// callFolder is the per-call artifact folder when one could be created; audio
+// lands there as a plainly-named audio.<ext> alongside the call's transcripts.
+// Without one (Telnyx, or CALL_ARTIFACTS_FOLDER_ID unset) it falls back to the
+// flat RECORDINGS_FOLDER_ID keyed by capture ID, exactly as before. Recordings
+// already sitting in the flat folder are left where they are — no migration.
+function copyRecordingToDrive(recordingUrl, callSessionId, fallbackExtension, callFolder) {
   var response = UrlFetchApp.fetch(recordingUrl, { muteHttpExceptions: true })
   if (response.getResponseCode() !== 200) {
     logEvent('webhook.recording_fetch_failed', {
@@ -590,9 +647,9 @@ function copyRecordingToDrive(recordingUrl, callSessionId, fallbackExtension) {
     return ''
   }
 
-  var folder = DriveApp.getFolderById(getConfig('RECORDINGS_FOLDER_ID'))
+  var folder = callFolder || DriveApp.getFolderById(getConfig('RECORDINGS_FOLDER_ID'))
   var extension = guessAudioExtension(recordingUrl, fallbackExtension || 'mp3')
-  var fileName = callSessionId + '.' + extension
+  var fileName = (callFolder ? 'audio' : callSessionId) + '.' + extension
   var file = folder.createFile(response.getBlob().setName(fileName))
   return file.getId()
 }

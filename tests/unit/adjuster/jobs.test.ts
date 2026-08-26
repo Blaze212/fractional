@@ -105,6 +105,150 @@ describe('withJobLock', () => {
   })
 })
 
+describe('ensureJobsColumns', () => {
+  const TRANSCRIPTION_COLUMNS = [
+    'call_folder_id',
+    'transcript_elevenlabs_id',
+    'transcript_qwen_id',
+    'transcript_master',
+    'transcript_master_id',
+    'master_coverage',
+    'transcription_sources',
+    'extraction_input',
+  ]
+
+  function jobsSheetHarness() {
+    const values: string[][] = [HEADERS.slice()]
+    const sheet = {
+      values,
+      getDataRange: () => ({ getValues: () => values }),
+      getLastColumn: () => values[0].length,
+      getRange: (rowIndex: number, col: number) => ({
+        setValue: (value: string) => {
+          if (values[rowIndex - 1].length < col) values[rowIndex - 1].length = col
+          values[rowIndex - 1][col - 1] = value
+        },
+      }),
+    }
+
+    const sandbox = loadGs('apps/adjuster/src/jobs.js', {
+      getConfig: () => 'sheet-1',
+      SpreadsheetApp: { openById: () => ({ getSheetByName: () => sheet }) },
+    })
+
+    return { sandbox, sheet }
+  }
+
+  it('adds every transcription column to a Jobs sheet that lacks them', () => {
+    const { sandbox, sheet } = jobsSheetHarness()
+
+    const added = sandbox.ensureJobsColumns(TRANSCRIPTION_COLUMNS)
+
+    expect(added).toEqual(TRANSCRIPTION_COLUMNS)
+    expect(sheet.values[0].slice(HEADERS.length)).toEqual(TRANSCRIPTION_COLUMNS)
+  })
+
+  it('is a no-op on a sheet that already has them', () => {
+    const { sandbox, sheet } = jobsSheetHarness()
+
+    sandbox.ensureJobsColumns(TRANSCRIPTION_COLUMNS)
+    const added = sandbox.ensureJobsColumns(TRANSCRIPTION_COLUMNS)
+
+    expect(added).toEqual([])
+    expect(sheet.values[0]).toHaveLength(HEADERS.length + TRANSCRIPTION_COLUMNS.length)
+  })
+})
+
+describe('getOldestJobByStatus', () => {
+  const HEADERS_WITH_CREATED = HEADERS
+
+  function row(captureId: string, createdAt: string, status: string) {
+    return HEADERS_WITH_CREATED.map((header) => {
+      if (header === 'capture_id') return captureId
+      if (header === 'created_at') return createdAt
+      if (header === 'status') return status
+      return ''
+    })
+  }
+
+  it('returns the oldest job in the requested status', () => {
+    const { sandbox } = harness([
+      row('newer', '2026-08-26T19:00:00Z', 'transcribed'),
+      row('older', '2026-08-26T17:00:00Z', 'transcribed'),
+      row('pending', '2026-08-26T16:00:00Z', 'pending'),
+    ])
+
+    expect(sandbox.getOldestJobByStatus('transcribed').job.capture_id).toBe('older')
+    expect(sandbox.getOldestJobByStatus('pending').job.capture_id).toBe('pending')
+  })
+
+  it('returns no job when nothing is in that status', () => {
+    const { sandbox } = harness([row('a', '2026-08-26T17:00:00Z', 'done')])
+
+    expect(sandbox.getOldestJobByStatus('transcribed').job).toBeNull()
+  })
+})
+
+describe('reclaimStuckJobs', () => {
+  const expired = new Date(Date.now() - 60 * 1000).toISOString()
+
+  function leaseHarness(status: string, attempts: number) {
+    const headers = HEADERS.concat(['lease_until', 'attempts', 'error'])
+    const values: string[][] = [
+      headers,
+      headers.map((header) => {
+        if (header === 'capture_id') return 'dograh-1'
+        if (header === 'status') return status
+        if (header === 'lease_until') return expired
+        if (header === 'attempts') return String(attempts)
+        return ''
+      }),
+    ]
+
+    const sheet = {
+      values,
+      getDataRange: () => ({ getValues: () => values }),
+      getRange: (rowIndex: number, col: number) => ({
+        setValue: (value: string) => {
+          values[rowIndex - 1][col - 1] = value
+        },
+      }),
+    }
+
+    const sandbox = loadGs('apps/adjuster/src/jobs.js', {
+      getConfig: () => 'sheet-1',
+      SpreadsheetApp: { openById: () => ({ getSheetByName: () => sheet }) },
+    })
+
+    return { sandbox, values, headers }
+  }
+
+  it('returns a job stuck past its lease in transcribing to pending', () => {
+    const { sandbox, values, headers } = leaseHarness('transcribing', 1)
+
+    sandbox.reclaimStuckJobs()
+
+    expect(values[1][headers.indexOf('status')]).toBe('pending')
+    expect(values[1][headers.indexOf('lease_until')]).toBe('')
+  })
+
+  it('fails a transcribing job that has already burned its attempts', () => {
+    const { sandbox, values, headers } = leaseHarness('transcribing', 3)
+
+    sandbox.reclaimStuckJobs()
+
+    expect(values[1][headers.indexOf('status')]).toBe('failed')
+  })
+
+  it('leaves a transcribed job alone — it is queued for stage B, not leased', () => {
+    const { sandbox, values, headers } = leaseHarness('transcribed', 0)
+
+    sandbox.reclaimStuckJobs()
+
+    expect(values[1][headers.indexOf('status')]).toBe('transcribed')
+  })
+})
+
 describe('promoteStaleAwaitingTranscript', () => {
   const stale = new Date(Date.now() - 60 * 60 * 1000).toISOString()
   const fresh = new Date().toISOString()

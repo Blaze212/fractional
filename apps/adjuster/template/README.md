@@ -81,6 +81,36 @@ original "Configuration and secrets" table. The repo copies under
 `apps/adjuster/template/` stay the single source of truth — re-upload the
 Drive files whenever these change.
 
+## Script Properties for the dual transcription layer
+
+Added by spec 012 (see `docs/adr/007-dual-transcription-and-verbatim-merge.md`).
+Set these in the Apps Script editor under Project Settings → Script Properties.
+No key belongs in a committed file.
+
+| Property                   | Required                  | Value                                                                                                                                                                                                                                                                                            |
+| -------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ELEVENLABS_API_KEY`       | yes, unless mode is `off` | ElevenLabs API key, sent as the `xi-api-key` header. The only direct-vendor model call in the codebase — see ADR 007 for why it does not route through OpenRouter. Never logged.                                                                                                                 |
+| `CALL_ARTIFACTS_FOLDER_ID` | recommended               | Drive folder holding one sub-folder per call (audio, the three raw transcripts, the master, `manifest.json`). Unset, everything degrades to the existing flat `RECORDINGS_FOLDER_ID` and no artifacts are written.                                                                               |
+| `MASTER_TRANSCRIPT_MODEL`  | no                        | OpenRouter model for the merge call. Defaults to `OPENROUTER_MODEL`. Separate because long-context reconciliation is a different job from structured extraction and may want a different model.                                                                                                  |
+| `MASTER_TRANSCRIPT_MODE`   | no                        | `off`, `shadow`, or `live`. Defaults to `shadow`. `off` is the kill switch and reproduces pre-spec-012 behavior exactly. `shadow` runs the full pass and writes every artifact but leaves the draft on the Dograh transcript. `live` extracts from the master. Reverting is a one-property flip. |
+
+Existing properties reused unchanged: `OPENROUTER_API_KEY` (Qwen and the merge
+call), `OPENROUTER_MODEL`, `OPENROUTER_FALLBACKS`, `GLOSSARY_FILE_ID` (the
+keyterm list), `ADJUSTER_NAME`, `RECORDINGS_FOLDER_ID`, `DRAFTS_FOLDER_ID`.
+
+Two operational notes:
+
+- **Trigger interval.** The time-based trigger for `runPipelineTick` must fire at
+  most every 5 minutes. The pipeline now takes two ticks per call (stage A
+  transcribes, stage B extracts), so a slower interval pushes the draft outside
+  the window where Brandon finds it waiting when he gets home. Confirm the
+  current interval in the Apps Script UI before deploying.
+- **Re-running a call.** `retranscribeJob('<capture_id>')`, run from the editor,
+  clears the transcription columns and puts the job back to `pending` so stage A
+  runs again — for re-reading a call after a prompt or keyterm change. It keeps
+  the existing call folder and versions the new filenames alongside the old ones,
+  so nothing from the previous run is destroyed.
+
 ## What's still deliberately out of scope
 
 - Multi-building/multi-address claims (seen in one sample report, e.g.

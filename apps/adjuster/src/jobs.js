@@ -140,6 +140,26 @@ function ensureClaimsColumns(requiredHeaders) {
   return missing
 }
 
+// The direct analogue of ensureClaimsColumns above, for the Jobs tab: the
+// transcription columns (see JOBS_TRANSCRIPTION_COLUMNS in transcription.js)
+// postdate every Jobs sheet in existence, and writeRowFields throws on any
+// header it can't find, so this runs at the top of every runner tick rather
+// than depending on someone adding columns by hand before the next call lands.
+function ensureJobsColumns(requiredHeaders) {
+  var sheet = getJobsSpreadsheet().getSheetByName(JOBS_TAB)
+  var headers = sheet.getDataRange().getValues()[0] || []
+
+  var missing = requiredHeaders.filter(function (header) {
+    return headers.indexOf(header) === -1
+  })
+
+  missing.forEach(function (header) {
+    sheet.getRange(1, sheet.getLastColumn() + 1).setValue(header)
+  })
+
+  return missing
+}
+
 // claim_id is the calendar event ID when synced from Google Calendar (see
 // calendarSync.js), so re-syncing an edited event updates its existing row
 // instead of appending a duplicate.
@@ -164,18 +184,22 @@ function upsertClaim(claimId, fields) {
   return sheet.getLastRow()
 }
 
-function getOldestPendingJob() {
+function getOldestJobByStatus(status) {
   var sheet = getJobsSpreadsheet().getSheetByName(JOBS_TAB)
   var data = getSheetRows(sheet)
-  var pending = data.rows.filter(function (row) {
-    return row.status === 'pending'
+  var matching = data.rows.filter(function (row) {
+    return row.status === status
   })
 
-  pending.sort(function (a, b) {
+  matching.sort(function (a, b) {
     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   })
 
-  return { sheet: sheet, headers: data.headers, job: pending[0] || null }
+  return { sheet: sheet, headers: data.headers, job: matching[0] || null }
+}
+
+function getOldestPendingJob() {
+  return getOldestJobByStatus('pending')
 }
 
 function reclaimStuckJobs() {
@@ -184,8 +208,15 @@ function reclaimStuckJobs() {
   var now = new Date()
 
   data.rows.forEach(function (row) {
+    // 'transcribing' belongs here for the same reason the others do: stage A is
+    // the longest-running stage in the pipeline and is the one most likely to
+    // hit the 6-minute execution cap. Left off the list, a timed-out stage A
+    // would sit in 'transcribing' forever with nothing to return it to pending.
     var leased =
-      row.status === 'matching' || row.status === 'extracting' || row.status === 'generating'
+      row.status === 'matching' ||
+      row.status === 'transcribing' ||
+      row.status === 'extracting' ||
+      row.status === 'generating'
     if (!leased || !row.lease_until) return
 
     if (new Date(row.lease_until) < now) {
