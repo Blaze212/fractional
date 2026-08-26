@@ -273,6 +273,41 @@ describe('transcribeInParallel', () => {
     expect(result[alive].text).not.toBe('')
   })
 
+  it.each([
+    ['elevenlabs', 0],
+    ['qwen', 1],
+  ])("logs %s's error body so a 400 is debuggable after the fact", (dead, index) => {
+    const detail = JSON.stringify({ detail: [{ loc: ['body', 'file'], msg: 'audio too short' }] })
+    const responses = [response(200, elevenBody), response(200, qwenBody)]
+    responses[index] = response(400, detail)
+    const { sandbox, logged } = asrHarness(() => responses)
+
+    run(sandbox)
+
+    const finished = logged.filter((l) => l.event === 'transcription.source_finished')
+    const failed = finished.find((l) => l.fields.source === dead)
+    expect(failed?.fields.status).toBe(400)
+    expect(failed?.fields.error).toBe(detail)
+
+    // The source that succeeded carries no error, so the field stays scannable.
+    const alive = dead === 'elevenlabs' ? 'qwen' : 'elevenlabs'
+    expect(finished.find((l) => l.fields.source === alive)?.fields.error).toBe('')
+  })
+
+  it('caps a runaway error body rather than logging it whole', () => {
+    const { sandbox, logged } = asrHarness(() => [
+      response(200, elevenBody),
+      response(400, 'x'.repeat(5000)),
+    ])
+
+    run(sandbox)
+
+    const qwen = logged
+      .filter((l) => l.event === 'transcription.source_finished')
+      .find((l) => l.fields.source === 'qwen')
+    expect(String(qwen?.fields.error)).toHaveLength(2000)
+  })
+
   it('retries a single source once on a 429 rather than failing it outright', () => {
     const { sandbox } = asrHarness(
       () => [response(429, 'slow down'), response(200, qwenBody)],
