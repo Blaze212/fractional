@@ -170,3 +170,137 @@ describe('withJobLock flushing', () => {
     expect(order).toEqual(['write', 'flush', 'release'])
   })
 })
+
+describe('upsertClaim', () => {
+  const CLAIM_HEADERS = [
+    'claim_id',
+    'appt_start',
+    'appt_end',
+    'insured_last_name',
+    'address_line1',
+    'city',
+    'claim_number',
+    'vendor',
+    'calendar_fields',
+  ]
+
+  function fakeClaimsSheet(rows: string[][] = [], headers = CLAIM_HEADERS) {
+    const values: string[][] = [headers.slice(), ...rows]
+
+    return {
+      values,
+      getDataRange: () => ({ getValues: () => values }),
+      getLastRow: () => values.length,
+      getLastColumn: () => values[0].length,
+      appendRow: (row: string[]) => values.push(row.slice()),
+      getRange: (rowIndex: number, col: number) => ({
+        setValue: (value: string) => {
+          if (values[rowIndex - 1].length < col) values[rowIndex - 1].length = col
+          values[rowIndex - 1][col - 1] = value
+        },
+      }),
+    }
+  }
+
+  function claimColumn(sheet: ReturnType<typeof fakeClaimsSheet>, name: string, rowIndex: number) {
+    return sheet.values[rowIndex][CLAIM_HEADERS.indexOf(name)]
+  }
+
+  function claimsHarness(rows: string[][] = []) {
+    const sheet = fakeClaimsSheet(rows)
+    const sandbox = loadGs('apps/adjuster/src/jobs.js', {
+      getConfig: () => 'sheet-1',
+      SpreadsheetApp: { openById: () => ({ getSheetByName: () => sheet }), flush: () => {} },
+    })
+
+    return { sandbox, sheet }
+  }
+
+  it('appends a new claim row keyed by claim_id (the calendar event ID)', () => {
+    const { sandbox, sheet } = claimsHarness()
+
+    sandbox.upsertClaim('event-1', { claim_number: 'CLF-1', insured_last_name: 'TALLEY' })
+
+    expect(sheet.values).toHaveLength(2)
+    expect(claimColumn(sheet, 'claim_id', 1)).toBe('event-1')
+    expect(claimColumn(sheet, 'claim_number', 1)).toBe('CLF-1')
+  })
+
+  it('merges into the existing row for that event instead of duplicating it', () => {
+    const { sandbox, sheet } = claimsHarness()
+
+    sandbox.upsertClaim('event-1', { claim_number: 'CLF-1', city: 'Concord' })
+    sandbox.upsertClaim('event-1', { city: 'Charlotte', vendor: 'IBIS' })
+
+    expect(sheet.values).toHaveLength(2)
+    expect(claimColumn(sheet, 'claim_number', 1)).toBe('CLF-1')
+    expect(claimColumn(sheet, 'city', 1)).toBe('Charlotte')
+    expect(claimColumn(sheet, 'vendor', 1)).toBe('IBIS')
+  })
+})
+
+describe('ensureClaimsColumns', () => {
+  const CLAIM_HEADERS = [
+    'claim_id',
+    'appt_start',
+    'appt_end',
+    'insured_last_name',
+    'address_line1',
+    'city',
+    'claim_number',
+    'vendor',
+    'calendar_fields',
+  ]
+
+  function fakeSheetWithHeaders(headers: string[]) {
+    const values: string[][] = [headers.slice()]
+
+    return {
+      values,
+      getDataRange: () => ({ getValues: () => values }),
+      getLastColumn: () => values[0].length,
+      getRange: (rowIndex: number, col: number) => ({
+        setValue: (value: string) => {
+          if (values[rowIndex - 1].length < col) values[rowIndex - 1].length = col
+          values[rowIndex - 1][col - 1] = value
+        },
+      }),
+    }
+  }
+
+  it('appends only the headers that are actually missing, in order', () => {
+    const sheet = fakeSheetWithHeaders(['claim_id', 'insured_last_name', 'address_line1', 'city'])
+    const sandbox = loadGs('apps/adjuster/src/jobs.js', {
+      getConfig: () => 'sheet-1',
+      SpreadsheetApp: { openById: () => ({ getSheetByName: () => sheet }) },
+    })
+
+    const added = sandbox.ensureClaimsColumns(CLAIM_HEADERS)
+
+    expect(added).toEqual(['appt_start', 'appt_end', 'claim_number', 'vendor', 'calendar_fields'])
+    expect(sheet.values[0]).toEqual([
+      'claim_id',
+      'insured_last_name',
+      'address_line1',
+      'city',
+      'appt_start',
+      'appt_end',
+      'claim_number',
+      'vendor',
+      'calendar_fields',
+    ])
+  })
+
+  it('adds nothing and reports no missing columns when the sheet already has them all', () => {
+    const sheet = fakeSheetWithHeaders(CLAIM_HEADERS)
+    const sandbox = loadGs('apps/adjuster/src/jobs.js', {
+      getConfig: () => 'sheet-1',
+      SpreadsheetApp: { openById: () => ({ getSheetByName: () => sheet }) },
+    })
+
+    const added = sandbox.ensureClaimsColumns(CLAIM_HEADERS)
+
+    expect(added).toEqual([])
+    expect(sheet.values[0]).toEqual(CLAIM_HEADERS)
+  })
+})

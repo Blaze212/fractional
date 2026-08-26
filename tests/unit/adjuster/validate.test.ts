@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { loadGs } from './loadGs'
 
-const { validateFields } = loadGs('apps/adjuster/src/validate.js')
+const { validateFields, applyCalendarFallback } = loadGs('apps/adjuster/src/validate.js')
 
 const transcript =
   'The roof covering is architectural shingle and the pitch is six twelve. There is not a mortgage on the property.'
@@ -225,5 +225,87 @@ describe('requiredWhen', () => {
       empty: true,
       label: 'Roof covering type',
     })
+  })
+})
+
+describe('applyCalendarFallback', () => {
+  const propertySchema = {
+    bedroom_count: { label: 'Bedroom count', type: 'enum', values: ['1', '2', '3', '4', '5', '6'] },
+    square_footage: { label: 'Interior square footage', type: 'string' },
+    year_built: { label: 'Year built', type: 'string' },
+    // Deliberately not in CALENDAR_FALLBACK_TAGS — a narrative field must never
+    // be filled from an unvalidated calendar value even if present.
+    interior_damage_narrative: { label: 'Interior damage narrative', type: 'string' },
+  }
+
+  function needsInput(label: string) {
+    return { valid: false, empty: false, label }
+  }
+
+  it('fills a field the transcript left as needs_input, unvalidated against the transcript', () => {
+    const validated = { square_footage: needsInput('Interior square footage') }
+
+    const result = applyCalendarFallback(validated, { square_footage: '2150' }, propertySchema)
+
+    expect(result.square_footage).toEqual({
+      valid: true,
+      label: 'Interior square footage',
+      value: '2150',
+      source_span: '',
+      confidence: 'calendar',
+    })
+  })
+
+  it('never overwrites a field the transcript already validated', () => {
+    const validated = {
+      square_footage: {
+        valid: true,
+        label: 'Interior square footage',
+        value: '1800',
+        source_span: 'eighteen hundred square feet',
+        confidence: 'high',
+      },
+    }
+
+    const result = applyCalendarFallback(validated, { square_footage: '2150' }, propertySchema)
+
+    expect(result.square_footage.value).toBe('1800')
+    expect(result.square_footage.confidence).toBe('high')
+  })
+
+  it("rejects a calendar value outside an enum field's allowed set", () => {
+    const validated = { bedroom_count: needsInput('Bedroom count') }
+
+    const result = applyCalendarFallback(validated, { bedroom_count: 'a lot' }, propertySchema)
+
+    expect(result.bedroom_count).toEqual(needsInput('Bedroom count'))
+  })
+
+  it('accepts a calendar value that is a valid enum member', () => {
+    const validated = { bedroom_count: needsInput('Bedroom count') }
+
+    const result = applyCalendarFallback(validated, { bedroom_count: '4' }, propertySchema)
+
+    expect(result.bedroom_count).toMatchObject({ valid: true, value: '4', confidence: 'calendar' })
+  })
+
+  it('leaves a field alone when the calendar has no value for it', () => {
+    const validated = { year_built: needsInput('Year built') }
+
+    const result = applyCalendarFallback(validated, {}, propertySchema)
+
+    expect(result.year_built).toEqual(needsInput('Year built'))
+  })
+
+  it('never fills a narrative field even if the calendar happens to carry a matching key', () => {
+    const validated = { interior_damage_narrative: needsInput('Interior damage narrative') }
+
+    const result = applyCalendarFallback(
+      validated,
+      { interior_damage_narrative: 'water damage everywhere' },
+      propertySchema,
+    )
+
+    expect(result.interior_damage_narrative).toEqual(needsInput('Interior damage narrative'))
   })
 })

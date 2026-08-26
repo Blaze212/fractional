@@ -148,14 +148,14 @@ describe('buildPrompt', () => {
 describe('field-specific guidance', () => {
   it('surfaces guidance only for tags present in templateSpec', () => {
     const spec = {
-      roof_damage_narrative: { label: 'Roof damage findings', type: 'narrative' },
+      roof_front_slope: { label: 'Roof findings — front slope', type: 'narrative' },
       coinsurance_narrative: { label: 'Coinsurance', type: 'narrative' },
     }
 
     const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
 
     expect(user).toContain('Field-specific guidance:')
-    expect(user).toContain('roof_damage_narrative:')
+    expect(user).toContain('roof_front_slope:')
     expect(user).toContain('coinsurance_narrative:')
     expect(user).not.toContain('roof_narrative_freeform:')
   })
@@ -208,11 +208,11 @@ describe('variant fields in the tag list', () => {
   })
 })
 
-describe('live extraction (Dograh Notetaker cross-check)', () => {
+describe('live extraction (Dograh Notetaker / calendar cross-check)', () => {
   it('omits the section entirely when no live extraction is provided', () => {
     const { user } = buildPrompt({ transcript: 'anything', templateSpec })
 
-    expect(user).not.toMatch(/real-time call extraction/i)
+    expect(user).not.toMatch(/reference data/i)
   })
 
   it('lists live-extracted values and instructs the model to cross-check them against the transcript', () => {
@@ -222,7 +222,7 @@ describe('live extraction (Dograh Notetaker cross-check)', () => {
       liveExtraction: { roof_covering_type: 'architectural shingle', roof_pitch: '6/12' },
     })
 
-    expect(user).toMatch(/real-time call extraction/i)
+    expect(user).toMatch(/reference data/i)
     expect(user).toContain('roof_covering_type: architectural shingle')
     expect(user).toContain('roof_pitch: 6/12')
     expect(user).toMatch(/cross-check every value/i)
@@ -236,7 +236,7 @@ describe('live extraction (Dograh Notetaker cross-check)', () => {
       liveExtraction: { roof_covering_type: '', roof_pitch: undefined },
     })
 
-    expect(user).not.toMatch(/real-time call extraction/i)
+    expect(user).not.toMatch(/reference data/i)
   })
 
   it('never leaks call metadata riding alongside the mirrored tag fields', () => {

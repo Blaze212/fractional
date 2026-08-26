@@ -101,6 +101,53 @@ function validateDograhFields(dograhFields, tagSchema) {
   return result
 }
 
+// The transcript-corroboration rule in validateFields is right for narrative
+// and behavioral fields — an adjuster's own account of what he saw and did, in
+// his own words, where an ungrounded value is a real hallucination risk. It is
+// wrong for this small, fixed set of closed-form property facts: a scheduler
+// already recorded them before the call, adjusters rarely restate a bedroom
+// count or a roof age out loud during dictation, and requiring transcript
+// evidence for them just routes them to NEEDS INPUT regardless of what the
+// calendar knows — defeating the reason calendar sync exists. For exactly
+// these tags, a field validateFields left invalid is filled straight from the
+// calendar's raw value instead, unvalidated against the transcript — the same
+// trust level validateDograhFields already gives Dograh-only fields. Enum
+// fields still enforce set membership; this never reaches narrative fields,
+// since they are not in this list.
+var CALENDAR_FALLBACK_TAGS = [
+  'bedroom_count',
+  'bathroom_count',
+  'square_footage',
+  'year_built',
+  'roof_age_years',
+  'dwelling_stories',
+]
+
+function applyCalendarFallback(validated, calendarFields, tagSchema) {
+  CALENDAR_FALLBACK_TAGS.forEach(function (tag) {
+    var schema = (tagSchema || {})[tag]
+    if (!schema) return
+
+    var current = validated[tag]
+    if (current && current.valid) return
+
+    var value = (calendarFields || {})[tag]
+    if (!value) return
+
+    if (schema.type === 'enum' && (schema.values || []).indexOf(value) === -1) return
+
+    validated[tag] = {
+      valid: true,
+      label: schema.label || tag,
+      value: value,
+      source_span: '',
+      confidence: 'calendar',
+    }
+  })
+
+  return validated
+}
+
 // A field can declare requiredWhen: { field, equals } to only be required when a
 // sibling field (e.g. roof_status) resolved to a specific value — e.g. roof_covering_type
 // is only required when roof_status is "shingle", not when the roof wasn't affected at all.

@@ -40,9 +40,10 @@ function harness(overrides: Record<string, unknown> = {}) {
         }
       },
       ContentService: {
-        MimeType: { XML: 'XML' },
+        MimeType: { XML: 'XML', JSON: 'JSON' },
         createTextOutput: (body: string) => ({ body, setMimeType: () => ({ body }) }),
       },
+      getClaims: () => [],
       UrlFetchApp: {
         fetch: () => ({ getResponseCode: () => 200, getBlob: () => ({ setName: () => 'blob' }) }),
       },
@@ -334,6 +335,99 @@ describe('Dograh Notetaker recording', () => {
     const job = jobs.get('dograh-run-5')!
     expect(job.audio_drive_id).toBe('')
     expect(job.status).toBe('pending')
+  })
+})
+
+describe('Dograh Pre-Call Data Fetch', () => {
+  function preCallPost(fromNumber = '+18176762145') {
+    return {
+      parameter: { t: SECRET, event: 'dograh_pre_call' },
+      postData: {
+        type: 'application/json',
+        contents: JSON.stringify({
+          event: 'call_inbound',
+          call_inbound: { agent_id: 10849, from_number: fromNumber, to_number: '+18005550199' },
+        }),
+      },
+    }
+  }
+
+  // handleDograhPreCall reads the real clock (new Date()), matching this
+  // codebase's other "now"-dependent handlers — fixtures are offsets from the
+  // actual test-run time rather than fixed dates, so this stays correct no
+  // matter when the suite runs.
+  function hoursAgoIso(hours: number) {
+    return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
+  }
+
+  function claim(overrides: Record<string, unknown> = {}) {
+    return {
+      claim_id: 'evt-1',
+      insured_last_name: 'Love',
+      address_line1: '1234 Happy Path Lane',
+      city: 'Concord',
+      claim_number: 'CLF-00153289',
+      appt_start: hoursAgoIso(1),
+      appt_end: hoursAgoIso(0.5),
+      ...overrides,
+    }
+  }
+
+  it('suggests the claim whose appointment most recently ended', () => {
+    const { sandbox } = harness({
+      getClaims: () => [
+        claim({ claim_id: 'old', insured_last_name: 'Old', appt_end: hoursAgoIso(5) }),
+        claim({ claim_id: 'recent', insured_last_name: 'Love', appt_end: hoursAgoIso(0.5) }),
+      ],
+    })
+
+    const response = sandbox.doPost(preCallPost())
+    const body = JSON.parse(response.body)
+
+    expect(body.initial_context.has_claim_suggestion).toBe(true)
+    expect(body.initial_context.suggested_insured_last_name).toBe('Love')
+    expect(body.initial_context.suggested_address_line1).toBe('1234 Happy Path Lane')
+  })
+
+  it('reports no suggestion when nothing ended within the recency window', () => {
+    const { sandbox } = harness({
+      getClaims: () => [claim({ appt_end: hoursAgoIso(30) })],
+    })
+
+    const response = sandbox.doPost(preCallPost())
+    const body = JSON.parse(response.body)
+
+    expect(body.initial_context.has_claim_suggestion).toBe(false)
+  })
+
+  it('still returns has_claim_suggestion: false rather than failing the call when the claims lookup throws', () => {
+    const { sandbox, logged } = harness({
+      getClaims: () => {
+        throw new Error('Missing column: appt_end')
+      },
+    })
+
+    const response = sandbox.doPost(preCallPost())
+    const body = JSON.parse(response.body)
+
+    expect(body.initial_context.has_claim_suggestion).toBe(false)
+    expect(events(logged)).toContain('dograh_pre_call.failed')
+  })
+
+  it('formats the candidate list for fallback matching, most recent first', () => {
+    const { sandbox } = harness({
+      getClaims: () => [
+        claim({ claim_id: 'a', insured_last_name: 'Adams', appt_end: hoursAgoIso(5) }),
+        claim({ claim_id: 'b', insured_last_name: 'Barnes', appt_end: hoursAgoIso(1) }),
+      ],
+    })
+
+    const response = sandbox.doPost(preCallPost())
+    const body = JSON.parse(response.body)
+    const lines = body.initial_context.claims_candidates_text.split('\n')
+
+    expect(lines[0]).toContain('Barnes')
+    expect(lines[1]).toContain('Adams')
   })
 })
 
