@@ -40,15 +40,17 @@ function generateDoc(job, claim, validated, tagSchema, unplacedNotes) {
   return { status: 'done', docUrl: copy.getUrl(), needsInputCount: needsInputCount }
 }
 
-// Confidence tiers coming out of validateFields/validateDograhFields: "high"
-// renders plainly, "low" (and anything else invalid) renders as a
-// [NEEDS INPUT] placeholder, "medium" renders the real value but flagged
-// yellow for a quick human check (see highlightMediumConfidence). A
-// low-confidence field that still carries a source_span (see validate.js's
-// needsInput) had real, verified transcript text behind it — just enough
-// that the model wasn't sure how to render it — so that snippet rides along
-// on the placeholder as a "heard" hint instead of leaving the adjuster to
-// start from zero.
+// Confidence tiers coming out of validateFields/validateDograhFields/
+// applyCalendarFallback: "high" and "dograh" and "calendar" all render
+// plainly (the latter two have no transcript source_span to check, but come
+// from a source already trusted at that tier — see each function's own
+// comment), "low" (and anything else invalid) renders as a [NEEDS INPUT]
+// placeholder, "medium" renders the real value but flagged yellow for a quick
+// human check (see highlightMediumConfidence). A low-confidence field that
+// still carries a source_span (see validate.js's needsInput) had real,
+// verified transcript text behind it — just enough that the model wasn't sure
+// how to render it — so that snippet rides along on the placeholder as a
+// "heard" hint instead of leaving the adjuster to start from zero.
 function resolveTagsForDoc(validated, tagSchema) {
   var resolved = {}
 

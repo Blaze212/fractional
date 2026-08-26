@@ -48,7 +48,7 @@ function buildPrompt(input) {
   if (liveExtractionBlock) {
     sections.push(
       [
-        'Real-time call extraction (captured live, per question, by a separate assistant during the call):',
+        'Reference data (per-field values captured before or during the call — either live, per question, by a separate assistant during the call, or noted on the calendar invite before the call):',
         liveExtractionBlock,
         'Cross-check every value above against the transcript. Where the transcript supports a value, extract it yourself from the transcript with a real source_span — never copy one of these values into a field without transcript evidence for it. Treat this list only as a hint for what to listen for, not as a source of truth on its own; where it disagrees with the transcript, the transcript wins.',
       ].join('\n'),
@@ -58,9 +58,11 @@ function buildPrompt(input) {
   return { system: system, user: sections.join('\n\n') }
 }
 
-// liveExtraction is Dograh Notetaker's raw per-field export (see webhook.js's
-// handleDograhNotetaker) — keyed by the same tag names as templateSpec. Filtered
-// to templateSpec's keys so call metadata that rides along in the same object
+// liveExtraction merges two hint sources, both keyed by the same tag names as
+// templateSpec: Dograh Notetaker's raw per-field export from this call (see
+// webhook.js's handleDograhNotetaker), and calendar_fields noted on the
+// appointment before the call ever happened (see calendarSync.js). Filtered to
+// templateSpec's keys so call metadata riding along in the same object
 // (capture_id, transcript_url, call_disposition, ...) never leaks into the prompt.
 function formatLiveExtraction(liveExtraction, templateSpec) {
   if (!liveExtraction) return ''
@@ -93,12 +95,21 @@ var FIELD_GUIDANCE = {
     'A number of years as digits (e.g. "12"), not an install year. The adjuster\'s own hedged estimate ("I\'d guess about twelve years") is still his estimate — extract it with high confidence; use low confidence only when you had to compute the age yourself (e.g. from an install year).',
   mitigation_narrative:
     'Cover who responded, what emergency work was performed, and what is still running or pending, in report prose.',
-  roof_damage_narrative:
-    'List every slope you have information about, including slopes with no damage ("We did not observe any storm related damages on this slope."); do not omit undamaged slopes. Use whatever slope labels the transcript uses (e.g. "Front Slope", "Upper Front Slope", "Front Slope with Extension", a "Soft Metals" line) rather than forcing a fixed Front/Right/Back/Left layout. End with a repair-or-replace conclusion tied to the specific slope(s) and square footage found damaged.',
+  roof_soft_metals:
+    'Findings about soft metals only — drip edge, flashing, vents, gutters, pipe boots — not slope shingle damage. Leave this unextracted (do not write "none" or "no damage found") when the adjuster said nothing about soft metals; the field renders blank rather than [NEEDS INPUT] when left out, which is the correct outcome for a slope/component that was never discussed.',
+  roof_front_slope:
+    'Findings for the front slope only. If the transcript uses a compound label for this slope ("upper front slope", "front slope with extension"), fold it in here rather than dropping it. If the transcript explicitly states there was no damage on this slope, say so plainly; if the slope is never mentioned at all, leave the field unextracted instead of writing a "no damage" sentence — the field renders blank either way, but only inventing coverage of a slope nobody discussed is the failure mode to avoid.',
+  roof_right_slope: 'Same rule as roof_front_slope, for the right slope.',
+  roof_back_slope: 'Same rule as roof_front_slope, for the back slope.',
+  roof_left_slope:
+    'Same rule as roof_front_slope, for the left slope. Anything the adjuster said about the roof that does not fit soft metals or one of the four cardinal slopes (e.g. an odd fifth slope, a general condition remark) goes in unplaced_notes instead of being forced into one of these fields.',
   roof_narrative_freeform:
     'The roof is not a shingle roof, so write the full passage yourself: covering material and age, condition, layer count, and pitch, then per-slope findings (every slope mentioned, including undamaged ones), then a repair-or-replace conclusion. Example shape, adapt to the actual transcript rather than copying it: "The roof has Metal roofing with a layer of asphalt shingles underneath that are approximately 20 years old. The panels are in average condition for their age. There is one layer of metal panels and two layers of shingles underneath the metal panels with no drip edge present. The slopes on the roof are pitched at 5/12. My inspection of the roof found no storm related damages present. However, we did observe two raised nails on the left extension ridge which could be the water intrusion point. Since no storm related damages were found to the roof surface, we did not include any repairs in our estimate."',
-  exterior_narrative:
-    'Cover all four elevations — Front, Right, Back, Left, in that order — even the ones with no damage ("We did not observe any storm related damages on this elevation."). Do not skip an elevation just because nothing was found on it.',
+  exterior_front_elevation:
+    'Findings for the front elevation only. If the transcript explicitly states there was no damage on this elevation, say so plainly; if this elevation is never mentioned at all, leave the field unextracted instead of writing a "no damage" sentence — the field renders blank either way, but only inventing coverage of an elevation nobody discussed is the failure mode to avoid.',
+  exterior_right_elevation: 'Same rule as exterior_front_elevation, for the right elevation.',
+  exterior_back_elevation: 'Same rule as exterior_front_elevation, for the back elevation.',
+  exterior_left_elevation: 'Same rule as exterior_front_elevation, for the left elevation.',
   interior_damage_narrative:
     'If the transcript describes a multi-level property, group rooms under level sub-headers ("Main Level", "Upper Level", "Basement Level") before listing the rooms on that level, rather than listing all rooms flat. If flooring damage in one room extends into an open-plan adjoining room, say so explicitly rather than listing the adjoining room as a separate, unrelated item.',
   personal_property_narrative:

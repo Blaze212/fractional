@@ -73,6 +73,31 @@ function leaseJob(sheet, headers, job) {
 function runJobPipeline(job) {
   var claims = getClaims()
   var match = matchClaim(job.call_started_at, job.transcript, claims)
+
+  // Deterministic matching can't confirm a claim, or is torn between two —
+  // fall back to an LLM pass that tolerates misheard names/addresses the exact
+  // scoring in matcher.js can't. A failed LLM call is logged and the
+  // deterministic (possibly "none") result stands rather than failing the job.
+  if (match.match_method === 'none' || match.match_method === 'ambiguous') {
+    try {
+      var llmMatch = matchClaimWithLlm(job.call_started_at, job.transcript, claims)
+      logEvent('runner.llm_match_attempted', {
+        capture_id: job.capture_id,
+        deterministic_method: match.match_method,
+        llm_claim_id: llmMatch.claim_id || '',
+        llm_confidence: llmMatch.match_confidence,
+      })
+      if (llmMatch.claim_id) match = llmMatch
+    } catch (err) {
+      var describedMatchError = describeError(err)
+      logEvent('runner.llm_match_failed', {
+        capture_id: job.capture_id,
+        error: describedMatchError.error,
+        stack: describedMatchError.stack,
+      })
+    }
+  }
+
   var claim = match.claim_id
     ? claims.filter(function (c) {
         return c.claim_id === match.claim_id
@@ -98,8 +123,15 @@ function runJobPipeline(job) {
   // the same OpenRouter pass as a cross-check hint (see prompt.js's
   // formatLiveExtraction) lets the model re-derive every field from the
   // transcript itself, with a real source_span, using Dograh's export only to
-  // know what to listen for.
-  var liveExtraction = isDograh ? JSON.parse(job.dograh_fields || '{}') : null
+  // know what to listen for. calendar_fields (see calendarSync.js) is the same
+  // kind of hint sourced from the scheduling note instead of the call — Dograh
+  // wins on overlap since it was captured live during this specific call.
+  var dograhFields = isDograh ? JSON.parse(job.dograh_fields || '{}') : {}
+  var calendarFields = parseCalendarFields(claim)
+  var liveExtraction =
+    Object.keys(dograhFields).length > 0 || Object.keys(calendarFields).length > 0
+      ? Object.assign({}, calendarFields, dograhFields)
+      : null
 
   upsertJob(job.capture_id, {
     claim_id: match.claim_id || '',
@@ -135,6 +167,10 @@ function runJobPipeline(job) {
   upsertJob(job.capture_id, { status: 'generating', model: extraction.model })
 
   var validated = validateFields(extraction.fields, job.transcript, tagSchema)
+  // Backstop for the fixed set of property facts the transcript is unlikely to
+  // ever state — see applyCalendarFallback's own comment for why the
+  // transcript-corroboration rule is deliberately skipped for just these tags.
+  validated = applyCalendarFallback(validated, calendarFields, tagSchema)
   var unplacedNotes = extraction.unplaced_notes || []
   logEvent('runner.validated', {
     capture_id: job.capture_id,
@@ -167,6 +203,23 @@ function runJobPipeline(job) {
     needs_input_count: result.needsInputCount,
     error: '',
   })
+}
+
+// A hand-edited Claims row could carry malformed JSON in this cell — that
+// should degrade to "no calendar hint" for this job, not fail the whole
+// pipeline over a cross-check field that was never load-bearing.
+function parseCalendarFields(claim) {
+  if (!claim || !claim.calendar_fields) return {}
+
+  try {
+    return JSON.parse(claim.calendar_fields)
+  } catch (err) {
+    logEvent('runner.calendar_fields_unparseable', {
+      claim_id: claim.claim_id,
+      error: String(err),
+    })
+    return {}
+  }
 }
 
 function failJob(job, errorMessage) {

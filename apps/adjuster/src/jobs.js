@@ -120,6 +120,50 @@ function getClaims() {
   return getSheetRows(sheet).rows
 }
 
+// The Claims tab predates calendar sync and may not carry every column it
+// writes (appt_start, carrier, calendar_fields). writeRowFields throws on any
+// header it can't find, so calendarSync.js calls this once per tick rather
+// than depending on someone remembering to add columns by hand before turning
+// sync on.
+function ensureClaimsColumns(requiredHeaders) {
+  var sheet = getJobsSpreadsheet().getSheetByName(CLAIMS_TAB)
+  var headers = sheet.getDataRange().getValues()[0] || []
+
+  var missing = requiredHeaders.filter(function (header) {
+    return headers.indexOf(header) === -1
+  })
+
+  missing.forEach(function (header) {
+    sheet.getRange(1, sheet.getLastColumn() + 1).setValue(header)
+  })
+
+  return missing
+}
+
+// claim_id is the calendar event ID when synced from Google Calendar (see
+// calendarSync.js), so re-syncing an edited event updates its existing row
+// instead of appending a duplicate.
+function upsertClaim(claimId, fields) {
+  var sheet = getJobsSpreadsheet().getSheetByName(CLAIMS_TAB)
+  var data = getSheetRows(sheet)
+  var existing = data.rows.filter(function (row) {
+    return row.claim_id === claimId
+  })[0]
+
+  var merged = Object.assign({}, fields, { claim_id: claimId })
+
+  if (existing) {
+    writeRowFields(sheet, data.headers, existing._rowIndex, merged)
+    return existing._rowIndex
+  }
+
+  var newRow = data.headers.map(function (header) {
+    return header in merged ? merged[header] : ''
+  })
+  sheet.appendRow(newRow)
+  return sheet.getLastRow()
+}
+
 function getOldestPendingJob() {
   var sheet = getJobsSpreadsheet().getSheetByName(JOBS_TAB)
   var data = getSheetRows(sheet)

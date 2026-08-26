@@ -64,10 +64,29 @@ function routeWebhook(event, params, e) {
   // shape the checks below assume — so it has to branch off before them, right
   // after the shared secret check.
   if (event === 'dograh_notetaker') {
+    // Raw, unparsed body — logged before parseJsonBody touches it so a webhook
+    // that arrives with gathered_context already empty (a Dograh-side timing
+    // issue between extraction and the webhook firing, not a bug in our
+    // parsing) is visible in the server log without having to reproduce it.
+    logServerOnly('dograh_notetaker.raw_payload', {
+      post_data_type: (e && e.postData && e.postData.type) || '',
+      post_data_contents: (e && e.postData && e.postData.contents) || '',
+    })
+
     var body = parseJsonBody(e)
     var captureId = String(body.capture_id || '')
     if (!captureId) return denied('missing_capture_id', '', 'Bad Request')
     return accepted(captureId, handleDograhNotetaker(captureId, body))
+  }
+
+  // Dograh's Pre-Call Data Fetch (Beta Notetaker workflow's Start Call node)
+  // POSTs here the instant an inbound call arrives, before the agent speaks —
+  // same shared-secret gate as every other event, no CallSessionId yet since
+  // the call hasn't been assigned one from our side at this point.
+  if (event === 'dograh_pre_call') {
+    var preCallBody = parseJsonBody(e)
+    var fromNumber = (preCallBody.call_inbound && preCallBody.call_inbound.from_number) || ''
+    return accepted('precall:' + fromNumber, handleDograhPreCall())
   }
 
   var callSessionId = firstParam(params, ['CallSessionId', 'CallSid', 'call_session_id'])
@@ -432,6 +451,106 @@ function fetchDograhTranscript(url) {
     return stitchAIGatherMessages(text)
   }
   return text
+}
+
+// A claim only counts as "the one they probably just finished" within a few
+// hours of its appt_end — otherwise a quiet day with nothing recently synced
+// would keep suggesting a claim from two days ago forever.
+var PRE_CALL_SUGGESTION_WINDOW_HOURS = 6
+
+// Candidates cast a wider net than the suggestion itself, since this list is
+// what the live agent falls back to for closest-match reasoning when the
+// caller says the suggestion is wrong — narrower than the suggestion window,
+// but still bounded so the prompt stays short.
+var PRE_CALL_CANDIDATE_WINDOW_HOURS = 12
+var PRE_CALL_CANDIDATE_LIMIT = 15
+
+// Never throws, never blocks — Dograh's Pre-Call Data Fetch contract is that
+// a slow or failing fetch just proceeds without the extra context, so a
+// claims-lookup problem here should degrade to no-suggestion, not fail the
+// call.
+function handleDograhPreCall() {
+  try {
+    var now = new Date()
+    var claims = getClaims()
+    var suggestion = pickMostRecentlyCompletedClaim(claims, now)
+    var candidatesText = formatClaimsCandidates(claims, now)
+
+    var initialContext = suggestion
+      ? {
+          has_claim_suggestion: true,
+          suggested_insured_last_name: suggestion.insured_last_name || '',
+          suggested_address_line1: suggestion.address_line1 || '',
+          suggested_city: suggestion.city || '',
+          suggested_claim_number: suggestion.claim_number || '',
+          claims_candidates_text: candidatesText,
+        }
+      : { has_claim_suggestion: false, claims_candidates_text: candidatesText }
+
+    return ContentService.createTextOutput(
+      JSON.stringify({ initial_context: initialContext }),
+    ).setMimeType(ContentService.MimeType.JSON)
+  } catch (err) {
+    var described = describeError(err)
+    logEvent('dograh_pre_call.failed', { error: described.error, stack: described.stack })
+    return ContentService.createTextOutput(
+      JSON.stringify({ initial_context: { has_claim_suggestion: false } }),
+    ).setMimeType(ContentService.MimeType.JSON)
+  }
+}
+
+function pickMostRecentlyCompletedClaim(claims, now) {
+  var completed = (claims || [])
+    .filter(function (claim) {
+      return Boolean(claim.appt_end)
+    })
+    .map(function (claim) {
+      return { claim: claim, endedAt: new Date(claim.appt_end) }
+    })
+    .filter(function (entry) {
+      var hoursSinceEnd = (now.getTime() - entry.endedAt.getTime()) / (60 * 60 * 1000)
+      return hoursSinceEnd >= 0 && hoursSinceEnd <= PRE_CALL_SUGGESTION_WINDOW_HOURS
+    })
+    .sort(function (a, b) {
+      return b.endedAt.getTime() - a.endedAt.getTime()
+    })
+
+  return completed[0] ? completed[0].claim : null
+}
+
+// Formatted the same way llmMatcher.js's buildLlmMatchPrompt lists candidates
+// for its own post-call matching pass — the live agent is doing the same
+// "which of these does the caller's answer sound like" reasoning, just live
+// on the call instead of after it.
+function formatClaimsCandidates(claims, now) {
+  var withinWindow = (claims || []).filter(function (claim) {
+    var reference = claim.appt_end || claim.appt_start
+    if (!reference) return false
+    var hoursFromNow = Math.abs(now.getTime() - new Date(reference).getTime()) / (60 * 60 * 1000)
+    return hoursFromNow <= PRE_CALL_CANDIDATE_WINDOW_HOURS
+  })
+
+  withinWindow.sort(function (a, b) {
+    var aRef = new Date(a.appt_end || a.appt_start).getTime()
+    var bRef = new Date(b.appt_end || b.appt_start).getTime()
+    return bRef - aRef
+  })
+
+  return withinWindow
+    .slice(0, PRE_CALL_CANDIDATE_LIMIT)
+    .map(function (claim) {
+      return (
+        '- ' +
+        (claim.insured_last_name || '') +
+        ' | ' +
+        (claim.address_line1 || '') +
+        ' | ' +
+        (claim.city || '') +
+        ' | ' +
+        (claim.claim_number || '')
+      )
+    })
+    .join('\n')
 }
 
 // Apps Script only populates e.parameter from the query string and form-encoded
