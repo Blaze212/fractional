@@ -358,6 +358,11 @@ function transcribeInParallel(input) {
       status: result.status,
       chars: String(result.text || '').length,
       latency_ms: latencyMs,
+      // The vendor's own words for why it refused. Without this a 400 logs as
+      // ok:false with no reason attached, and the body resolveSourceResponse
+      // captured dies here. A 4xx is not retryable, so this line is the only
+      // record of the failure the call ever produces.
+      error: result.ok ? '' : String(result.error || ''),
     })
   })
 
@@ -416,8 +421,10 @@ function resolveSourceResponse(label, response) {
   var status = response.getResponseCode()
   var bodyText = response.getContentText()
 
+  // 2000 chars, matching describeError()'s stack cap in log.js: an ElevenLabs
+  // 400 carries its reason in a `detail` array that routinely runs past 500.
   if (status !== 200) {
-    return { source: label, text: '', ok: false, status: status, error: bodyText.slice(0, 500) }
+    return { source: label, text: '', ok: false, status: status, error: bodyText.slice(0, 2000) }
   }
 
   try {
