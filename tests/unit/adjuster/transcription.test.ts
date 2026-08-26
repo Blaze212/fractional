@@ -3,6 +3,51 @@ import { loadGs } from './loadGs'
 
 type Folder = ReturnType<typeof fakeFolder>
 
+function bytesOf(text: string) {
+  return Array.from(text, (c) => c.charCodeAt(0))
+}
+
+function bodyText(payload: number[]) {
+  return payload.map((b) => String.fromCharCode(b)).join('')
+}
+
+/** A real PCM WAV byte array, so probeWav/sliceWav are exercised for real. */
+function makeWav({ seconds = 1, sampleRate = 8000, channels = 1, bits = 16 } = {}) {
+  const blockAlign = (channels * bits) / 8
+  const byteRate = sampleRate * blockAlign
+  const dataSize = Math.round(seconds * byteRate)
+  const bytes: number[] = []
+  const tag = (t: string) => bytes.push(...bytesOf(t))
+  const u16 = (n: number) => bytes.push(n & 0xff, (n >> 8) & 0xff)
+  const u32 = (n: number) =>
+    bytes.push(n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >> 24) & 0xff)
+
+  tag('RIFF')
+  u32(36 + dataSize)
+  tag('WAVE')
+  tag('fmt ')
+  u32(16)
+  u16(1)
+  u16(channels)
+  u32(sampleRate)
+  u32(byteRate)
+  u16(blockAlign)
+  u16(bits)
+  tag('data')
+  u32(dataSize)
+  for (let i = 0; i < dataSize; i++) bytes.push(i % 256)
+
+  return bytes
+}
+
+function wavBlob(bytes: number[]) {
+  return {
+    getBytes: () => bytes,
+    getName: () => 'audio.wav',
+    getContentType: () => 'audio/wav',
+  }
+}
+
 function fakeFile(name: string, content: string, id = 'file-' + name) {
   const file = {
     id,
@@ -98,7 +143,8 @@ function harness(overrides: Record<string, unknown> = {}) {
       },
     },
     Utilities: {
-      base64Encode: () => 'AAAA',
+      base64Encode: (bytes: number[]) => 'b64-' + bytes.length,
+      newBlob: (text: string) => ({ getBytes: () => bytesOf(text) }),
       sleep: () => {},
     },
     UrlFetchApp: { fetchAll: () => [], fetch: () => null },
@@ -147,14 +193,27 @@ describe('buildKeyterms', () => {
     expect(terms).toEqual(['Concord', 'Brandon'])
   })
 
-  it('caps at 1000 terms and 50 characters each', () => {
+  it('drops the characters ElevenLabs rejects and caps a term at 5 words', () => {
+    const { sandbox } = harness()
+
+    const terms = sandbox.buildKeyterms(
+      null,
+      [{ term: 'roof [decking] <north>' }, { term: 'one two three four five six seven' }],
+      '',
+    )
+
+    expect(terms[0]).toBe('roof decking north')
+    expect(terms[1]).toBe('one two three four five')
+  })
+
+  it('caps at 1000 terms and 49 characters each', () => {
     const { sandbox } = harness()
     const glossary = Array.from({ length: 1200 }, (_, i) => ({ term: 'term-' + i }))
 
     const terms = sandbox.buildKeyterms({ city: 'x'.repeat(80) }, glossary, 'Brandon')
 
     expect(terms).toHaveLength(1000)
-    expect(terms[0]).toHaveLength(50)
+    expect(terms[0]).toHaveLength(49)
     expect(terms.every((term: string) => term.length <= 50)).toBe(true)
   })
 })
@@ -217,7 +276,7 @@ describe('transcribeInParallel', () => {
   function run(sandbox: Record<string, any>) {
     return sandbox.transcribeInParallel({
       captureId: 'dograh-1',
-      audioBlob: { getBytes: () => [1, 2, 3] },
+      audioBlob: wavBlob(makeWav({ seconds: 1 })),
       format: 'wav',
       keyterms: ['Henderson'],
       elevenLabsKey: 'xi-key',
@@ -236,11 +295,13 @@ describe('transcribeInParallel', () => {
     expect(requests).toHaveLength(2)
     expect(requests[0].url).toContain('api.elevenlabs.io')
     expect(requests[0].headers['xi-api-key']).toBe('xi-key')
-    expect(requests[0].payload.model_id).toBe('scribe_v2')
-    expect(requests[0].payload.diarize).toBe('true')
-    expect(JSON.parse(requests[0].payload.keyterms)).toEqual(['Henderson'])
+    const form = bodyText(requests[0].payload)
+    expect(requests[0].contentType).toMatch(/^multipart\/form-data; boundary=/)
+    expect(form).toContain('name="model_id"\r\n\r\nscribe_v2')
+    expect(form).toContain('name="diarize"\r\n\r\ntrue')
+    expect(form).toContain('name="file"; filename="audio.wav"')
     expect(requests[1].url).toContain('openrouter.ai/api/v1/audio/transcriptions')
-    expect(JSON.parse(requests[1].payload).provider.options.alibaba.context).toBe('Henderson')
+    expect(JSON.parse(requests[1].payload).provider.order).toEqual(['alibaba'])
     expect(result.fetch_mode).toBe('fetch_all')
     expect(result.elevenlabs.text).toBe('the roof is a six twelve')
     expect(result.qwen.text).toBe('the roof is a 6/12')
@@ -308,6 +369,79 @@ describe('transcribeInParallel', () => {
     expect(String(qwen?.fields.error)).toHaveLength(2000)
   })
 
+  it('sends one keyterms form field per term, never a JSON array in one field', () => {
+    const { sandbox } = asrHarness(() => [response(200, elevenBody), response(200, qwenBody)])
+
+    sandbox.transcribeInParallel({
+      captureId: 'dograh-1',
+      audioBlob: wavBlob(makeWav({ seconds: 1 })),
+      format: 'wav',
+      keyterms: ['Henderson', 'drip edge'],
+      elevenLabsKey: 'xi-key',
+      openRouterKey: 'or-key',
+    })
+
+    const requests = (sandbox.UrlFetchApp.fetchAll as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    const form = bodyText(requests[0].payload)
+
+    expect(form).toContain('name="keyterms"\r\n\r\nHenderson')
+    expect(form).toContain('name="keyterms"\r\n\r\ndrip edge')
+    // The single-field JSON array is what ElevenLabs rejected as one 25-char
+    // "keyword" over its 50-char per-term limit.
+    expect(form).not.toContain('["Henderson"')
+  })
+
+  it('splits long audio into one Qwen request per slice and rejoins the text', () => {
+    const bodies = ['first part', 'second part', 'third part'].map((text) =>
+      response(200, JSON.stringify({ text })),
+    )
+    const { sandbox, logged } = asrHarness(() => [response(200, elevenBody), ...bodies])
+
+    const result = sandbox.transcribeInParallel({
+      captureId: 'dograh-1',
+      audioBlob: wavBlob(makeWav({ seconds: 700, sampleRate: 100 })),
+      format: 'wav',
+      keyterms: [],
+      elevenLabsKey: 'xi-key',
+      openRouterKey: 'or-key',
+    })
+
+    const requests = (sandbox.UrlFetchApp.fetchAll as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(requests).toHaveLength(4) // 1 ElevenLabs + 3 Qwen slices
+    expect(result.qwen.text).toBe('first part second part third part')
+    expect(result.qwen.ok).toBe(true)
+
+    const split = logged.find((l) => l.event === 'transcription.audio_split')
+    expect(split?.fields.chunks).toBe(3)
+    expect(split?.fields.chunk_seconds).toBe(300)
+  })
+
+  it('fails the whole source when one slice fails, rather than leaving a hole', () => {
+    const { sandbox, logged } = asrHarness(() => [
+      response(200, elevenBody),
+      response(200, JSON.stringify({ text: 'first part' })),
+      response(400, 'slice two exploded'),
+      response(200, JSON.stringify({ text: 'third part' })),
+    ])
+
+    const result = sandbox.transcribeInParallel({
+      captureId: 'dograh-1',
+      audioBlob: wavBlob(makeWav({ seconds: 700, sampleRate: 100 })),
+      format: 'wav',
+      keyterms: [],
+      elevenLabsKey: 'xi-key',
+      openRouterKey: 'or-key',
+    })
+
+    expect(result.qwen.ok).toBe(false)
+    expect(result.qwen.text).toBe('')
+    const finished = logged
+      .filter((l) => l.event === 'transcription.source_finished')
+      .find((l) => l.fields.source === 'qwen')
+    expect(finished?.fields.chunks).toBe(3)
+    expect(finished?.fields.error).toBe('slice two exploded')
+  })
+
   it('retries a single source once on a 429 rather than failing it outright', () => {
     const { sandbox } = asrHarness(
       () => [response(429, 'slow down'), response(200, qwenBody)],
@@ -338,18 +472,109 @@ describe('transcribeInParallel', () => {
     expect(logged.map((l) => l.event)).toContain('transcription.fetch_all_failed')
   })
 
-  it('skips Qwen and says so when the base64 audio would blow the payload cap', () => {
+  it('skips Qwen and says so when audio is over the cap and cannot be split', () => {
+    // Not a WAV, so there is no way to cut it down to Alibaba's 10 MB.
+    const opaque = new Array(11 * 1024 * 1024).fill(7)
     const { sandbox, logged } = harness({
       UrlFetchApp: { fetchAll: vi.fn(() => [response(200, elevenBody)]), fetch: vi.fn() },
-      Utilities: { base64Encode: () => 'a'.repeat(36 * 1024 * 1024), sleep: () => {} },
     })
 
-    const result = run(sandbox)
+    const result = sandbox.transcribeInParallel({
+      captureId: 'dograh-1',
+      audioBlob: { ...wavBlob(opaque), getName: () => 'audio.mp3' },
+      format: 'mp3',
+      keyterms: [],
+      elevenLabsKey: 'xi-key',
+      openRouterKey: 'or-key',
+    })
 
     const requests = (sandbox.UrlFetchApp.fetchAll as ReturnType<typeof vi.fn>).mock.calls[0][0]
     expect(requests).toHaveLength(1)
     expect(result.qwen).toBeUndefined()
-    expect(logged.map((l) => l.event)).toContain('transcription.audio_too_large')
+    const skipped = logged.find((l) => l.event === 'transcription.audio_too_large')
+    expect(skipped?.fields.splittable).toBe(false)
+  })
+})
+
+describe('probeWav / sliceWav', () => {
+  it('reads the format off a real header', () => {
+    const { sandbox } = harness()
+
+    const probe = sandbox.probeWav(makeWav({ seconds: 3, sampleRate: 8000 }))
+
+    expect(probe.sampleRate).toBe(8000)
+    expect(probe.channels).toBe(1)
+    expect(probe.byteRate).toBe(16000)
+    expect(probe.seconds).toBeCloseTo(3, 5)
+  })
+
+  it('refuses anything that is not uncompressed PCM WAV', () => {
+    const { sandbox } = harness()
+    const compressed = makeWav({ seconds: 1 })
+    compressed[20] = 2 // fmt.format: not PCM
+
+    expect(sandbox.probeWav(compressed)).toBeNull()
+    expect(sandbox.probeWav(bytesOf('ID3 this is an mp3'))).toBeNull()
+    expect(sandbox.probeWav([])).toBeNull()
+  })
+
+  it('cuts a slice that is itself a valid WAV of the right length', () => {
+    const { sandbox } = harness()
+    const wav = makeWav({ seconds: 10, sampleRate: 8000 })
+    const probe = sandbox.probeWav(wav)
+
+    const slice = sandbox.sliceWav(wav, probe, 2, 5)
+    const reprobed = sandbox.probeWav(slice)
+
+    expect(reprobed.seconds).toBeCloseTo(3, 5)
+    expect(reprobed.sampleRate).toBe(probe.sampleRate)
+    expect(reprobed.channels).toBe(probe.channels)
+  })
+
+  it('clamps a slice that runs past the end of the data', () => {
+    const { sandbox } = harness()
+    const wav = makeWav({ seconds: 10 })
+    const probe = sandbox.probeWav(wav)
+
+    expect(sandbox.probeWav(sandbox.sliceWav(wav, probe, 8, 999)).seconds).toBeCloseTo(2, 5)
+  })
+
+  it('splits losslessly — every PCM byte lands in exactly one slice', () => {
+    const { sandbox } = harness()
+    const wav = makeWav({ seconds: 9, sampleRate: 100 })
+    const probe = sandbox.probeWav(wav)
+
+    const slices = [
+      sandbox.sliceWav(wav, probe, 0, 3),
+      sandbox.sliceWav(wav, probe, 3, 6),
+      sandbox.sliceWav(wav, probe, 6, 9),
+    ]
+    const pcm = slices.reduce((total, slice) => total + (slice.length - 44), 0)
+
+    expect(pcm).toBe(probe.dataSize)
+  })
+})
+
+describe('splitForQwen', () => {
+  it('sends short audio whole', () => {
+    const { sandbox } = harness()
+    const wav = makeWav({ seconds: 60, sampleRate: 100 })
+
+    expect(sandbox.splitForQwen(wav, sandbox.probeWav(wav))).toHaveLength(1)
+  })
+
+  it("cuts past Alibaba's 300-second cap", () => {
+    const { sandbox } = harness()
+    const wav = makeWav({ seconds: 700, sampleRate: 100 })
+
+    // 700s at 300s per slice: 300 + 300 + 100.
+    expect(sandbox.splitForQwen(wav, sandbox.probeWav(wav))).toHaveLength(3)
+  })
+
+  it('gives up on unsplittable audio that is over the byte cap', () => {
+    const { sandbox } = harness()
+
+    expect(sandbox.splitForQwen(new Array(11 * 1024 * 1024).fill(7), null)).toEqual([])
   })
 })
 
@@ -544,7 +769,7 @@ describe('runTranscriptionPass', () => {
   }) {
     const folder = fakeFolder('2026-08-26 Henderson dograh-1', 'call-1')
     const root = fakeFolder('root', 'root-1')
-    const audio = { getName: () => 'audio.wav', getBlob: () => ({ getBytes: () => [1] }) }
+    const audio = { getName: () => 'audio.wav', getBlob: () => wavBlob(makeWav({ seconds: 1 })) }
 
     const responses: unknown[] = []
     if (options.eleven === null) responses.push(response(500, 'down'))
@@ -565,7 +790,11 @@ describe('runTranscriptionPass', () => {
         getFileById: () => audio,
       },
       UrlFetchApp: { fetchAll: () => responses, fetch: () => null },
-      Utilities: { base64Encode: () => 'AAAA', sleep: () => {} },
+      Utilities: {
+        base64Encode: (bytes: number[]) => 'b64-' + bytes.length,
+        newBlob: (text: string) => ({ getBytes: () => bytesOf(text) }),
+        sleep: () => {},
+      },
       loadGlossary: () => [{ term: 'drip edge' }],
       guessAudioExtension: () => 'wav',
       buildGatedMasterTranscript:
@@ -765,11 +994,15 @@ describe('unconfigured vendors', () => {
           getFolderById: (id: string) => (id === 'call-1' ? folder : root),
           getFileById: () => ({
             getName: () => 'audio.wav',
-            getBlob: () => ({ getBytes: () => [1] }),
+            getBlob: () => wavBlob(makeWav({ seconds: 1 })),
           }),
         },
         UrlFetchApp: { fetchAll: () => [response(200, elevenBody)], fetch: () => null },
-        Utilities: { base64Encode: () => 'AAAA', sleep: () => {} },
+        Utilities: {
+          base64Encode: (bytes: number[]) => 'b64-' + bytes.length,
+          newBlob: (text: string) => ({ getBytes: () => bytesOf(text) }),
+          sleep: () => {},
+        },
         loadGlossary: () => [],
         guessAudioExtension: () => 'wav',
         buildGatedMasterTranscript: () => null,

@@ -24,7 +24,6 @@ var TRANSCRIPTION_MODELS = {
     label: 'Qwen3 ASR Flash',
     vendor: 'openrouter',
     provider: 'alibaba',
-    vocabField: 'context',
   },
 }
 
@@ -35,17 +34,24 @@ var TRANSCRIPTION_MODELS = {
 // spoke). Defined once, consumed by both the merge prompt and the fallback.
 var SOURCE_PRECEDENCE = ['elevenlabs', 'qwen', 'dograh']
 
-// ElevenLabs' documented keyterm limits.
+// ElevenLabs' documented keyterm rules. MAX_CHARS is 49 because the limit is
+// "less than 50 characters", not "at most 50" — a term of exactly 50 is refused.
 var KEYTERM_MAX_TERMS = 1000
-var KEYTERM_MAX_CHARS = 50
+var KEYTERM_MAX_CHARS = 49
+var KEYTERM_MAX_WORDS = 5
+var KEYTERM_BANNED_CHARS = /[<>{}[\]\\]/g
 var CLAIM_KEYTERM_FIELDS = ['insured_last_name', 'address_line1', 'city', 'carrier', 'claim_number']
 
-// UrlFetchApp caps a payload at 50MB. Qwen takes the audio as base64 inside a
-// JSON body, so a long call can cross that; 16kHz 16-bit mono wav is ~1.9MB/min,
-// which puts 50MB of base64 at roughly 17 minutes. Skip Qwen past this guard and
-// merge on what is left. ElevenLabs is unaffected — it takes the raw blob as
-// multipart, not base64.
-var QWEN_MAX_BASE64_CHARS = 35 * 1024 * 1024
+// Alibaba caps qwen3-asr-flash at 10 MB and 5 minutes per request and enforces
+// it upstream, where OpenRouter masks the rejection as an opaque "Provider
+// returned 400" with nothing to debug from. So the split happens before the
+// send: audio past either cap is cut into slices that each fit, and the slice
+// transcripts are concatenated in order. ElevenLabs is unaffected — it takes
+// the whole blob as multipart and documents a 5 GB ceiling.
+var QWEN_MAX_SECONDS = 300
+var QWEN_MAX_BYTES = 10 * 1024 * 1024
+var WAV_HEADER_BYTES = 44
+var WAV_PCM_FORMAT = 1
 
 var TRANSCRIPTION_RETRY_BACKOFF_MS = 5000
 
@@ -96,7 +102,7 @@ function buildKeyterms(claim, glossary, adjusterName) {
   var capped = []
 
   for (var i = 0; i < terms.length && capped.length < KEYTERM_MAX_TERMS; i++) {
-    var term = terms[i].trim().slice(0, KEYTERM_MAX_CHARS)
+    var term = sanitizeKeyterm(terms[i])
     if (!term) continue
 
     var key = term.toLowerCase()
@@ -107,6 +113,23 @@ function buildKeyterms(claim, glossary, adjusterName) {
   }
 
   return capped
+}
+
+// ElevenLabs rejects the whole request if any single term breaks its rules, so
+// every term is made to fit rather than left to fail the batch: banned
+// characters out, at most 5 words, under 50 characters.
+function sanitizeKeyterm(value) {
+  var cleaned = String(value || '')
+    .replace(KEYTERM_BANNED_CHARS, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (!cleaned) return ''
+
+  var words = cleaned.split(' ')
+  if (words.length > KEYTERM_MAX_WORDS) cleaned = words.slice(0, KEYTERM_MAX_WORDS).join(' ')
+
+  return cleaned.slice(0, KEYTERM_MAX_CHARS).trim()
 }
 
 // ---------------------------------------------------------------------------
@@ -241,31 +264,65 @@ function appendManifestRun(folder, run) {
 // Parallel ASR fan-out
 // ---------------------------------------------------------------------------
 
+// keyterms is an array field: ElevenLabs wants one `keyterms` part per term.
+// UrlFetchApp's payload object cannot express a repeated form field, and the
+// JSON array this used to send in a single part is exactly what produced
+// "All keywords must be less than 50 characters" — the server measured the
+// whole serialized array against its per-term limit. Hence the hand-built body.
 function buildElevenLabsRequest(audioBlob, keyterms, apiKey) {
-  // No contentType: handing UrlFetchApp a payload object containing a Blob is
-  // what makes it build the multipart/form-data body ElevenLabs expects.
+  var boundary = 'adjusterform' + Date.now()
+  var fields = [
+    { name: 'model_id', value: TRANSCRIPTION_MODELS.elevenlabs.id },
+    { name: 'language_code', value: 'en' },
+    { name: 'diarize', value: 'true' },
+    { name: 'num_speakers', value: '2' },
+    { name: 'timestamps_granularity', value: 'word' },
+  ]
+
+  ;(keyterms || []).forEach(function (term) {
+    fields.push({ name: 'keyterms', value: term })
+  })
+
   return {
     url: ELEVENLABS_URL,
     method: 'post',
+    contentType: 'multipart/form-data; boundary=' + boundary,
     headers: { 'xi-api-key': apiKey },
-    payload: {
-      file: audioBlob,
-      model_id: TRANSCRIPTION_MODELS.elevenlabs.id,
-      language_code: 'en',
-      diarize: 'true',
-      num_speakers: '2',
-      timestamps_granularity: 'word',
-      keyterms: JSON.stringify(keyterms || []),
-    },
+    payload: buildMultipartBody(boundary, fields, 'file', audioBlob),
     muteHttpExceptions: true,
   }
 }
 
-function buildQwenRequest(audioBase64, format, keyterms, apiKey) {
+function buildMultipartBody(boundary, fields, fileFieldName, fileBlob) {
+  var head = []
+
+  fields.forEach(function (field) {
+    head.push('--' + boundary)
+    head.push('Content-Disposition: form-data; name="' + field.name + '"')
+    head.push('')
+    head.push(field.value)
+  })
+
+  head.push('--' + boundary)
+  head.push(
+    'Content-Disposition: form-data; name="' +
+      fileFieldName +
+      '"; filename="' +
+      (fileBlob.getName() || 'audio.wav') +
+      '"',
+  )
+  head.push('Content-Type: ' + (fileBlob.getContentType() || 'application/octet-stream'))
+  head.push('')
+  head.push('')
+
+  return []
+    .concat(Utilities.newBlob(head.join('\r\n')).getBytes())
+    .concat(fileBlob.getBytes())
+    .concat(Utilities.newBlob('\r\n--' + boundary + '--\r\n').getBytes())
+}
+
+function buildQwenRequest(audioBase64, format, apiKey) {
   var model = TRANSCRIPTION_MODELS.qwen
-  var providerOptions = {}
-  providerOptions[model.provider] = {}
-  providerOptions[model.provider][model.vocabField] = (keyterms || []).join(', ')
 
   return {
     url: OPENROUTER_TRANSCRIPTION_URL,
@@ -276,16 +333,168 @@ function buildQwenRequest(audioBase64, format, keyterms, apiKey) {
       model: model.id,
       input_audio: { data: audioBase64, format: format || 'wav' },
       language: 'en',
-      // allow_fallbacks: false because the keyterm biasing only exists on the
-      // alibaba route — a silent fallback would drop it without saying so.
-      provider: {
-        order: [model.provider],
-        allow_fallbacks: false,
-        options: providerOptions,
-      },
+      // Alibaba is the only provider serving this model, and OpenRouter's
+      // endpoints API declares no passthrough parameters for it, so there is
+      // no route for keyterm biasing here and nothing to fall back to. Biasing
+      // is an ElevenLabs-only capability in this pipeline.
+      provider: { order: [model.provider], allow_fallbacks: false },
     }),
     muteHttpExceptions: true,
   }
+}
+
+// ---------------------------------------------------------------------------
+// WAV probing and slicing
+//
+// There is no ffmpeg in Apps Script, so a slice has to be cut out of the PCM
+// payload by hand. That only works for uncompressed WAV: a compressed container
+// cannot be cut on a byte boundary, and probeWav returns null for one so the
+// caller never tries.
+// ---------------------------------------------------------------------------
+
+// Blob.getBytes() hands back Java's signed bytes, so every read masks to 0-255.
+function readByte(bytes, offset) {
+  return bytes[offset] & 0xff
+}
+
+function readTag(bytes, offset) {
+  var tag = ''
+  for (var i = 0; i < 4; i++) tag += String.fromCharCode(readByte(bytes, offset + i))
+  return tag
+}
+
+function readUint16(bytes, offset) {
+  return readByte(bytes, offset) + readByte(bytes, offset + 1) * 256
+}
+
+// Multiplication rather than bit shifts: a 32-bit size with the high bit set
+// would come back negative through <<.
+function readUint32(bytes, offset) {
+  return (
+    readByte(bytes, offset) +
+    readByte(bytes, offset + 1) * 256 +
+    readByte(bytes, offset + 2) * 65536 +
+    readByte(bytes, offset + 3) * 16777216
+  )
+}
+
+// Walks the RIFF chunk list rather than assuming a canonical 44-byte header:
+// real recorders emit LIST/fact chunks ahead of data, and a fixed offset would
+// read the wrong bytes as audio. Returns null for anything not PCM WAV.
+function probeWav(bytes) {
+  if (!bytes || bytes.length < WAV_HEADER_BYTES) return null
+  if (readTag(bytes, 0) !== 'RIFF' || readTag(bytes, 8) !== 'WAVE') return null
+
+  var fmt = null
+  var dataOffset = 0
+  var dataSize = 0
+  var offset = 12
+
+  while (offset + 8 <= bytes.length) {
+    var tag = readTag(bytes, offset)
+    var size = readUint32(bytes, offset + 4)
+    var body = offset + 8
+
+    if (tag === 'fmt ' && size >= 16) {
+      fmt = {
+        format: readUint16(bytes, body),
+        channels: readUint16(bytes, body + 2),
+        sampleRate: readUint32(bytes, body + 4),
+        byteRate: readUint32(bytes, body + 8),
+        blockAlign: readUint16(bytes, body + 12),
+        bitsPerSample: readUint16(bytes, body + 14),
+      }
+    } else if (tag === 'data') {
+      dataOffset = body
+      dataSize = Math.min(size, bytes.length - body)
+      break
+    }
+
+    offset = body + size + (size % 2)
+  }
+
+  if (!fmt || fmt.format !== WAV_PCM_FORMAT || !fmt.byteRate || !dataOffset) return null
+
+  return {
+    channels: fmt.channels,
+    sampleRate: fmt.sampleRate,
+    byteRate: fmt.byteRate,
+    blockAlign: fmt.blockAlign || (fmt.channels * fmt.bitsPerSample) / 8,
+    bitsPerSample: fmt.bitsPerSample,
+    dataOffset: dataOffset,
+    dataSize: dataSize,
+    seconds: dataSize / fmt.byteRate,
+  }
+}
+
+// Cuts [startSec, endSec) out of the payload and gives it a fresh canonical
+// header, so each slice is a standalone WAV. Offsets snap down to a block
+// boundary: a cut through the middle of a sample shifts every sample after it
+// and turns the rest of the slice into noise.
+function sliceWav(bytes, probe, startSec, endSec) {
+  var align = probe.blockAlign || 1
+  var from = snapToBlock(Math.floor(startSec * probe.byteRate), align)
+  var to = snapToBlock(Math.ceil(endSec * probe.byteRate), align)
+
+  if (to > probe.dataSize) to = snapToBlock(probe.dataSize, align)
+  if (from > to) from = to
+
+  var pcm = bytes.slice(probe.dataOffset + from, probe.dataOffset + to)
+  return buildWavHeader(probe, pcm.length).concat(pcm)
+}
+
+function snapToBlock(value, align) {
+  return Math.max(0, value - (value % align))
+}
+
+function buildWavHeader(probe, pcmLength) {
+  return []
+    .concat(tagBytes('RIFF'), uint32Bytes(36 + pcmLength), tagBytes('WAVE'))
+    .concat(tagBytes('fmt '), uint32Bytes(16), uint16Bytes(WAV_PCM_FORMAT))
+    .concat(uint16Bytes(probe.channels), uint32Bytes(probe.sampleRate))
+    .concat(uint32Bytes(probe.byteRate), uint16Bytes(probe.blockAlign))
+    .concat(uint16Bytes(probe.bitsPerSample))
+    .concat(tagBytes('data'), uint32Bytes(pcmLength))
+}
+
+function tagBytes(tag) {
+  var out = []
+  for (var i = 0; i < tag.length; i++) out.push(tag.charCodeAt(i))
+  return out
+}
+
+function uint16Bytes(value) {
+  return [value & 0xff, (value >> 8) & 0xff]
+}
+
+function uint32Bytes(value) {
+  return [value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff, (value >> 24) & 0xff]
+}
+
+// The tighter of Alibaba's two caps wins: 300 seconds, or however many whole
+// seconds fit in 10 MB at this file's byte rate once the header is paid for.
+function qwenChunkSeconds(probe) {
+  var byBytes = Math.floor((QWEN_MAX_BYTES - WAV_HEADER_BYTES) / probe.byteRate)
+  return Math.max(0, Math.min(QWEN_MAX_SECONDS, byBytes))
+}
+
+// Returns the slices to send, or an empty list when the audio cannot be made to
+// fit — unsplittable because it is not PCM WAV, and over a cap.
+function splitForQwen(bytes, probe) {
+  var fitsBytes = bytes.length <= QWEN_MAX_BYTES
+
+  if (!probe) return fitsBytes ? [bytes] : []
+  if (fitsBytes && probe.seconds <= QWEN_MAX_SECONDS) return [bytes]
+
+  var span = qwenChunkSeconds(probe)
+  if (span <= 0) return []
+
+  var chunks = []
+  for (var start = 0; start < probe.seconds; start += span) {
+    chunks.push(sliceWav(bytes, probe, start, Math.min(start + span, probe.seconds)))
+  }
+
+  return chunks
 }
 
 // Issues both ASR calls through one fetchAll. Failure is per-source and never
@@ -294,69 +503,74 @@ function buildQwenRequest(audioBase64, format, keyterms, apiKey) {
 function transcribeInParallel(input) {
   var captureId = input.captureId || ''
   var keyterms = input.keyterms || []
-  var requests = []
-  var labels = []
+  // One entry per HTTP request. Qwen contributes several when the audio has to
+  // be split, so this is a flat plan rather than one request per source.
+  var plan = []
 
   // A missing key is a configuration state, not a failure: the default mode on
   // first deploy is shadow, and a deploy that has not set ELEVENLABS_API_KEY yet
-  // should lose that one source, not fail every job it touches.
   if (input.elevenLabsKey) {
-    requests.push(buildElevenLabsRequest(input.audioBlob, keyterms, input.elevenLabsKey))
-    labels.push('elevenlabs')
+    plan.push({
+      source: 'elevenlabs',
+      request: buildElevenLabsRequest(input.audioBlob, keyterms, input.elevenLabsKey),
+    })
   } else {
     logEvent('transcription.source_unconfigured', { capture_id: captureId, source: 'elevenlabs' })
   }
 
-  var audioBase64 = input.openRouterKey ? encodeAudioBase64(input.audioBlob, captureId) : ''
-
-  if (!input.openRouterKey) {
+  if (input.openRouterKey) {
+    planQwenRequests(plan, input, captureId)
+  } else {
     logEvent('transcription.source_unconfigured', { capture_id: captureId, source: 'qwen' })
   }
 
-  if (audioBase64 && audioBase64.length <= QWEN_MAX_BASE64_CHARS) {
-    requests.push(buildQwenRequest(audioBase64, input.format, keyterms, input.openRouterKey))
-    labels.push('qwen')
-  } else if (audioBase64) {
-    logEvent('transcription.audio_too_large', {
-      capture_id: captureId,
-      base64_chars: audioBase64.length,
-      limit: QWEN_MAX_BASE64_CHARS,
-    })
-  }
-
-  if (!requests.length) return { fetch_mode: 'none' }
+  if (!plan.length) return { fetch_mode: 'none' }
 
   var startedAt = Date.now()
-  var batch = fetchAllWithFallback(requests, captureId)
-  // fetchAll issues both concurrently, so there is one wall clock for the pair
-  // rather than a latency per source. The sequential fallback shares it too;
-  // fetch_mode in the manifest is what says which of the two you are reading.
+  var batch = fetchAllWithFallback(
+    plan.map(function (entry) {
+      return entry.request
+    }),
+    captureId,
+  )
+  // fetchAll issues every request concurrently, so there is one wall clock for
+  // the batch rather than a latency per source. The sequential fallback shares
+  // it too; fetch_mode in the manifest says which of the two you are reading.
   var latencyMs = Date.now() - startedAt
 
-  var results = {}
+  var parts = {}
 
-  labels.forEach(function (label, index) {
-    var result = resolveSourceResponse(label, batch.responses[index])
+  plan.forEach(function (entry, index) {
+    var result = resolveSourceResponse(entry.source, batch.responses[index])
 
     if (!result.ok && isRetryableStatus(result.status)) {
       logEvent('transcription.retry', {
         capture_id: captureId,
-        source: label,
+        source: entry.source,
         status: result.status,
       })
       Utilities.sleep(TRANSCRIPTION_RETRY_BACKOFF_MS)
-      result = resolveSourceResponse(label, safeFetch(requests[index]))
+      result = resolveSourceResponse(entry.source, safeFetch(entry.request))
     }
 
+    if (!parts[entry.source]) parts[entry.source] = []
+    parts[entry.source].push(result)
+  })
+
+  var results = {}
+
+  Object.keys(parts).forEach(function (source) {
+    var result = combineChunks(source, parts[source])
     result.latency_ms = latencyMs
-    results[label] = result
+    results[source] = result
 
     logEvent('transcription.source_finished', {
       capture_id: captureId,
-      source: label,
+      source: source,
       ok: result.ok,
       status: result.status,
       chars: String(result.text || '').length,
+      chunks: parts[source].length,
       latency_ms: latencyMs,
       // The vendor's own words for why it refused. Without this a 400 logs as
       // ok:false with no reason attached, and the body resolveSourceResponse
@@ -370,9 +584,89 @@ function transcribeInParallel(input) {
   return results
 }
 
-function encodeAudioBase64(audioBlob, captureId) {
+// Qwen's slice of the plan. Everything is base64-encoded up front so a failure
+// to encode drops the source cleanly instead of sending a transcript with a
+// hole where one slice should have been.
+function planQwenRequests(plan, input, captureId) {
+  var bytes = input.audioBlob.getBytes()
+  var probe = probeWav(bytes)
+  var chunks = splitForQwen(bytes, probe)
+
+  if (!chunks.length) {
+    logEvent('transcription.audio_too_large', {
+      capture_id: captureId,
+      bytes: bytes.length,
+      seconds: probe ? probe.seconds : '',
+      max_bytes: QWEN_MAX_BYTES,
+      max_seconds: QWEN_MAX_SECONDS,
+      splittable: Boolean(probe),
+    })
+    return
+  }
+
+  var encoded = []
+
+  for (var i = 0; i < chunks.length; i++) {
+    var base64 = encodeAudioBase64(chunks[i], captureId)
+    if (!base64) return
+    encoded.push(base64)
+  }
+
+  if (encoded.length > 1) {
+    logEvent('transcription.audio_split', {
+      capture_id: captureId,
+      chunks: encoded.length,
+      seconds: probe.seconds,
+      chunk_seconds: qwenChunkSeconds(probe),
+    })
+  }
+
+  encoded.forEach(function (base64) {
+    plan.push({
+      source: 'qwen',
+      // A slice is always WAV whatever the original container was, because
+      // sliceWav writes its own header.
+      request: buildQwenRequest(base64, probe ? 'wav' : input.format, input.openRouterKey),
+    })
+  })
+}
+
+// A split source collapses back into the single result the rest of the pass
+// expects. One failed slice fails the whole source: a transcript with a silent
+// gap in the middle is worse than none, because the merge would read the gap as
+// the sources agreeing rather than as missing audio.
+function combineChunks(source, parts) {
+  if (parts.length === 1) return parts[0]
+
+  var failed = null
+  var texts = []
+
+  parts.forEach(function (part) {
+    if (!part.ok && !failed) failed = part
+    texts.push(String(part.text || '').trim())
+  })
+
+  if (failed) {
+    return {
+      source: source,
+      text: '',
+      ok: false,
+      status: failed.status,
+      error: failed.error,
+    }
+  }
+
+  return {
+    source: source,
+    text: texts.filter(Boolean).join(' '),
+    ok: true,
+    status: 200,
+  }
+}
+
+function encodeAudioBase64(bytes, captureId) {
   try {
-    return Utilities.base64Encode(audioBlob.getBytes())
+    return Utilities.base64Encode(bytes)
   } catch (err) {
     logEvent('transcription.audio_encode_failed', {
       capture_id: captureId,
