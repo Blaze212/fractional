@@ -93,7 +93,7 @@ accurate for that turn, so a span drawn from a Qwen- or Dograh-won turn won't
 literal-substring-match the ElevenLabs word array even though ElevenLabs
 transcribed the same turn, on the same recording, at roughly the same time.
 Since every source reads the same audio clip, the fix is to fall back to
-*when* rather than insisting on exact-text match: if the words don't match,
+_when_ rather than insisting on exact-text match: if the words don't match,
 use that turn's ElevenLabs-derived time range instead, and pad more
 generously to absorb the timing slop between sources.
 
@@ -219,15 +219,15 @@ for this spec.
 
 ## Edge Cases & Risk
 
-| Risk                                                                                                                                  | Likelihood | Impact | Mitigation                                                                                                                                                                     |
-| ------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `source_span` text matches multiple locations in the transcript (repeated phrase)                                                     | L-M        | M      | Take the first match; log an ambiguous-match warning rather than guessing — a slightly-off clip is recoverable by the adjuster reading the quote anyway, a thrown error is not |
-| Job fails outright because ElevenLabs' ASR call errors (Phase 0's backwards-incompatible change) | M | H | This is the intended tradeoff (see Architecture), but track job-failure-rate before/after Phase 0 ships, standalone, before Phase 1 depends on it |
-| Tier-2 (turn-position) fallback used for a large fraction of spans — clip precision degrades broadly, not just per-item | M | M | Log tier-1 vs. tier-2 usage rate per job; if tier-2 dominates in practice, that's a signal the merge is favoring non-ElevenLabs wording often enough to revisit, not just an edge case |
-| Turn boundary tracking breaks or isn't threaded through the merge correctly, causing tier-2 to select the wrong turn's word range | L | M | Unit-test turn-index threading explicitly; resolver returns null rather than guessing if `turnIndex` can't be resolved to any words |
-| Padding pushes start below 0 or end past recording length                                                                             | M          | L      | Clamp to `[0, durationMs]`                                                                                                                                                     |
-| Recording upload fails or is slow for long calls                                                                                      | L          | M      | Ingest proceeds without blocking on the upload; clip playback simply unavailable until upload completes (async, retried)                                                       |
-| Signed URL exposes recording audio (containing PII) beyond intended access window                                                     | L          | H      | Short-lived signed URLs generated per request, not stored/cached long-term; private bucket, never public                                                                       |
+| Risk                                                                                                                              | Likelihood | Impact | Mitigation                                                                                                                                                                             |
+| --------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `source_span` text matches multiple locations in the transcript (repeated phrase)                                                 | L-M        | M      | Take the first match; log an ambiguous-match warning rather than guessing — a slightly-off clip is recoverable by the adjuster reading the quote anyway, a thrown error is not         |
+| Job fails outright because ElevenLabs' ASR call errors (Phase 0's backwards-incompatible change)                                  | M          | H      | This is the intended tradeoff (see Architecture), but track job-failure-rate before/after Phase 0 ships, standalone, before Phase 1 depends on it                                      |
+| Tier-2 (turn-position) fallback used for a large fraction of spans — clip precision degrades broadly, not just per-item           | M          | M      | Log tier-1 vs. tier-2 usage rate per job; if tier-2 dominates in practice, that's a signal the merge is favoring non-ElevenLabs wording often enough to revisit, not just an edge case |
+| Turn boundary tracking breaks or isn't threaded through the merge correctly, causing tier-2 to select the wrong turn's word range | L          | M      | Unit-test turn-index threading explicitly; resolver returns null rather than guessing if `turnIndex` can't be resolved to any words                                                    |
+| Padding pushes start below 0 or end past recording length                                                                         | M          | L      | Clamp to `[0, durationMs]`                                                                                                                                                             |
+| Recording upload fails or is slow for long calls                                                                                  | L          | M      | Ingest proceeds without blocking on the upload; clip playback simply unavailable until upload completes (async, retried)                                                               |
+| Signed URL exposes recording audio (containing PII) beyond intended access window                                                 | L          | H      | Short-lived signed URLs generated per request, not stored/cached long-term; private bucket, never public                                                                               |
 
 ## Acceptance Criteria
 

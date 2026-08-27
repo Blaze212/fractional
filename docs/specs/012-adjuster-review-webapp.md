@@ -110,21 +110,21 @@ separation — once the two Edge Functions' payload shapes are settled.
 New table, `adjuster_review_items` (see `new-migration` skill for exact
 migration conventions):
 
-| column           | type                       | notes                                                                                |
-| ---------------- | -------------------------- | ------------------------------------------------------------------------------------ |
-| `id`             | uuid, pk                   |                                                                                      |
-| `user_id`        | uuid, not null              | references `auth.users(id)` — the owning adjuster; see RLS below                     |
-| `job_id`         | text                       | Apps Script `captureId`, not a Supabase FK — the job record of truth stays the Sheet |
-| `tag`            | text                       | matches `tagSchema` key from `templateData.js`                                       |
-| `label`          | text                       |                                                                                      |
+| column           | type                       | notes                                                                                                                                                                                                                                                                              |
+| ---------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`             | uuid, pk                   |                                                                                                                                                                                                                                                                                    |
+| `user_id`        | uuid, not null             | references `auth.users(id)` — the owning adjuster; see RLS below                                                                                                                                                                                                                   |
+| `job_id`         | text                       | Apps Script `captureId`, not a Supabase FK — the job record of truth stays the Sheet                                                                                                                                                                                               |
+| `tag`            | text                       | matches `tagSchema` key from `templateData.js`                                                                                                                                                                                                                                     |
+| `label`          | text                       |                                                                                                                                                                                                                                                                                    |
 | `section`        | text                       | see note below — section names are sourced dynamically from `templateData.js`/`enums.json`, this list is illustrative, not exhaustive (e.g. `enums.json` also has Interior, Personal Property, Mitigation, Overhead & Profit, Salvage & Subrogation, Coinsurance as of 2026-08-27) |
-| `source_span`    | text, nullable             | the "heard" quote — nullable because not every review item has one, see Phase 1      |
-| `confidence`     | text                       | high / medium / low / dograh / calendar                                              |
-| `status`         | text                       | `pending` / `accepted` / `rejected`, default `pending`                               |
-| `resolved_value` | text, nullable             | value to inject on accept, defaults to `source_span`                                 |
-| `decided_by`     | uuid, nullable             | references `auth.users`                                                              |
-| `decided_at`     | timestamptz, nullable      |                                                                                      |
-| `created_at`     | timestamptz, default now() |                                                                                      |
+| `source_span`    | text, nullable             | the "heard" quote — nullable because not every review item has one, see Phase 1                                                                                                                                                                                                    |
+| `confidence`     | text                       | high / medium / low / dograh / calendar                                                                                                                                                                                                                                            |
+| `status`         | text                       | `pending` / `accepted` / `rejected`, default `pending`                                                                                                                                                                                                                             |
+| `resolved_value` | text, nullable             | value to inject on accept, defaults to `source_span`                                                                                                                                                                                                                               |
+| `decided_by`     | uuid, nullable             | references `auth.users`                                                                                                                                                                                                                                                            |
+| `decided_at`     | timestamptz, nullable      |                                                                                                                                                                                                                                                                                    |
+| `created_at`     | timestamptz, default now() |                                                                                                                                                                                                                                                                                    |
 
 Add `unique (job_id, tag)` — the ingest Edge Function's upsert (`ON CONFLICT`)
 depends on this constraint existing; without it, upserts either silently
@@ -245,7 +245,7 @@ feature isn't usable end-to-end until Phase 3 lands.
 | Two review sessions open for the same job (adjuster on two tabs/devices)                                                                                | L                | M      | Last-write-wins on `status`/`decided_at` is acceptable at single-user scope; note as a known gap, not solved here                                                                                                                   |
 | `source_span` text used for `resolved_value` doesn't match what the adjuster actually wants injected (e.g. needs light editing, not just accept/reject) | M                | M      | Out of scope for v1 — accept injects `source_span` verbatim; if this proves too rigid in practice, a follow-up spec can add inline editing of `resolved_value`                                                                      |
 | Apps Script and Supabase schema drift (a `tagSchema` field renamed/removed without updating ingest)                                                     | M                | M      | Ingest function validates incoming tags against a known set (or just stores unknown tags — flag but don't fail) rather than hard-failing the whole payload                                                                          |
-| `ADJUSTER_BRIDGE_SECRET` leaked or brute-forced                                                                                                         | L                | H      | Distinct value from `WEBHOOK_SECRET` (never reused), Doppler-managed, rotatable independently; a leak only grants write access to review-decision ingest/finalize, not the broader webhook surface                                 |
+| `ADJUSTER_BRIDGE_SECRET` leaked or brute-forced                                                                                                         | L                | H      | Distinct value from `WEBHOOK_SECRET` (never reused), Doppler-managed, rotatable independently; a leak only grants write access to review-decision ingest/finalize, not the broader webhook surface                                  |
 
 ## Acceptance Criteria
 
@@ -256,7 +256,7 @@ feature isn't usable end-to-end until Phase 3 lands.
 - [ ] `adjuster-review-ingest` Edge Function rejects requests without a valid
       `ADJUSTER_BRIDGE_SECRET`, and upserts correctly on `(job_id, tag)`
 - [ ] Apps Script POSTs every field where `!field.valid || field.confidence
-      === 'medium'` after validation (not filtered on `source_span`
+    === 'medium'` after validation (not filtered on `source_span`
       presence), without blocking or breaking the existing unconditional
       `generateDoc()` path if the POST fails
 - [ ] Review UI renders sections, shows pending items with label + quoted
