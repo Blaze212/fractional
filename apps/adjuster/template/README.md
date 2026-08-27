@@ -464,3 +464,173 @@ and `apps/bh-systems/public/texml/single-stage-aigather.xml` (Phase 3)
 still reference the old `mortgage_company` field and don't reflect
 these wording changes — both are exploratory/non-Dograh call flows,
 out of scope for this pass.
+
+## Phase 5 — per-component status fields replace the variant-nested findings lines
+
+Brandon edited the live Ibis template Google Doc directly — not the repo's
+`.docx`/`template.flattened.txt` copies — adding nine new placeholders under
+Roof and Exterior: `{{soft_metal_status}}`, `{{front_slope_status}}`,
+`{{right_slope_status}}`, `{{back_slope_status}}`, `{{left_slope_status}}`
+under Roof, and `{{front_elevation_status}}`, `{{right_elevation_status}}`,
+`{{back_elevation_status}}`, `{{left_elevation_status}}` under Exterior. Doc
+read 2026-08-27
+(`https://docs.google.com/document/d/1w_snnqh1iYxftHvD4zG15Sn6OecJ0uNBZQtWDPZT3Eg`):
+each is its own labeled line in the document body, always present — not
+nested inside `roof_status`/`exterior_status`'s variant text the way Phase 1
+built them.
+
+**This is a structural reversal of Phase 1's roof/exterior design, not an
+additive change.** Phase 1 collapsed per-slope/per-elevation findings into
+lines embedded conditionally inside the `shingle`/`affected` variant
+branches' own `text` (`roof_soft_metals`, `roof_front_slope`,
+`roof_right_slope`, `roof_back_slope`, `roof_left_slope`;
+`exterior_front_elevation`, `exterior_right_elevation`,
+`exterior_back_elevation`, `exterior_left_elevation` — enums.json:229–307),
+so those lines only ever appeared in the rendered doc when `roof_status ==
+shingle` / `exterior_status == affected`. The new doc instead prints all
+nine lines unconditionally, as top-level template placeholders analogous to
+`interior_damage_narrative`.
+
+**Urgent — this may already be breaking production.** `docgen.js`'s
+`findLeftoverTags()` check (docgen.js:29) fails the draft (`status:
+'failed'`) if any `{{tag}}` in the copied doc goes unreplaced. If the linked
+Google Doc is genuinely the one the `TEMPLATE_DOC_ID` Script Property points
+to — unconfirmed; Barton said "I believe" but this hasn't been checked
+against the live Apps Script Script Properties — every report generated
+since Brandon's edit will fail doc generation with `Unreplaced tags:
+soft_metal_status, front_slope_status, ...`, since none of these nine tags
+exist yet in `enums.json`/`prompt.js`. **First action item, before anything
+else below: confirm `TEMPLATE_DOC_ID` in the Apps Script editor against file
+ID `1w_snnqh1iYxftHvD4zG15Sn6OecJ0uNBZQtWDPZT3Eg`.**
+
+### Design calls that need a sanity check (ask Brandon before implementing)
+
+- **Renaming vs. duplicating.** This spec treats the nine new placeholders
+  as a rename+promotion of the nine Phase 1 fields (`roof_soft_metals` →
+  `soft_metal_status`, `roof_front_slope` → `front_slope_status`, etc.), not
+  new fields added alongside the old ones — the new doc's placeholders sit
+  in the exact same "Label: findings" position the old variant-nested lines
+  held, just promoted to the top level. If Brandon actually wants both the
+  old per-slope narrative (nested, conditional) and a new, separate status
+  concept, that's a larger change than this pass covers.
+- **Field type — still free narrative, or a real status enum?** The
+  `_status` suffix could signal these should become a closed enum (e.g.
+  `no_damage` / `damage_noted` / `not_inspected`) with a separate narrative
+  field elsewhere, rather than the free-text findings prose Phase 1 used.
+  This spec keeps `type: "narrative"` — same content depth Brandon already
+  dictates ("front slope: minor granule loss, no exposed decking") — since
+  the doc's `Label: {{tag}}` rendering shape is identical to before and
+  nothing in the doc suggests a second field per component. Confirm this
+  reading with Brandon before implementing.
+- **Should these render when the section is `not_affected`?** Because these
+  nine lines are now unconditional body text, a `not_affected` roof or
+  exterior will still print `Soft Metals:`, `Front Slope:`, etc. with
+  nothing after the colon when left blank — the same "bare heading, no
+  content" cosmetic gap Phase 0 flagged for optional fields at section
+  scale, just recurring at line-item scale here. Recommend accepting it for
+  this pass (matches Phase 0's precedent) rather than teaching `docgen.js`
+  to drop blank `Label: ` lines, unless Brandon says the blank lines read as
+  unprofessional in practice.
+- **The `shingle`/`affected` variant text must drop its nested per-component
+  lines** now that those lines are promoted to top-level tags, or the
+  rendered doc will show each slope/elevation finding twice.
+
+### Concrete changes once the above is confirmed
+
+**`enums.json`** — rename and promote out of `roof_status.values[1].text`
+(the `shingle` branch, line 168): `roof_soft_metals` → `soft_metal_status`,
+`roof_front_slope` → `front_slope_status`, `roof_right_slope` →
+`right_slope_status`, `roof_back_slope` → `back_slope_status`,
+`roof_left_slope` → `left_slope_status`. Rename and promote out of
+`exterior_status.values[1].text` (the `affected` branch, line 280):
+`exterior_front_elevation` → `front_elevation_status`,
+`exterior_right_elevation` → `right_elevation_status`,
+`exterior_back_elevation` → `back_elevation_status`,
+`exterior_left_elevation` → `left_elevation_status`. Keep `type:
+"narrative"`, `required: false`, correct `section` on all nine — unchanged
+from Phase 1. Trim `roof_status.values[1].text` down to just the covering/
+age/condition/pitch sentence (drop the `"My inspection of the roof found
+the following:\nSoft metals: ..."` tail) and trim `exterior_status.values[1]
+.text` similarly — those lines move to the template body. `roof_narrative_
+freeform` (non-shingle roofs) is unaffected; the four slope lines still
+print underneath it, blank, since a non-shingle roof was never asked
+per-slope.
+
+**`template.flattened.txt`** — replace lines 18–19 (Roof) and 21–22
+(Exterior) to mirror the linked Google Doc exactly:
+
+```
+Roof
+{{roof_status}}
+
+Soft Metals: {{soft_metal_status}}
+Front Slope: {{front_slope_status}}
+Right Slope: {{right_slope_status}}
+Back Slope: {{back_slope_status}}
+Left Slope: {{left_slope_status}}
+
+Exterior
+{{exterior_status}}
+
+Front Elevation: {{front_elevation_status}}
+Right Elevation: {{right_elevation_status}}
+Back Elevation: {{back_elevation_status}}
+Left Elevation: {{left_elevation_status}}
+```
+
+Re-diff against the live doc immediately before implementing, in case
+Brandon edits it further in the meantime.
+
+**`prompt.js`** — no change needed to `formatTagList()`, which derives the
+tag list from `templateSpec` (i.e. `enums.json`) automatically. Add nine
+renamed `FIELD_GUIDANCE` entries (currently lines 119–133), carrying the
+existing guidance text over verbatim under the new keys so the "don't
+invent a no-damage finding for a component nobody mentioned" and
+"fold in a compound slope label" rules survive the rename: `soft_metal_
+status` (from `roof_soft_metals`), `front_slope_status`/`right_slope_
+status`/`back_slope_status`/`left_slope_status` (from `roof_front_slope`
+etc.), `front_elevation_status`/`right_elevation_status`/`back_elevation_
+status`/`left_elevation_status` (from `exterior_front_elevation` etc.).
+
+**`templateData.js`** — add a new dated migration function (e.g.
+`syncEnumsFileFromRepo_20260827()`) pushing the updated `enums.json` to the
+live Drive file (`ENUMS_FILE_ID`), following `syncEnumsFileFromRepo_
+20260822()` (line 16) exactly — run once from the Apps Script editor, then
+delete per that function's own stated lifecycle.
+
+**`validate.js` / `docgen.js`** — expected to need no code changes; both
+are schema-driven off `enums.json` with no hardcoded field names (verify
+this holds during implementation).
+
+**`tests/unit/adjuster/template.test.ts`** — the `{{tag}}` ⟷ `enums.json`
+parity checks should pass automatically once both files are updated
+consistently; update any test that snapshots specific rendered text for the
+`shingle`/`affected` variant branches to match the trimmed variant text.
+
+**`tests/unit/adjuster/prompt.test.ts`** — line 151 (`FIELD_GUIDANCE`
+fixture using `roof_front_slope`) and line 158 (`expect(user).toContain
+('roof_front_slope:')`) reference the old field name directly and need
+updating to `front_slope_status`.
+
+**Out of scope, same as Phase 1's precedent** — `guidedFlow.js`,
+`dograh-workflow-live.md`, `dograh-script.md`, and `interactive-call-
+script.txt` still reference pre-Phase-1 field names (`roof_damage_
+narrative`, `exterior_narrative`) and aren't touched here, same
+"exploratory/non-live, out of scope for this pass" call made for Phase 1
+and Phase 4. Separately worth asking Brandon: does the live call script
+(Dograh, per Phase 4) already get him narrating slope-by-slope and
+elevation-by-elevation, or does it currently ask one open "roof findings"
+question? If the latter, the call script itself may need restructuring so
+these nine fields actually get populated from a real call, not just
+renamed in the schema. Not resolved here.
+
+### Before this goes live
+
+- [x] `TEMPLATE_DOC_ID` confirmed against `1w_snnqh1iYxftHvD4zG15Sn6OecJ0uNBZQtWDPZT3Eg` — confirmed same doc
+- [x] Brandon confirms: rename-in-place vs. genuinely new status field — confirmed freeform narrative rename, no closed enum
+- [x] Brandon confirms: whether the live call script already elicits per-component answers — it doesn't; the inspector free-narrates by compass direction (e.g. "the north side") and extraction has to map that to front/right/back/left, so `prompt.js`'s `FIELD_GUIDANCE` was written with explicit compass-direction mapping instructions rather than assuming the call script asks per-side
+- [x] `enums.json` and `template.flattened.txt` re-diffed against the live doc immediately before upload
+- [x] `syncEnumsFileFromRepo_20260827()` run once from the Apps Script editor, then deleted
+- [x] `tests/unit/adjuster/template.test.ts` and `tests/unit/adjuster/prompt.test.ts` passing with the renamed fields
+- [x] `clasp push` + `clasp deploy` run against the live deployment
+- [ ] One real (or synthetic) end-to-end draft generated against the live doc with no leftover-tag failure

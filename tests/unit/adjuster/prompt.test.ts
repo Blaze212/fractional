@@ -148,14 +148,14 @@ describe('buildPrompt', () => {
 describe('field-specific guidance', () => {
   it('surfaces guidance only for tags present in templateSpec', () => {
     const spec = {
-      roof_front_slope: { label: 'Roof findings — front slope', type: 'narrative' },
+      front_slope_status: { label: 'Front slope status', type: 'narrative' },
       coinsurance_narrative: { label: 'Coinsurance', type: 'narrative' },
     }
 
     const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
 
     expect(user).toContain('Field-specific guidance:')
-    expect(user).toContain('roof_front_slope:')
+    expect(user).toContain('front_slope_status:')
     expect(user).toContain('coinsurance_narrative:')
     expect(user).not.toContain('roof_narrative_freeform:')
   })

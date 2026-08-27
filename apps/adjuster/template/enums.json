@@ -165,7 +165,7 @@
       {
         "key": "shingle",
         "label": "Affected, shingle roof",
-        "text": "The shingles on the roof are a {{roof_covering_type}} that are approximately {{roof_age_years}} years old. The shingles are in {{roof_condition}} condition for their age. There is one layer of shingles with no drip edge present. The slopes on the roof are pitched at {{roof_pitch}}.\nMy inspection of the roof found the following:\nSoft metals: {{roof_soft_metals}}\nFront slope: {{roof_front_slope}}\nRight slope: {{roof_right_slope}}\nBack slope: {{roof_back_slope}}\nLeft slope: {{roof_left_slope}}"
+        "text": "The shingles on the roof are a {{roof_covering_type}} that are approximately {{roof_age_years}} years old. The shingles are in {{roof_condition}} condition for their age. There is one layer of shingles with no drip edge present. The slopes on the roof are pitched at {{roof_pitch}}."
       },
       {
         "key": "other_material",
@@ -226,32 +226,32 @@
       "greater than 12/12"
     ]
   },
-  "roof_soft_metals": {
-    "label": "Roof findings — soft metals (drip edge, flashing, vents, gutters)",
+  "soft_metal_status": {
+    "label": "Soft metals status (drip edge, flashing, vents, gutters)",
     "type": "narrative",
     "section": "Roof",
     "required": false
   },
-  "roof_front_slope": {
-    "label": "Roof findings — front slope",
+  "front_slope_status": {
+    "label": "Front slope status",
     "type": "narrative",
     "section": "Roof",
     "required": false
   },
-  "roof_right_slope": {
-    "label": "Roof findings — right slope",
+  "right_slope_status": {
+    "label": "Right slope status",
     "type": "narrative",
     "section": "Roof",
     "required": false
   },
-  "roof_back_slope": {
-    "label": "Roof findings — back slope",
+  "back_slope_status": {
+    "label": "Back slope status",
     "type": "narrative",
     "section": "Roof",
     "required": false
   },
-  "roof_left_slope": {
-    "label": "Roof findings — left slope",
+  "left_slope_status": {
+    "label": "Left slope status",
     "type": "narrative",
     "section": "Roof",
     "required": false
@@ -277,30 +277,30 @@
       {
         "key": "affected",
         "label": "Affected",
-        "text": "Inspection of the elevations around the dwelling found the following:\nFront elevation: {{exterior_front_elevation}}\nRight elevation: {{exterior_right_elevation}}\nBack elevation: {{exterior_back_elevation}}\nLeft elevation: {{exterior_left_elevation}}"
+        "text": "The dwelling exterior was affected during this loss."
       }
     ]
   },
-  "exterior_front_elevation": {
-    "label": "Exterior findings — front elevation",
+  "front_elevation_status": {
+    "label": "Front elevation status",
     "type": "narrative",
     "section": "Exterior",
     "required": false
   },
-  "exterior_right_elevation": {
-    "label": "Exterior findings — right elevation",
+  "right_elevation_status": {
+    "label": "Right elevation status",
     "type": "narrative",
     "section": "Exterior",
     "required": false
   },
-  "exterior_back_elevation": {
-    "label": "Exterior findings — back elevation",
+  "back_elevation_status": {
+    "label": "Back elevation status",
     "type": "narrative",
     "section": "Exterior",
     "required": false
   },
-  "exterior_left_elevation": {
-    "label": "Exterior findings — left elevation",
+  "left_elevation_status": {
+    "label": "Left elevation status",
     "type": "narrative",
     "section": "Exterior",
     "required": false

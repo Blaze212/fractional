@@ -18,8 +18,19 @@ DWELLING INSPECTION
 Roof
 {{roof_status}}
 
+Soft Metals: {{soft_metal_status}}
+Front Slope: {{front_slope_status}}
+Right Slope: {{right_slope_status}}
+Back Slope: {{back_slope_status}}
+Left Slope: {{left_slope_status}}
+
 Exterior
 {{exterior_status}}
+
+Front Elevation: {{front_elevation_status}}
+Right Elevation: {{right_elevation_status}}
+Back Elevation: {{back_elevation_status}}
+Left Elevation: {{left_elevation_status}}
 
 Interior
 {{interior_damage_narrative}}

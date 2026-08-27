@@ -116,21 +116,21 @@ var FIELD_GUIDANCE = {
     'A number of years as digits (e.g. "12"), not an install year. The adjuster\'s own hedged estimate ("I\'d guess about twelve years") is still his estimate — extract it with high confidence; use low confidence only when you had to compute the age yourself (e.g. from an install year).',
   mitigation_narrative:
     'Cover who responded, what emergency work was performed, and what is still running or pending, in report prose.',
-  roof_soft_metals:
+  soft_metal_status:
     'Findings about soft metals only — drip edge, flashing, vents, gutters, pipe boots — not slope shingle damage. Leave this unextracted (do not write "none" or "no damage found") when the adjuster said nothing about soft metals; the field renders blank rather than [NEEDS INPUT] when left out, which is the correct outcome for a slope/component that was never discussed.',
-  roof_front_slope:
-    'Findings for the front slope only. If the transcript uses a compound label for this slope ("upper front slope", "front slope with extension"), fold it in here rather than dropping it. If the transcript explicitly states there was no damage on this slope, say so plainly; if the slope is never mentioned at all, leave the field unextracted instead of writing a "no damage" sentence — the field renders blank either way, but only inventing coverage of a slope nobody discussed is the failure mode to avoid.',
-  roof_right_slope: 'Same rule as roof_front_slope, for the right slope.',
-  roof_back_slope: 'Same rule as roof_front_slope, for the back slope.',
-  roof_left_slope:
-    'Same rule as roof_front_slope, for the left slope. Anything the adjuster said about the roof that does not fit soft metals or one of the four cardinal slopes (e.g. an odd fifth slope, a general condition remark) goes in unplaced_notes instead of being forced into one of these fields.',
+  front_slope_status:
+    'Findings for the front slope only. The adjuster narrates the roof as one continuous description and may identify a slope by compass direction ("the north side") rather than "front" — infer which cardinal slope is meant from context (e.g. the dwelling\'s orientation as discussed elsewhere in the call) and sort the finding into the matching front/right/back/left field; if the mapping is genuinely ambiguous, leave it unextracted and route the finding to unplaced_notes instead of guessing. If the transcript uses a compound label for this slope ("upper front slope", "front slope with extension"), fold it in here rather than dropping it. If the transcript explicitly states there was no damage on this slope, say so plainly; if the slope is never mentioned at all, leave the field unextracted instead of writing a "no damage" sentence — the field renders blank either way, but only inventing coverage of a slope nobody discussed is the failure mode to avoid.',
+  right_slope_status: 'Same rule as front_slope_status, for the right slope.',
+  back_slope_status: 'Same rule as front_slope_status, for the back slope.',
+  left_slope_status:
+    'Same rule as front_slope_status, for the left slope. Anything the adjuster said about the roof that does not fit soft metals or one of the four cardinal slopes (e.g. an odd fifth slope, a general condition remark) goes in unplaced_notes instead of being forced into one of these fields.',
   roof_narrative_freeform:
     'The roof is not a shingle roof, so write the full passage yourself: covering material and age, condition, layer count, and pitch, then per-slope findings (every slope mentioned, including undamaged ones), then a repair-or-replace conclusion. Example shape, adapt to the actual transcript rather than copying it: "The roof has Metal roofing with a layer of asphalt shingles underneath that are approximately 20 years old. The panels are in average condition for their age. There is one layer of metal panels and two layers of shingles underneath the metal panels with no drip edge present. The slopes on the roof are pitched at 5/12. My inspection of the roof found no storm related damages present. However, we did observe two raised nails on the left extension ridge which could be the water intrusion point. Since no storm related damages were found to the roof surface, we did not include any repairs in our estimate."',
-  exterior_front_elevation:
-    'Findings for the front elevation only. If the transcript explicitly states there was no damage on this elevation, say so plainly; if this elevation is never mentioned at all, leave the field unextracted instead of writing a "no damage" sentence — the field renders blank either way, but only inventing coverage of an elevation nobody discussed is the failure mode to avoid.',
-  exterior_right_elevation: 'Same rule as exterior_front_elevation, for the right elevation.',
-  exterior_back_elevation: 'Same rule as exterior_front_elevation, for the back elevation.',
-  exterior_left_elevation: 'Same rule as exterior_front_elevation, for the left elevation.',
+  front_elevation_status:
+    'Findings for the front elevation only. The adjuster narrates the exterior as one continuous description and may identify an elevation by compass direction ("the north side") rather than "front" — infer which cardinal elevation is meant from context (e.g. the dwelling\'s orientation as discussed elsewhere in the call) and sort the finding into the matching front/right/back/left field; if the mapping is genuinely ambiguous, leave it unextracted and route the finding to unplaced_notes instead of guessing. If the transcript explicitly states there was no damage on this elevation, say so plainly; if this elevation is never mentioned at all, leave the field unextracted instead of writing a "no damage" sentence — the field renders blank either way, but only inventing coverage of an elevation nobody discussed is the failure mode to avoid.',
+  right_elevation_status: 'Same rule as front_elevation_status, for the right elevation.',
+  back_elevation_status: 'Same rule as front_elevation_status, for the back elevation.',
+  left_elevation_status: 'Same rule as front_elevation_status, for the left elevation.',
   interior_damage_narrative:
     'If the transcript describes a multi-level property, group rooms under level sub-headers ("Main Level", "Upper Level", "Basement Level") before listing the rooms on that level, rather than listing all rooms flat. If flooring damage in one room extends into an open-plan adjoining room, say so explicitly rather than listing the adjoining room as a separate, unrelated item.',
   personal_property_narrative:
