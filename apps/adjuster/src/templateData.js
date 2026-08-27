@@ -398,4 +398,3 @@ function syncEnumsFileFromRepo_20260822() {
   logEvent('enums.synced_from_repo', { bytes: json.length, file_id: file.getId() })
   return 'done'
 }
-
