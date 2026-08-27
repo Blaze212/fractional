@@ -256,7 +256,7 @@ feature isn't usable end-to-end until Phase 3 lands.
 - [ ] `adjuster-review-ingest` Edge Function rejects requests without a valid
       `ADJUSTER_BRIDGE_SECRET`, and upserts correctly on `(job_id, tag)`
 - [ ] Apps Script POSTs every field where `!field.valid || field.confidence
-    === 'medium'` after validation (not filtered on `source_span`
+=== 'medium'` after validation (not filtered on `source_span`
       presence), without blocking or breaking the existing unconditional
       `generateDoc()` path if the POST fails
 - [ ] Review UI renders sections, shows pending items with label + quoted
