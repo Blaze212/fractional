@@ -89,6 +89,20 @@ function routeWebhook(event, params, e) {
     return accepted('precall:' + fromNumber, handleDograhPreCall())
   }
 
+  // Manual test injection — see scripts/adjuster-inject-test-job.mjs. Lets
+  // someone who pulled a transcript and recording off the Dograh dashboard by
+  // hand (no live call, so no real dograh_notetaker webhook ever fired) drop
+  // them into the Jobs sheet as though it had. Same shared-secret gate, no
+  // CallSessionId, same reason as the two Dograh events above.
+  if (event === 'manual_recording_inject') {
+    var manualBody = parseJsonBody(e)
+    var manualCaptureId = String(manualBody.capture_id || '')
+    if (!manualCaptureId) return denied('missing_capture_id', '', 'Bad Request')
+    if (!manualBody.transcript) return denied('missing_transcript', manualCaptureId, 'Bad Request')
+    if (!manualBody.audio_base64) return denied('missing_audio', manualCaptureId, 'Bad Request')
+    return accepted(manualCaptureId, handleManualRecordingInject(manualCaptureId, manualBody))
+  }
+
   var callSessionId = firstParam(params, ['CallSessionId', 'CallSid', 'call_session_id'])
   if (!looksLikeTelnyxCallId(callSessionId)) {
     return denied('bad_call_session_id', callSessionId, 'Bad Request')
@@ -441,6 +455,63 @@ function handleDograhNotetaker(captureId, body) {
 
     return ContentService.createTextOutput('OK')
   })
+}
+
+// Companion to handleDograhNotetaker above, for a call that never fired a real
+// webhook: the transcript and recording only exist as files on whoever's disk
+// downloaded them from the Dograh dashboard. Same Jobs-sheet shape (source:
+// 'dograh', so the transcription/matching/extraction pipeline treats it exactly
+// like a live call) but transcript arrives as raw text and audio as a base64
+// body field instead of transcript_url/recording_url, since there is nothing
+// UrlFetchApp could fetch for a file that only exists locally.
+function handleManualRecordingInject(captureId, body) {
+  var transcript = String(body.transcript || '')
+  var callFolder = tryGetCallFolder({ capture_id: captureId, call_started_at: body.call_time })
+  var audioDriveId = saveBase64AudioToDrive(
+    body.audio_base64,
+    body.audio_extension || 'wav',
+    captureId,
+    callFolder,
+  )
+
+  return withJobLock(function () {
+    tryWriteCallArtifacts(callFolder, captureId, body, transcript, audioDriveId)
+
+    // Same reason handleDograhNotetaker ensures these first: writeRowFields
+    // throws on a header it can't find, and these columns postdate every Jobs
+    // sheet in existence.
+    ensureJobsColumns(JOBS_TRANSCRIPTION_COLUMNS)
+
+    upsertJob(captureId, {
+      source: 'dograh',
+      call_folder_id: callFolder ? callFolder.getId() : '',
+      call_disposition: body.call_disposition || '',
+      duration_sec: Number(body.duration_sec) || '',
+      call_started_at: body.call_time || '',
+      call_ended_at: new Date().toISOString(),
+      recording_url: '',
+      audio_drive_id: audioDriveId,
+      transcript: transcript.slice(0, 45000),
+      transcript_source: 'manual-test-inject',
+      transcript_chars: transcript.length,
+      dograh_fields: JSON.stringify({}),
+      dograh_validated: JSON.stringify({}),
+      status: 'pending',
+    })
+
+    return ContentService.createTextOutput('OK')
+  })
+}
+
+// Mirrors copyRecordingToDrive's folder-selection rule (the per-call folder
+// when one exists, else the flat RECORDINGS_FOLDER_ID keyed by capture ID) but
+// decodes a base64 body field instead of fetching a URL.
+function saveBase64AudioToDrive(audioBase64, extension, captureId, callFolder) {
+  var bytes = Utilities.base64Decode(audioBase64)
+  var fileName = (callFolder ? 'audio' : captureId) + '.' + extension
+  var blob = Utilities.newBlob(bytes, 'audio/' + extension, fileName)
+  var folder = callFolder || DriveApp.getFolderById(getConfig('RECORDINGS_FOLDER_ID'))
+  return folder.createFile(blob).getId()
 }
 
 function tryGetCallFolder(job) {
