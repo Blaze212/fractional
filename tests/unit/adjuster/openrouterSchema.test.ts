@@ -178,6 +178,86 @@ describe('callOpenRouter logging', () => {
   })
 })
 
+describe('callOpenRouterWebSearch', () => {
+  const OK_BODY = JSON.stringify({
+    model: 'openai/gpt-5.4-mini:online',
+    choices: [{ message: { content: '{"year_built":"1979","source_url":"https://x.com/y"}' } }],
+  })
+
+  it('appends :online to the model and sends no response_format', () => {
+    const { sandbox } = harness([{ status: 200, body: OK_BODY }])
+    let sent: Record<string, any> = {}
+    sandbox.UrlFetchApp.fetch = (_url: string, options: { payload: string }) => {
+      sent = JSON.parse(options.payload)
+      return { getResponseCode: () => 200, getContentText: () => OK_BODY }
+    }
+
+    sandbox.callOpenRouterWebSearch({
+      apiKey: 'key',
+      model: 'openai/gpt-5.4-mini',
+      messages: [{ role: 'user', content: 'Property address: 1 Main St' }],
+    })
+
+    expect(sent.model).toBe('openai/gpt-5.4-mini:online')
+    expect(sent.response_format).toBeUndefined()
+    expect(sent.provider).toBeUndefined()
+  })
+
+  it('returns the raw message content for the caller to parse', () => {
+    const { sandbox } = harness([{ status: 200, body: OK_BODY }])
+
+    const result = sandbox.callOpenRouterWebSearch({
+      apiKey: 'key',
+      model: 'openai/gpt-5.4-mini',
+      messages: [],
+    })
+
+    expect(result.content).toBe('{"year_built":"1979","source_url":"https://x.com/y"}')
+    expect(result.model).toBe('openai/gpt-5.4-mini:online')
+  })
+
+  it('retries a 5xx once before succeeding, same as callOpenRouter', () => {
+    const { sandbox, serverLogged } = harness([
+      { status: 503, body: '{"error":"upstream down"}' },
+      { status: 200, body: OK_BODY },
+    ])
+
+    sandbox.callOpenRouterWebSearch({ apiKey: 'key', model: 'openai/gpt-5.4-mini', messages: [] })
+
+    const entries = serverLogged.filter((l) => l.event === 'openrouter_web_search.response')
+    expect(entries.map((e) => e.fields.attempt)).toEqual([1, 2])
+  })
+
+  it('throws after retries are exhausted rather than returning a bad result', () => {
+    const { sandbox } = harness([
+      { status: 500, body: 'x' },
+      { status: 500, body: 'x' },
+      { status: 500, body: 'x' },
+    ])
+
+    expect(() =>
+      sandbox.callOpenRouterWebSearch({
+        apiKey: 'key',
+        model: 'openai/gpt-5.4-mini',
+        messages: [],
+      }),
+    ).toThrow(/OpenRouter web search request failed/)
+  })
+
+  it('never logs the API key', () => {
+    const { sandbox, logged, serverLogged } = harness([{ status: 200, body: OK_BODY }])
+
+    sandbox.callOpenRouterWebSearch({
+      apiKey: 'super-secret-key',
+      model: 'openai/gpt-5.4-mini',
+      messages: [],
+    })
+
+    expect(JSON.stringify(logged)).not.toContain('super-secret-key')
+    expect(JSON.stringify(serverLogged)).not.toContain('super-secret-key')
+  })
+})
+
 describe('callOpenRouter generalization', () => {
   const body = JSON.stringify({
     model: 'test-model',

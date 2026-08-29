@@ -15,6 +15,11 @@ var CLAIMS_CALENDAR_COLUMNS = [
   'claim_number',
   'vendor',
   'calendar_fields',
+  'property_year_built',
+  'property_bedrooms',
+  'property_bathrooms',
+  'property_square_footage',
+  'property_source_url',
 ]
 
 // "5139 Alderman Rd. Concord NC 28025" and "1104 S Zion St, Landis, NC 28088"
@@ -44,10 +49,11 @@ var US_STREET_ADDRESS_PATTERN = new RegExp(
 // separate mapping step. Pulling their real definitions out of enums.json
 // (rather than a bare {} placeholder) means the calendar-extraction prompt
 // carries the same enum "allowed values" list the transcript extraction
-// already gets from prompt.js's formatTagList — without it, a model free to
-// write "one story" or "2 stories" instead of the literal "1 story"/"2 story"
-// enums.json requires would fail applyCalendarFallback's set-membership check
-// and silently stay NEEDS INPUT. insured_name/claim_number/location are not
+// already gets from prompt.js's formatTagList for the tags that are still
+// enums (bedroom_count, bathroom_count) — without it, a model free to write
+// "four" instead of the literal "4" enums.json requires would fail
+// applyCalendarFallback's set-membership check and silently stay NEEDS INPUT.
+// insured_name/claim_number/location are not
 // template tags and don't surface via liveExtraction, but ride along as raw,
 // undeduped context (identity is already covered by the Claims row itself via
 // formatClaimBlock).
@@ -86,9 +92,28 @@ var CALENDAR_EXTRACTION_SYSTEM_PROMPT = [
   'not support. For enum fields, value must be exactly one of the listed',
   "allowed values, character for character — normalize the entry's wording to",
   'the closest matching allowed value only when the entry clearly supports it',
-  '(e.g. "2 stories" or "two story" both normalize to "2 story"); if nothing',
-  'reasonably maps to any allowed value, return the field empty instead of',
-  'forcing a bad fit.',
+  '(e.g. "four" normalizes to "4"); if nothing reasonably maps to any allowed',
+  'value, return the field empty instead of forcing a bad fit.',
+].join(' ')
+
+// Reference-only enrichment, kept deliberately separate from
+// CALENDAR_PROPERTY_TAG_NAMES/buildCalendarTagSchema above: those feed
+// straight into the report via runner.js's liveExtraction merge, but a live
+// web search is far less reliable than a fact the adjuster actually typed
+// into the calendar invite (spot-check against 10 real production addresses
+// found only ~3 of 10 resolved to a real, sourced answer at all). This is
+// written to its own Claims columns for the adjuster to manually check
+// against property_source_url, never merged into the generated report.
+var PROPERTY_LOOKUP_SYSTEM_PROMPT = [
+  'You are looking up public real estate records for a specific US property',
+  'address using web search. Report only facts you can point to on a real',
+  'page you found — never guess, estimate, or infer a value. If you cannot',
+  'find a page that explicitly states a field, leave that field as an empty',
+  'string. Respond with ONLY a JSON object, no other text, in this exact',
+  'shape: {"year_built":"","bedrooms":"","bathrooms":"","square_footage":"",',
+  '"source_url":""}. source_url must be the exact URL of the single page the',
+  'other fields came from. If source_url is empty, every other field must',
+  'also be empty — never report a fact without the page it came from.',
 ].join(' ')
 
 // One-time (idempotent) setup: point sync at a calendar and install its
@@ -218,6 +243,9 @@ function syncEventToClaim(event) {
     var description = event.getDescription() || ''
     var address = parseAddress(event.getLocation(), description)
     var details = extractCalendarFields(event.getTitle(), event.getLocation(), description)
+    var propertyLookup = lookupPropertyDetailsSafely(
+      resolveFullAddressText(event.getLocation(), description),
+    )
 
     // The LLM's extracted fields are a lossy summary — keep the verbatim
     // description alongside them so nothing the model missed or mis-normalized
@@ -234,6 +262,11 @@ function syncEventToClaim(event) {
       appt_start: event.getStartTime().toISOString(),
       appt_end: event.getEndTime().toISOString(),
       calendar_fields: JSON.stringify(calendarFields),
+      property_year_built: propertyLookup.year_built,
+      property_bedrooms: propertyLookup.bedrooms,
+      property_bathrooms: propertyLookup.bathrooms,
+      property_square_footage: propertyLookup.square_footage,
+      property_source_url: propertyLookup.source_url,
     }
 
     withJobLock(function () {
@@ -345,4 +378,90 @@ function extractCalendarFields(title, location, description) {
   })
 
   return { fields: flat }
+}
+
+// parseAddress above keeps only street/city for the Claims columns, throwing
+// away the state/zip capture groups matchAddress already parsed — a web
+// search needs the full "street, city, state zip" text to disambiguate
+// (plenty of street names repeat across cities/states). Re-runs the same
+// candidate/match logic to recover the original matched text instead of the
+// split-apart parts.
+function resolveFullAddressText(location, description) {
+  var candidates = [location, firstLine(description)]
+
+  for (var i = 0; i < candidates.length; i++) {
+    if (matchAddress(candidates[i])) return candidates[i].trim()
+  }
+
+  return ''
+}
+
+var EMPTY_PROPERTY_LOOKUP = {
+  year_built: '',
+  bedrooms: '',
+  bathrooms: '',
+  square_footage: '',
+  source_url: '',
+}
+
+// Wraps lookupPropertyDetails so a bad address, an OpenRouter/OpenAI outage,
+// or a malformed response degrades to "nothing found" instead of failing the
+// whole claim sync — this is best-effort enrichment on top of a sync that
+// already succeeded without it.
+function lookupPropertyDetailsSafely(fullAddressText) {
+  if (!fullAddressText) return EMPTY_PROPERTY_LOOKUP
+
+  try {
+    return lookupPropertyDetails(fullAddressText)
+  } catch (err) {
+    var described = describeError(err)
+    logEvent('calendar_sync.property_lookup_failed', {
+      address: fullAddressText,
+      error: described.error,
+    })
+    return EMPTY_PROPERTY_LOOKUP
+  }
+}
+
+function lookupPropertyDetails(fullAddressText) {
+  var response = callOpenRouterWebSearch({
+    apiKey: getConfig('OPENROUTER_API_KEY'),
+    model: getConfig('OPENAI_WEB_SEARCH_MODEL'),
+    messages: [
+      { role: 'system', content: PROPERTY_LOOKUP_SYSTEM_PROMPT },
+      { role: 'user', content: 'Property address: ' + fullAddressText },
+    ],
+  })
+
+  return parsePropertyLookupResponse(response.content)
+}
+
+// Guards against the failure mode seen in testing: a search-engine summary
+// can assert specific-looking bed/bath/sqft numbers for an address with no
+// real matching page behind them at all. Trusting a value only when it's
+// bundled with the exact page it came from doesn't catch every case, but it
+// catches the fabricated-with-zero-source one that testing actually produced.
+function parsePropertyLookupResponse(content) {
+  var text = String(content || '').trim()
+
+  // Models sometimes wrap JSON in a ```json fence despite instructions not to.
+  var fenceMatch = /```(?:json)?\s*([\s\S]*?)\s*```/.exec(text)
+  if (fenceMatch) text = fenceMatch[1].trim()
+
+  var parsed
+  try {
+    parsed = JSON.parse(text)
+  } catch (e) {
+    return EMPTY_PROPERTY_LOOKUP
+  }
+
+  if (!parsed || !parsed.source_url) return EMPTY_PROPERTY_LOOKUP
+
+  return {
+    year_built: String(parsed.year_built || ''),
+    bedrooms: String(parsed.bedrooms || ''),
+    bathrooms: String(parsed.bathrooms || ''),
+    square_footage: String(parsed.square_footage || ''),
+    source_url: String(parsed.source_url || ''),
+  }
 }
