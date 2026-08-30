@@ -34,6 +34,7 @@ scripts/clients/
 /voice-to-report-generator/
 apps/adjuster/private/
 .clasp.json
+.clasprc.json
 
 # stt-transcribe.mjs output
 scripts/transcripts/
