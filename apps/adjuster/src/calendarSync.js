@@ -390,10 +390,19 @@ function resolveFullAddressText(location, description) {
   var candidates = [location, firstLine(description)]
 
   for (var i = 0; i < candidates.length; i++) {
-    if (matchAddress(candidates[i])) return candidates[i].trim()
+    if (matchAddress(candidates[i])) return stripZipPlusFour(candidates[i].trim())
   }
 
   return ''
+}
+
+// Zillow/Redfin (the sites the web search is actually trying to hit) index by
+// the plain 5-digit ZIP — including the +4 extension in the query narrows the
+// search enough that the real listing often drops out of the results
+// entirely. US_STREET_ADDRESS_PATTERN's zip group anchors on \s*$, so the
+// +4 (if present) is always the last thing in the trimmed string.
+function stripZipPlusFour(text) {
+  return text.replace(/(\d{5})-\d{4}\s*$/, '$1')
 }
 
 var EMPTY_PROPERTY_LOOKUP = {

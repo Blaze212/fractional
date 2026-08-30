@@ -17,10 +17,10 @@
  *
  *   export ADJUSTER_WEBHOOK_URL=https://script.google.com/macros/s/XXXX/exec
  *   export ADJUSTER_WEBHOOK_SECRET=...
- *   node scripts/adjuster-inject-test-job.mjs \
- *     --transcript ./call-transcript.txt \
- *     --audio ./call-recording.wav \
- *     --call-time 2026-08-26T18:04:00Z
+    node --env-file=.env scripts/adjuster-inject-test-job.mjs \
+      --transcript ./call-transcript.txt \
+      --audio ./call-recording.wav \
+      --call-time 2026-08-26T18:04:00Z
  *
  * --duration is read from the WAV file's own header when the audio is WAV,
  * so it's normally not needed. Pass it explicitly for other formats (mp3,

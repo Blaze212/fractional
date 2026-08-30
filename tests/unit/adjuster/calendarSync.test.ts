@@ -221,6 +221,18 @@ describe('resolveFullAddressText', () => {
     const { sandbox } = harness()
     expect(sandbox.resolveFullAddressText('', 'Call when on your way')).toBe('')
   })
+
+  it('drops the ZIP+4 extension, which suppresses Zillow/Redfin results', () => {
+    const { sandbox } = harness()
+    const result = sandbox.resolveFullAddressText('5139 Alderman Rd. Concord NC 28025-1234', '')
+    expect(result).toBe('5139 Alderman Rd. Concord NC 28025')
+  })
+
+  it('drops the ZIP+4 extension from a comma-separated location too', () => {
+    const { sandbox } = harness()
+    const result = sandbox.resolveFullAddressText('1104 S Zion St, Landis, NC 28088-9876', '')
+    expect(result).toBe('1104 S Zion St, Landis, NC 28088')
+  })
 })
 
 describe('parsePropertyLookupResponse', () => {
