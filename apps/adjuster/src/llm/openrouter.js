@@ -122,6 +122,73 @@ function callOpenRouter(config) {
   throw new Error('OpenRouter request failed after retries: ' + lastResponse.getResponseCode())
 }
 
+// Separate from callOpenRouter above: the `:online` suffix routes the request
+// through the provider's own native web search (for an openai/* model, that's
+// OpenAI's web_search tool, billed by OpenAI at ~$0.01/call) rather than
+// OpenRouter's own Exa-backed web plugin. OpenRouter's docs don't confirm
+// native web search is compatible with response_format: json_schema, so
+// unlike callOpenRouter this asks for JSON via the prompt instead of
+// enforcing it — parsing is the caller's job (see parsePropertyLookupResponse
+// in calendarSync.js).
+function callOpenRouterWebSearch(config) {
+  var payload = {
+    model: config.model + ':online',
+    messages: config.messages,
+  }
+
+  var options = {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + config.apiKey },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true,
+  }
+
+  var lastResponse = null
+
+  for (var attempt = 0; attempt <= OPENROUTER_RETRY_BACKOFF_MS.length; attempt++) {
+    var response = UrlFetchApp.fetch(OPENROUTER_URL, options)
+    var status = response.getResponseCode()
+    var bodyText = response.getContentText()
+    lastResponse = response
+
+    logServerOnly('openrouter_web_search.response', {
+      attempt: attempt + 1,
+      status: status,
+      model_requested: payload.model,
+      response_body: bodyText.slice(0, SERVER_LOG_TRUNCATE_CHARS),
+    })
+    logEvent('openrouter_web_search.response_summary', {
+      attempt: attempt + 1,
+      status: status,
+      model_requested: payload.model,
+      response_chars: bodyText.length,
+    })
+
+    if (status === 200) {
+      var body = JSON.parse(bodyText)
+      var choice = body.choices && body.choices[0]
+      if (!choice || !choice.message || typeof choice.message.content !== 'string') {
+        throw new Error('OpenRouter web search response missing message content')
+      }
+      return { content: choice.message.content, model: body.model }
+    }
+
+    var retryable = status === 429 || status >= 500
+    var hasBudget = attempt < OPENROUTER_RETRY_BACKOFF_MS.length
+    if (retryable && hasBudget) {
+      Utilities.sleep(OPENROUTER_RETRY_BACKOFF_MS[attempt])
+      continue
+    }
+
+    throw new Error('OpenRouter web search request failed: ' + status + ' ' + bodyText)
+  }
+
+  throw new Error(
+    'OpenRouter web search request failed after retries: ' + lastResponse.getResponseCode(),
+  )
+}
+
 function parseOpenRouterResponse(bodyText) {
   var body = JSON.parse(bodyText)
   var choice = body.choices && body.choices[0]

@@ -32,18 +32,25 @@ function fakeEvent(overrides: Partial<FakeEvent> = {}) {
 }
 
 function harness(
-  opts: { openRouterFields?: Record<string, { value: string }>; throwOnLLM?: boolean } = {},
+  opts: {
+    openRouterFields?: Record<string, { value: string }>
+    throwOnLLM?: boolean
+    webSearchContent?: string
+    throwOnWebSearch?: boolean
+  } = {},
 ) {
   const claims = new Map<string, Record<string, unknown>>()
   const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
   const lockCalls: number[] = []
   const llmCalls: Array<{ messages: Array<{ role: string; content: string }> }> = []
+  const webSearchCalls: Array<{ messages: Array<{ role: string; content: string }> }> = []
 
   const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
     getConfig: (key: string) => {
       if (key === 'CALENDAR_ID') return 'calendar-1'
       if (key === 'OPENROUTER_API_KEY') return 'key'
       if (key === 'OPENROUTER_MODEL') return 'model'
+      if (key === 'OPENAI_WEB_SEARCH_MODEL') return 'openai/gpt-5.4-mini'
       throw new Error('Missing script property: ' + key)
     },
     getConfigList: () => [],
@@ -74,6 +81,11 @@ function harness(
       if (opts.throwOnLLM) throw new Error('openrouter down')
       return { fields: opts.openRouterFields || {} }
     },
+    callOpenRouterWebSearch: (config: { messages: Array<{ role: string; content: string }> }) => {
+      webSearchCalls.push(config)
+      if (opts.throwOnWebSearch) throw new Error('web search down')
+      return { content: opts.webSearchContent ?? JSON.stringify({}) }
+    },
     withJobLock: (fn: () => unknown) => {
       lockCalls.push(1)
       return fn()
@@ -87,7 +99,15 @@ function harness(
     describeError: (err: Error) => ({ error: String(err.message || err), stack: '' }),
   })
 
-  return { sandbox, claims, logged, lockCalls, llmCalls, llmCallCount: () => llmCalls.length }
+  return {
+    sandbox,
+    claims,
+    logged,
+    lockCalls,
+    llmCalls,
+    llmCallCount: () => llmCalls.length,
+    webSearchCalls,
+  }
 }
 
 describe('buildCalendarTagSchema', () => {
@@ -181,6 +201,86 @@ describe('parseAddress', () => {
     const result = sandbox.parseAddress('', 'Call when on your way')
 
     expect(result).toEqual({ address_line1: '', city: '' })
+  })
+})
+
+describe('resolveFullAddressText', () => {
+  it('returns the full matched string including state and zip, not just street/city', () => {
+    const { sandbox } = harness()
+    const result = sandbox.resolveFullAddressText('5139 Alderman Rd. Concord NC 28025', '')
+    expect(result).toBe('5139 Alderman Rd. Concord NC 28025')
+  })
+
+  it('falls back to the description first line the same way parseAddress does', () => {
+    const { sandbox } = harness()
+    const result = sandbox.resolveFullAddressText('see note', '1104 S Zion St, Landis, NC 28088')
+    expect(result).toBe('1104 S Zion St, Landis, NC 28088')
+  })
+
+  it('returns an empty string when nothing matches', () => {
+    const { sandbox } = harness()
+    expect(sandbox.resolveFullAddressText('', 'Call when on your way')).toBe('')
+  })
+})
+
+describe('parsePropertyLookupResponse', () => {
+  it('parses a well-formed JSON response', () => {
+    const { sandbox } = harness()
+    const result = sandbox.parsePropertyLookupResponse(
+      JSON.stringify({
+        year_built: '1979',
+        bedrooms: '3',
+        bathrooms: '2',
+        square_footage: '1508',
+        source_url: 'https://example.com/property',
+      }),
+    )
+    expect(result).toEqual({
+      year_built: '1979',
+      bedrooms: '3',
+      bathrooms: '2',
+      square_footage: '1508',
+      source_url: 'https://example.com/property',
+    })
+  })
+
+  it('strips a markdown code fence the model wraps the JSON in despite instructions not to', () => {
+    const { sandbox } = harness()
+    const result = sandbox.parsePropertyLookupResponse(
+      '```json\n' + JSON.stringify({ year_built: '2001', source_url: 'https://x.com/y' }) + '\n```',
+    )
+    expect(result.year_built).toBe('2001')
+    expect(result.source_url).toBe('https://x.com/y')
+  })
+
+  it('discards every field when source_url is missing, since a fact with no page behind it may be fabricated', () => {
+    const { sandbox } = harness()
+    const result = sandbox.parsePropertyLookupResponse(
+      JSON.stringify({
+        year_built: '1973',
+        bedrooms: '3',
+        bathrooms: '2',
+        square_footage: '1394',
+      }),
+    )
+    expect(result).toEqual({
+      year_built: '',
+      bedrooms: '',
+      bathrooms: '',
+      square_footage: '',
+      source_url: '',
+    })
+  })
+
+  it('returns all-empty on unparseable content instead of throwing', () => {
+    const { sandbox } = harness()
+    expect(sandbox.parsePropertyLookupResponse('not json at all')).toEqual({
+      year_built: '',
+      bedrooms: '',
+      bathrooms: '',
+      square_footage: '',
+      source_url: '',
+    })
   })
 })
 
@@ -349,6 +449,71 @@ describe('syncEventToClaim', () => {
       title: 'TALLEY - CLF-1 IBIS',
       error: 'openrouter down',
     })
+  })
+})
+
+describe('property lookup in syncEventToClaim', () => {
+  it('populates the property_* Claims columns from a sourced web search result', () => {
+    const { sandbox, claims, webSearchCalls } = harness({
+      webSearchContent: JSON.stringify({
+        year_built: '1979',
+        bedrooms: '3',
+        bathrooms: '2',
+        square_footage: '1508',
+        source_url: 'https://www.city-data.com/mecklenburg-county/M/Meadow-Hollow-Drive-1.html',
+      }),
+    })
+
+    const event = fakeEvent({ location: '10106 Meadow Hollow Drive Mint Hill NC 28227' })
+
+    sandbox.syncEventToClaim(event)
+
+    expect(webSearchCalls).toHaveLength(1)
+    const userMessage = webSearchCalls[0].messages.find((m) => m.role === 'user')
+    expect(userMessage?.content).toContain('10106 Meadow Hollow Drive Mint Hill NC 28227')
+
+    const claim = claims.get('event-1') as Record<string, unknown>
+    expect(claim.property_year_built).toBe('1979')
+    expect(claim.property_bedrooms).toBe('3')
+    expect(claim.property_bathrooms).toBe('2')
+    expect(claim.property_square_footage).toBe('1508')
+    expect(claim.property_source_url).toBe(
+      'https://www.city-data.com/mecklenburg-county/M/Meadow-Hollow-Drive-1.html',
+    )
+  })
+
+  it('leaves the property_* columns blank, and still syncs the claim, when the web search finds nothing sourced', () => {
+    const { sandbox, claims } = harness({ webSearchContent: JSON.stringify({}) })
+
+    const result = sandbox.syncEventToClaim(
+      fakeEvent({ location: '218 Park Ave Wadesboro NC 28170' }),
+    )
+
+    expect(result).toBe(true)
+    const claim = claims.get('event-1') as Record<string, unknown>
+    expect(claim.property_year_built).toBe('')
+    expect(claim.property_source_url).toBe('')
+  })
+
+  it('degrades to blank property columns, and still syncs the claim, when the web search call itself errors', () => {
+    const { sandbox, claims, logged } = harness({ throwOnWebSearch: true })
+
+    const result = sandbox.syncEventToClaim(
+      fakeEvent({ location: '218 Park Ave Wadesboro NC 28170' }),
+    )
+
+    expect(result).toBe(true)
+    const claim = claims.get('event-1') as Record<string, unknown>
+    expect(claim.property_source_url).toBe('')
+    expect(logged.some((l) => l.event === 'calendar_sync.property_lookup_failed')).toBe(true)
+  })
+
+  it('skips the web search call entirely when no address is present anywhere on the event', () => {
+    const { sandbox, webSearchCalls } = harness()
+
+    sandbox.syncEventToClaim(fakeEvent({ location: '', description: 'call to schedule' }))
+
+    expect(webSearchCalls).toHaveLength(0)
   })
 })
 
