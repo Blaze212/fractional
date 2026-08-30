@@ -17,6 +17,10 @@ workspace
 # Cloudflare / wrangler
 .wrangler/
 .dev.vars
+
+# clasp OAuth credentials — never committed (project settings in .clasp.json are fine)
+.clasprc.json
+
 # pnpm workspace — never commit npm lockfiles (Cloudflare bot generates these)
 package-lock.json
 Outputs/
@@ -33,8 +37,6 @@ scripts/clients/
 # The blank template itself is copied into apps/adjuster/template/ instead.
 /voice-to-report-generator/
 apps/adjuster/private/
-.clasp.json
-.clasprc.json
 
 # stt-transcribe.mjs output
 scripts/transcripts/
