@@ -7,16 +7,9 @@
   },
   "present_at_inspection": {
     "label": "Present at inspection",
-    "type": "string",
+    "type": "narrative",
     "section": "Assignment",
     "required": true
-  },
-  "present_at_inspection_verb": {
-    "label": "Present at inspection — was/were",
-    "type": "enum",
-    "section": "Assignment",
-    "required": true,
-    "values": ["was", "were"]
   },
   "mortgage_status": {
     "label": "Mortgage status",
@@ -87,16 +80,15 @@
   },
   "dwelling_stories": {
     "label": "Dwelling stories",
-    "type": "enum",
+    "type": "string",
     "section": "Risk",
-    "required": true,
-    "values": ["1 story", "2 story", "3 story", "4 story"]
+    "required": true
   },
   "year_built": {
     "label": "Year built",
     "type": "string",
     "section": "Risk",
-    "required": false
+    "required": true
   },
   "foundation_type": {
     "label": "Foundation type",
@@ -230,31 +222,31 @@
     "label": "Soft metals status (drip edge, flashing, vents, gutters)",
     "type": "narrative",
     "section": "Roof",
-    "required": false
+    "required": true
   },
   "front_slope_status": {
     "label": "Front slope status",
     "type": "narrative",
     "section": "Roof",
-    "required": false
+    "required": true
   },
   "right_slope_status": {
     "label": "Right slope status",
     "type": "narrative",
     "section": "Roof",
-    "required": false
+    "required": true
   },
   "back_slope_status": {
     "label": "Back slope status",
     "type": "narrative",
     "section": "Roof",
-    "required": false
+    "required": true
   },
   "left_slope_status": {
     "label": "Left slope status",
     "type": "narrative",
     "section": "Roof",
-    "required": false
+    "required": true
   },
   "roof_narrative_freeform": {
     "label": "Roof findings, non-shingle material (full narrative — material, age, condition, layers, pitch, per-slope findings, conclusion)",
@@ -285,25 +277,25 @@
     "label": "Front elevation status",
     "type": "narrative",
     "section": "Exterior",
-    "required": false
+    "required": true
   },
   "right_elevation_status": {
     "label": "Right elevation status",
     "type": "narrative",
     "section": "Exterior",
-    "required": false
+    "required": true
   },
   "back_elevation_status": {
     "label": "Back elevation status",
     "type": "narrative",
     "section": "Exterior",
-    "required": false
+    "required": true
   },
   "left_elevation_status": {
     "label": "Left elevation status",
     "type": "narrative",
     "section": "Exterior",
-    "required": false
+    "required": true
   },
   "interior_damage_narrative": {
     "label": "Interior damage findings",
@@ -369,10 +361,29 @@
     "section": "Salvage & Subrogation",
     "required": true
   },
+  "coinsurance_status": {
+    "label": "Coinsurance status",
+    "type": "variant",
+    "section": "Coinsurance",
+    "required": true,
+    "values": [
+      {
+        "key": "no_coinsurance",
+        "label": "No coinsurance penalty applies",
+        "text": "There is no coinsurance penalty applicable to this loss."
+      },
+      {
+        "key": "applies",
+        "label": "Coinsurance penalty applies",
+        "text": "{{coinsurance_narrative}}"
+      }
+    ]
+  },
   "coinsurance_narrative": {
-    "label": "Coinsurance — no coinsurance penalty applies in most claims; confirm figures with Brandon if this one does",
+    "label": "Coinsurance — figures/penalty details; confirm with Brandon",
     "type": "narrative",
     "section": "Coinsurance",
-    "required": true
+    "required": true,
+    "requiredWhen": { "field": "coinsurance_status", "equals": "applies" }
   }
 }

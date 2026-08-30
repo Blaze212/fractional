@@ -96,6 +96,7 @@ describe('adjuster template / enums parity', () => {
 describe('branch-dependent fields flag instead of rendering blank', () => {
   const branchFields: Record<string, { field: string; equals: string }> = {
     mitigation_narrative: { field: 'mitigation_status', equals: 'present' },
+    coinsurance_narrative: { field: 'coinsurance_status', equals: 'applies' },
   }
 
   Object.entries(branchFields).forEach(([tag, condition]) => {
@@ -103,6 +104,51 @@ describe('branch-dependent fields flag instead of rendering blank', () => {
       expect(enums[tag].required).toBe(true)
       expect(enums[tag].requiredWhen).toEqual(condition)
     })
+  })
+})
+
+// Phase 6: was/were folded into present_at_inspection, dwelling_stories no longer
+// forces a closed enum, year_built and the per-side roof/exterior findings flag
+// instead of silently rendering blank, and coinsurance has a canned "no" branch.
+describe('Phase 6 field behavior', () => {
+  it('has no separate was/were field — present_at_inspection is a full narrative sentence', () => {
+    expect('present_at_inspection_verb' in enums).toBe(false)
+    expect(enums.present_at_inspection.type).toBe('narrative')
+  })
+
+  it('does not force dwelling_stories into a closed enum', () => {
+    expect(enums.dwelling_stories.type).not.toBe('enum')
+    expect(enums.dwelling_stories.values).toBeUndefined()
+  })
+
+  it('requires year_built so a blank does not silently omit', () => {
+    expect(enums.year_built.required).toBe(true)
+  })
+
+  it('requires soft metals plus every per-slope and per-elevation status field so a missing component flags', () => {
+    ;[
+      'soft_metal_status',
+      'front_slope_status',
+      'right_slope_status',
+      'back_slope_status',
+      'left_slope_status',
+      'front_elevation_status',
+      'right_elevation_status',
+      'back_elevation_status',
+      'left_elevation_status',
+    ].forEach((tag) => {
+      expect(enums[tag].required, `${tag} should be required`).toBe(true)
+    })
+  })
+
+  it('gives coinsurance a canned no-penalty branch, not a forced NEEDS INPUT', () => {
+    expect(enums.coinsurance_status.type).toBe('variant')
+    const keys = (enums.coinsurance_status.values as VariantOption[]).map((o) => o.key)
+    expect(keys).toEqual(['no_coinsurance', 'applies'])
+    const noCoinsurance = (enums.coinsurance_status.values as VariantOption[]).find(
+      (o) => o.key === 'no_coinsurance',
+    )
+    expect(noCoinsurance?.text).toBeTruthy()
   })
 })
 

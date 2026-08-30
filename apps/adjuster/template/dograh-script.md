@@ -60,7 +60,7 @@
    - Gather details about the dwelling's structure, siding, and occupancy status. Ask over a couple questions.
 
    Relevant Questions:
-   - Could you describe the dwelling structure — dwelling type, stories?
+   - Could you describe the dwelling structure — dwelling type, stories (e.g. 1 story, 2 story, 3 story, or however you'd describe it — a story and a half, split level, etc.)?
    - And the siding, and foundation type?
    - Who currently occupies the property?
 
@@ -122,7 +122,7 @@
    Variables to track:
    - Overhead & profit determination
    - Subrogation reason clause (e.g. "weather related", "related to a 10 year old plumbing supply line that was not recently repaired")
-   - Coinsurance — no coinsurance penalty applies in most claims; confirm if this one does
+   - Coinsurance status — most claims are "no coinsurance penalty applies"; only record figures/details if the adjuster says a penalty does apply
 
 9. **Capture Missing Notes**
    - gather any out of order notes the user forgot to provide earlier
@@ -186,7 +186,6 @@ Move to End Call only when the caller is done, there is nothing else to discuss,
 
     "contacted_party_name": { "label": "Contacted party" },
     "present_at_inspection": { "label": "Present at inspection" },
-    "present_at_inspection_verb": { "label": "Present at inspection — was/were" },
     "mortgage_status": { "label": "Mortgage status" },
     "origin_narrative": { "label": "Cause of loss" },
     "origin_damage_narrative": { "label": "Resulting damage (what was damaged)" },
@@ -214,4 +213,5 @@ Move to End Call only when the caller is done, there is nothing else to discuss,
     "mitigation_narrative": { "label": "Mitigation details" },
     "overhead_profit_narrative": { "label": "Overhead & profit determination" },
     "subrogation_reason": { "label": "Subrogation reason clause (e.g. \"weather related\", \"related to a 10 year old plumbing supply line that was not recently repaired\")" },
-    "coinsurance_narrative": { "label": "Coinsurance — no coinsurance penalty applies in most claims; confirm figures with Brandon if this one does" }
+    "coinsurance_status": { "label": "Coinsurance status" },
+    "coinsurance_narrative": { "label": "Coinsurance — figures/penalty details; confirm with Brandon" }

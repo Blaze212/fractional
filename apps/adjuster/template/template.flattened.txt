@@ -1,5 +1,5 @@
 ASSIGNMENT:
-This loss was received by Ibis Claim Services on [DATE_RECEIVED]. Contact was made with {{contacted_party_name}} on [DATE_CONTACTED] and the inspection was scheduled for [DATE_INSPECTED]. The loss was inspected at the scheduled date and time. {{present_at_inspection}} {{present_at_inspection_verb}} present during the inspection.
+This loss was received by Ibis Claim Services on [DATE_RECEIVED]. Contact was made with {{contacted_party_name}} on [DATE_CONTACTED] and the inspection was scheduled for [DATE_INSPECTED]. The loss was inspected at the scheduled date and time. {{present_at_inspection}}
 
 MORTGAGE:
 {{mortgage_status}}
@@ -53,7 +53,7 @@ SALVAGE & SUBROGATION:
 There are no subrogation possibilities as the damages are {{subrogation_reason}}. Any possible salvage value is negated by cost of removal, delivery, and sale.
 
 COINSURANCE:
-{{coinsurance_narrative}}
+{{coinsurance_status}}
 
 FURTHER HANDLING:
 We will need to confirm the carrier has accepted liability or if a denial of the claim will take place. Once that is confirmed, we will work on the following items to conclude this loss:
