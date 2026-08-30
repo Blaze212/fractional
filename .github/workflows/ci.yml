@@ -132,3 +132,30 @@ jobs:
       - name: Deploy bh-systems Worker
         run: bash scripts/deploy.sh
         working-directory: apps/bh-systems
+
+  deploy-adjuster:
+    name: Deploy Adjuster Apps Script
+    runs-on: ubuntu-latest
+    environment:
+      name: Production
+    needs: [typecheck-lint-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    env:
+      GAS_DEPLOY_ID: ${{ secrets.GAS_DEPLOY_ID }}
+      CLASP_CREDENTIALS: ${{ secrets.CLASP_CREDENTIALS }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Auth file and the clasp commands that read it both run from
+      # apps/adjuster, and --auth is passed explicitly on each command
+      # rather than via clasp's clasp_config_auth env var — that env var
+      # resolves relative to whatever cwd clasp happens to run from, which
+      # is easy to break silently by changing a step's working-directory
+      # later without noticing it also has to match this path.
+      - name: Push and redeploy Apps Script
+        working-directory: apps/adjuster
+        run: |
+          echo "$CLASP_CREDENTIALS" > .clasprc.json
+          npx @google/clasp --auth .clasprc.json push -f
+          npx @google/clasp --auth .clasprc.json redeploy "$GAS_DEPLOY_ID" -d "CI deploy ${{ github.sha }}"
