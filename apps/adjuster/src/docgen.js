@@ -45,8 +45,9 @@ function generateDoc(job, claim, validated, tagSchema, unplacedNotes) {
 // plainly (the latter two have no transcript source_span to check, but come
 // from a source already trusted at that tier — see each function's own
 // comment), "low" (and anything else invalid) renders as a [NEEDS INPUT]
-// placeholder, "medium" renders the real value but flagged yellow for a quick
-// human check (see highlightMediumConfidence). A low-confidence field that
+// placeholder, "medium" renders the real value unhighlighted with its heard
+// citation flagged yellow for a quick human check (see markForReview,
+// highlightMediumConfidence). A low-confidence field that
 // still carries a source_span (see validate.js's needsInput) had real,
 // verified transcript text behind it — just enough that the model wasn't sure
 // how to render it — so that snippet rides along on the placeholder as a
@@ -95,17 +96,24 @@ function resolveTagsForDoc(validated, tagSchema) {
   return resolved
 }
 
-// Sentinel characters wrapped around medium-confidence text so it can be
-// found and highlighted after insertion, then stripped — mirrors how
-// [NEEDS INPUT: ...] is a plain-text marker highlightNeedsInput finds and
-// styles, except here the wrapped text is the real value and the markers
-// themselves must not survive into the final doc.
+// Sentinel characters wrapped around the heard citation on medium-confidence
+// text so it (and only it) can be found and highlighted after insertion, then
+// stripped — mirrors how [NEEDS INPUT: ...] is a plain-text marker
+// highlightNeedsInput finds and styles, except here the wrapped text is the
+// heard citation and the markers themselves must not survive into the final
+// doc. The real sentence stays unhighlighted — it is the value we actually
+// want kept in the report — only the trailing heard citation is flagged
+// yellow, so it reads as a note to check rather than something that belongs
+// in the final text. When there is no heard citation to isolate (e.g. a
+// variant option's canned text), fall back to flagging the whole value so
+// medium confidence still gets a visible flag.
 var REVIEW_MARK_START = ''
 var REVIEW_MARK_END = ''
 
 function markForReview(text, sourceSpan) {
   var heard = sourceSpan ? ' [heard: "' + sourceSpan + '"]' : ''
-  return REVIEW_MARK_START + text + heard + REVIEW_MARK_END
+  if (!heard) return REVIEW_MARK_START + text + REVIEW_MARK_END
+  return text + REVIEW_MARK_START + heard + REVIEW_MARK_END
 }
 
 function replaceTag(body, tag, resolvedTag) {

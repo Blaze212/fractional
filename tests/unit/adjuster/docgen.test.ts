@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { loadGs } from './loadGs'
 
-const { resolveTagsForDoc } = loadGs('apps/adjuster/src/docgen.js')
+const { resolveTagsForDoc, markForReview } = loadGs('apps/adjuster/src/docgen.js')
 
 const tagSchema = {
   roof_pitch: { label: 'Roof pitch', type: 'string' },
@@ -104,6 +104,32 @@ describe('resolveTagsForDoc', () => {
     const resolved = resolveTagsForDoc(validated, tagSchema)
 
     expect(resolved.roof_pitch).toMatchObject({ text: '' })
+  })
+})
+
+describe('markForReview', () => {
+  const START = '\x02'
+  const END = '\x03'
+
+  it('isolates only the heard citation in the review markers, leaving the real sentence unmarked', () => {
+    const marked = markForReview(
+      'The front slope has minor granule loss.',
+      'front slope has some wear',
+    )
+
+    expect(marked).toBe(
+      'The front slope has minor granule loss.' +
+        START +
+        ' [heard: "front slope has some wear"]' +
+        END,
+    )
+    expect(marked.indexOf(START)).toBeGreaterThan(marked.indexOf('granule loss.'))
+  })
+
+  it('falls back to marking the whole value when there is no heard citation to isolate', () => {
+    const marked = markForReview('There is no mortgage on the property.', undefined)
+
+    expect(marked).toBe(START + 'There is no mortgage on the property.' + END)
   })
 })
 
