@@ -143,21 +143,19 @@ jobs:
     env:
       GAS_DEPLOY_ID: ${{ secrets.GAS_DEPLOY_ID }}
       CLASP_CREDENTIALS: ${{ secrets.CLASP_CREDENTIALS }}
-      clasp_config_auth: ./.clasprc.json
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Write clasp credentials
-        run: echo "$CLASP_CREDENTIALS" > apps/adjuster/.clasprc.json
-
-      # `redeploy` (not `deploy -i`) is the command that can only ever update
-      # an existing deployment, never create a new orphaned one — the exact
-      # trap docs/guided-flow-debugging-handoff.md calls out from doing this
-      # by hand. -f on push skips the interactive "manifest changed, overwrite?"
-      # prompt, which would otherwise hang CI with no TTY to answer it.
+      # Auth file and the clasp commands that read it both run from
+      # apps/adjuster, and --auth is passed explicitly on each command
+      # rather than via clasp's clasp_config_auth env var — that env var
+      # resolves relative to whatever cwd clasp happens to run from, which
+      # is easy to break silently by changing a step's working-directory
+      # later without noticing it also has to match this path.
       - name: Push and redeploy Apps Script
         working-directory: apps/adjuster
         run: |
-          npx @google/clasp push -f
-          npx @google/clasp redeploy "$GAS_DEPLOY_ID" -d "CI deploy ${{ github.sha }}"
+          echo "$CLASP_CREDENTIALS" > .clasprc.json
+          npx @google/clasp --auth .clasprc.json push -f
+          npx @google/clasp --auth .clasprc.json redeploy "$GAS_DEPLOY_ID" -d "CI deploy ${{ github.sha }}"
