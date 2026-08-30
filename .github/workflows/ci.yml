@@ -132,3 +132,32 @@ jobs:
       - name: Deploy bh-systems Worker
         run: bash scripts/deploy.sh
         working-directory: apps/bh-systems
+
+  deploy-adjuster:
+    name: Deploy Adjuster Apps Script
+    runs-on: ubuntu-latest
+    environment:
+      name: Production
+    needs: [typecheck-lint-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    env:
+      GAS_DEPLOY_ID: ${{ secrets.GAS_DEPLOY_ID }}
+      CLASP_CREDENTIALS: ${{ secrets.CLASP_CREDENTIALS }}
+      clasp_config_auth: ./.clasprc.json
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write clasp credentials
+        run: echo "$CLASP_CREDENTIALS" > apps/adjuster/.clasprc.json
+
+      # `redeploy` (not `deploy -i`) is the command that can only ever update
+      # an existing deployment, never create a new orphaned one — the exact
+      # trap docs/guided-flow-debugging-handoff.md calls out from doing this
+      # by hand. -f on push skips the interactive "manifest changed, overwrite?"
+      # prompt, which would otherwise hang CI with no TTY to answer it.
+      - name: Push and redeploy Apps Script
+        working-directory: apps/adjuster
+        run: |
+          npx @google/clasp push -f
+          npx @google/clasp redeploy "$GAS_DEPLOY_ID" -d "CI deploy ${{ github.sha }}"
