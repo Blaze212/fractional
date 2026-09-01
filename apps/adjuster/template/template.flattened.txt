@@ -33,10 +33,10 @@ Back Elevation: {{back_elevation_status}}
 Left Elevation: {{left_elevation_status}}
 
 Interior
-{{interior_damage_narrative}}
+{{interior_status}}
 
 OTHER STRUCTURES:
-Inspection found no storm related damages to any of the insured's other structures.
+{{other_structures_status}}
 
 PERSONAL PROPERTY:
 {{personal_property_status}}

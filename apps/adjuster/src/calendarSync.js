@@ -48,11 +48,12 @@ var US_STREET_ADDRESS_PATTERN = new RegExp(
 // (enums.json) tag, so these flow into the final extraction call with no
 // separate mapping step. Pulling their real definitions out of enums.json
 // (rather than a bare {} placeholder) means the calendar-extraction prompt
-// carries the same enum "allowed values" list the transcript extraction
-// already gets from prompt.js's formatTagList for the tags that are still
-// enums (bedroom_count, bathroom_count) — without it, a model free to write
-// "four" instead of the literal "4" enums.json requires would fail
-// applyCalendarFallback's set-membership check and silently stay NEEDS INPUT.
+// carries whatever label and allowed-values list enums.json defines for each
+// tag, so this prompt cannot drift from the one the transcript extraction
+// gets via prompt.js's formatTagList. None of these are closed enums any
+// more — bedroom_count and bathroom_count were loosened to strings so a real
+// answer ("2.5" bathrooms, a 7-bedroom house) is never rejected by an
+// artificially narrow list and silently left NEEDS INPUT.
 // insured_name/claim_number/location are not
 // template tags and don't surface via liveExtraction, but ride along as raw,
 // undeduped context (identity is already covered by the Claims row itself via
@@ -96,14 +97,17 @@ var CALENDAR_EXTRACTION_SYSTEM_PROMPT = [
   'value, return the field empty instead of forcing a bad fit.',
 ].join(' ')
 
-// Reference-only enrichment, kept deliberately separate from
-// CALENDAR_PROPERTY_TAG_NAMES/buildCalendarTagSchema above: those feed
-// straight into the report via runner.js's liveExtraction merge, but a live
-// web search is far less reliable than a fact the adjuster actually typed
-// into the calendar invite (spot-check against 10 real production addresses
-// found only ~3 of 10 resolved to a real, sourced answer at all). This is
-// written to its own Claims columns for the adjuster to manually check
-// against property_source_url, never merged into the generated report.
+// Kept deliberately separate from CALENDAR_PROPERTY_TAG_NAMES/
+// buildCalendarTagSchema above: those feed straight into the report via
+// runner.js's liveExtraction merge, but a live web search is far less
+// reliable than a fact the adjuster actually typed into the calendar invite
+// (spot-check against 10 real production addresses found only ~3 of 10
+// resolved to a real, sourced answer at all). This writes to its own Claims
+// columns, and validate.js's applyClaimPropertyFallback reads them back into
+// the report only as a last resort, after both the transcript and
+// calendar_fields came up empty — property_source_url is on the Claims row
+// beside them so the adjuster can check any value that reached a draft
+// this way.
 var PROPERTY_LOOKUP_SYSTEM_PROMPT = [
   'You are looking up public real estate records for a specific US property',
   'address using web search. Report only facts you can point to on a real',

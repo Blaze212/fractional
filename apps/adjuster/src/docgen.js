@@ -1,5 +1,5 @@
 function generateDoc(job, claim, validated, tagSchema, unplacedNotes) {
-  var needsInputCount = countNeedsInput(validated)
+  var needsInputCount = countNeedsInput(validated, tagSchema)
   var templateFile = DriveApp.getFileById(getConfig('TEMPLATE_DOC_ID'))
   var draftsFolder = DriveApp.getFolderById(getConfig('DRAFTS_FOLDER_ID'))
   var copy = templateFile.makeCopy(buildDraftName(job, claim), draftsFolder)
@@ -21,6 +21,7 @@ function generateDoc(job, claim, validated, tagSchema, unplacedNotes) {
     if (!resolved[tag].isVariant) replaceTag(body, tag, resolved[tag])
   })
 
+  styleRoomLabels(body, collectRoomLabels(resolved))
   highlightNeedsInput(body)
   highlightMediumConfidence(body)
   appendUnplacedNotes(body, unplacedNotes)
@@ -159,6 +160,71 @@ function buildDraftName(job, claim) {
   return date + ' — ' + who + ' — ' + address
 }
 
+// The interior and other-structures sections are written as one block per room
+// (see prompt.js's interior_damage_narrative guidance): the room name alone on
+// its own line ending in a colon, then that room's findings beneath it. Both
+// arrive as a single multi-line string in one paragraph, so the room names have
+// to be found and styled after insertion — the same after-the-fact pass
+// highlightNeedsInput and highlightMediumConfidence already do, rather than
+// anything the {{tag}} replacement itself could carry.
+var ROOM_GROUPED_TAGS = ['interior_damage_narrative', 'other_structures_narrative']
+
+function collectRoomLabels(resolved) {
+  var labels = []
+
+  ROOM_GROUPED_TAGS.forEach(function (tag) {
+    var entry = resolved[tag]
+    if (!entry) return
+    roomLabelsIn(entry.text).forEach(function (label) {
+      if (labels.indexOf(label) === -1) labels.push(label)
+    })
+  })
+
+  return labels
+}
+
+// A room-name line is a short line that is nothing but a name and a colon. The
+// sentence-punctuation and length guards keep a findings line that happens to
+// contain a colon ("We observed the following: ...") from being mistaken for one.
+function roomLabelsIn(text) {
+  return String(text || '')
+    .split('\n')
+    .map(function (line) {
+      return line.trim()
+    })
+    .filter(function (line) {
+      return line.length > 1 && line.length <= 60 && /^[^:.!?]+:$/.test(line)
+    })
+}
+
+// Bold + italic, matching the shape Brandon's finished reports use for a room
+// heading. Each label is matched as a literal, and only where it starts a line —
+// without that check "Garage:" would also match the tail of "Detached Garage:"
+// and style half of it.
+function styleRoomLabels(body, labels) {
+  labels.forEach(function (label) {
+    var pattern = escapeForFindText(label)
+    var found = body.findText(pattern)
+
+    while (found) {
+      var text = found.getElement().asText()
+      var start = found.getStartOffset()
+      var end = found.getEndOffsetInclusive()
+
+      if (start === 0 || text.getText().charAt(start - 1) === '\n') {
+        text.setBold(start, end, true)
+        text.setItalic(start, end, true)
+      }
+
+      found = body.findText(pattern, found)
+    }
+  })
+}
+
+function escapeForFindText(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 function highlightNeedsInput(body) {
   var found = body.findText('\\[NEEDS INPUT:[^\\]]*\\]')
 
@@ -206,10 +272,28 @@ function findLeftoverTags(text) {
   return matches || []
 }
 
-function countNeedsInput(validated) {
+// Two kinds of needs-input land in a draft: a field that failed validation, and
+// a field that validated cleanly onto a variant branch whose own canned text
+// carries a [NEEDS INPUT] marker (coverage_determination "unknown",
+// personal_property_status "damaged"). Both are highlighted yellow in the body,
+// so both belong in the header's count — counting only the first left the header
+// reading "Needs input: 0" on a draft with an unresolved coverage question in it.
+function countNeedsInput(validated, tagSchema) {
   return Object.keys(validated).filter(function (tag) {
-    return !validated[tag].valid
+    var field = validated[tag]
+    if (!field.valid) return true
+    return variantTextNeedsInput((tagSchema || {})[tag], field)
   }).length
+}
+
+function variantTextNeedsInput(schema, field) {
+  if (!schema || schema.type !== 'variant' || field.empty) return false
+
+  var option = (schema.values || []).filter(function (o) {
+    return o.key === field.value
+  })[0]
+
+  return !!option && option.text.indexOf('[NEEDS INPUT:') !== -1
 }
 
 function notifyDraftReady(docUrl, needsInputCount) {

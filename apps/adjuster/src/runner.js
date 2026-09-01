@@ -248,6 +248,10 @@ function runExtractionStage(job) {
   // ever state — see applyCalendarFallback's own comment for why the
   // transcript-corroboration rule is deliberately skipped for just these tags.
   validated = applyCalendarFallback(validated, calendarFields, tagSchema)
+  // Second backstop for the same facts, from the public-records lookup calendar
+  // sync writes onto the Claims row — see applyClaimPropertyFallback. Ordered
+  // after the calendar pass so a hand-typed invite value always wins.
+  validated = applyClaimPropertyFallback(validated, claim, tagSchema)
   var unplacedNotes = extraction.unplaced_notes || []
   logEvent('runner.validated', {
     capture_id: job.capture_id,

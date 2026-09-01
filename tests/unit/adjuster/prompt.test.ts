@@ -164,6 +164,49 @@ describe('field-specific guidance', () => {
     expect(formatFieldGuidance({ some_unrelated_tag: { label: 'x', type: 'string' } })).toBe('')
   })
 
+  it('tells origin_narrative to write a mid-sentence clause and leave the date to the merge field', () => {
+    const spec = { origin_narrative: { label: 'Cause of loss', type: 'narrative' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('origin_narrative:')
+    expect(user).toContain('Damage occurred due to ___ on [DATE_LOSS], resulting in damage to ___.')
+    expect(user).toMatch(/never the date/i)
+    expect(user).toMatch(/unplaced_notes/i)
+  })
+
+  it('tells interior_damage_narrative to write one block per room, not one paragraph', () => {
+    const spec = {
+      interior_damage_narrative: { label: 'Interior damage findings', type: 'narrative' },
+    }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('interior_damage_narrative:')
+    expect(user).toMatch(/One block per room, never one running paragraph/i)
+    expect(user).toMatch(/on its own line ending in a colon/i)
+  })
+
+  it('tells other_structures_narrative to use the same per-structure shape', () => {
+    const spec = {
+      other_structures_narrative: { label: 'Other structures findings', type: 'narrative' },
+    }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('other_structures_narrative:')
+    expect(user).toMatch(/same shape as interior_damage_narrative/i)
+  })
+
+  it('tells coverage_determination to choose unknown rather than guess between covered and excluded', () => {
+    const spec = { coverage_determination: { label: 'Coverage determination', type: 'variant' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('coverage_determination:')
+    expect(user).toMatch(/"unknown" over guessing between covered and excluded/i)
+  })
+
   it('tells present_at_inspection to resolve a bare role to a name stated elsewhere in the call', () => {
     const spec = {
       present_at_inspection: { label: 'Present at inspection', type: 'string' },

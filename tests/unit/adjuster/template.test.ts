@@ -97,6 +97,8 @@ describe('branch-dependent fields flag instead of rendering blank', () => {
   const branchFields: Record<string, { field: string; equals: string }> = {
     mitigation_narrative: { field: 'mitigation_status', equals: 'present' },
     coinsurance_narrative: { field: 'coinsurance_status', equals: 'applies' },
+    interior_damage_narrative: { field: 'interior_status', equals: 'affected' },
+    other_structures_narrative: { field: 'other_structures_status', equals: 'affected' },
   }
 
   Object.entries(branchFields).forEach(([tag, condition]) => {
@@ -168,6 +170,75 @@ describe('Ibis merge-field tokens (not ours to fill)', () => {
   it('never schemas a field for what an Ibis merge-field token already covers', () => {
     ;['date_received', 'date_contacted', 'date_inspected', 'date_of_loss'].forEach((tag) => {
       expect(tag in enums, `${tag} should not be an extractable field`).toBe(false)
+    })
+  })
+})
+
+// An adjuster who has not reached a coverage call yet is the ordinary middle
+// case, not a gap. Forcing covered/excluded made the model pick one, which is
+// the single worst thing a coverage sentence can get wrong.
+describe('undetermined coverage', () => {
+  const options = enums.coverage_determination.values as VariantOption[]
+  const unknown = options.find((o) => o.key === 'unknown')
+
+  it('offers an unknown branch alongside covered and excluded', () => {
+    expect(options.map((o) => o.key)).toEqual(['covered', 'excluded', 'unknown'])
+  })
+
+  it('renders the questionable-coverage wording and carries any detail given', () => {
+    expect(unknown?.text).toContain('coverage is questionable at this time.')
+    expect(unknown?.text).toContain('{{coverage_supporting_detail}}')
+  })
+
+  it('always flags for manual input, since an unresolved coverage call cannot be filed as-is', () => {
+    expect(unknown?.text).toMatch(/\[NEEDS INPUT:[^\]]*\]/)
+  })
+})
+
+// Real reports write the interior as one block per room rather than one running
+// paragraph, so a reviewer can find a room and the estimate written against it.
+describe('room-grouped interior and other structures', () => {
+  const interiorOptions = enums.interior_status.values as VariantOption[]
+  const otherOptions = enums.other_structures_status.values as VariantOption[]
+
+  it('gates the interior body behind a status variant, the way the roof and exterior already are', () => {
+    expect(enums.interior_status.type).toBe('variant')
+    expect(interiorOptions.map((o) => o.key)).toEqual(['not_affected', 'affected'])
+  })
+
+  it('carries the lead-in on the affected branch so an unaffected interior never prints a dangling header', () => {
+    const affected = interiorOptions.find((o) => o.key === 'affected')
+    expect(affected?.text).toContain('My inspection documented damages within the following areas:')
+    expect(affected?.text).toContain('{{interior_damage_narrative}}')
+    expect(interiorOptions.find((o) => o.key === 'not_affected')?.text).not.toContain('{{')
+  })
+
+  it('keeps the existing no-damage sentence as the other-structures default', () => {
+    expect(otherOptions.find((o) => o.key === 'none')?.text).toBe(
+      "Inspection found no storm related damages to any of the insured's other structures.",
+    )
+  })
+
+  it('lists damaged other structures the same way the interior lists rooms', () => {
+    const affected = otherOptions.find((o) => o.key === 'affected')
+    expect(affected?.text).toContain('{{other_structures_narrative}}')
+  })
+
+  it('replaces the hardcoded other-structures sentence in the body with the tag', () => {
+    expect(templateText).toContain('{{other_structures_status}}')
+    expect(templateText).not.toContain(
+      "Inspection found no storm related damages to any of the insured's other structures.",
+    )
+  })
+})
+
+// A half bath and a seven-bedroom house are both real answers. A closed 1-6 enum
+// silently dropped them at the set-membership check and left the field blank.
+describe('property counts are not closed enums', () => {
+  ;['bedroom_count', 'bathroom_count'].forEach((tag) => {
+    it(`does not force ${tag} into a closed enum`, () => {
+      expect(enums[tag].type).not.toBe('enum')
+      expect(enums[tag].values).toBeUndefined()
     })
   })
 })
