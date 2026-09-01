@@ -7,19 +7,19 @@ This is a config runbook, not a code change. The items below are live settings o
 
 ## Current state (read via `getAgent`, 2026-09-01)
 
-| Setting | Current value | Target |
-|---|---|---|
-| `max_call_duration_ms` | `900000` (15 min) | `2700000` (45 min) |
-| `opt_in_signed_url` | `false` | `true` |
-| `pii_config.categories` | `[]` (mode `post_call`) | **Blocked — see below** |
-| Data retention | not surfaced by `getAgent` as `data_storage_retention_days`; agent has `data_storage_setting: "everything"`. Need to check the workspace-level retention setting (Retell's docs describe retention as an account/workspace setting, not always a per-agent field) before this checklist item can be actioned. | **Blocked — see below** |
-| Conversation flow / agent version | Draft `version: 3` exists (`is_published: false`) on top of published `base_version: 2`. The phone number currently routes inbound calls to the published v2. | Publish v3 — **sequencing-blocked, see below** |
-| Persona | `voice_id: retell-Kate` (voice "Kate"). The global prompt text in conversation flow v3 needs to be read directly (not returned by `getAgent`) to confirm whether it still says "Sam" as reported. **Unverified — flagging for confirmation, not fixing blind.** | Global prompt should refer to the agent as "Kate" (or whichever name Brandon wants), consistent with the voice |
-| `webhook_url` | not set | Point at the bh-systems Worker proxy | **Sequencing-blocked, see below** |
+| Setting                           | Current value                                                                                                                                                                                                                                                                                                 | Target                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `max_call_duration_ms`            | `900000` (15 min)                                                                                                                                                                                                                                                                                             | `2700000` (45 min)                                                                                             |
+| `opt_in_signed_url`               | `false`                                                                                                                                                                                                                                                                                                       | `true`                                                                                                         |
+| `pii_config.categories`           | `[]` (mode `post_call`)                                                                                                                                                                                                                                                                                       | **Blocked — see below**                                                                                        |
+| Data retention                    | not surfaced by `getAgent` as `data_storage_retention_days`; agent has `data_storage_setting: "everything"`. Need to check the workspace-level retention setting (Retell's docs describe retention as an account/workspace setting, not always a per-agent field) before this checklist item can be actioned. | **Blocked — see below**                                                                                        |
+| Conversation flow / agent version | Draft `version: 3` exists (`is_published: false`) on top of published `base_version: 2`. The phone number currently routes inbound calls to the published v2.                                                                                                                                                 | Publish v3 — **sequencing-blocked, see below**                                                                 |
+| Persona                           | `voice_id: retell-Kate` (voice "Kate"). The global prompt text in conversation flow v3 needs to be read directly (not returned by `getAgent`) to confirm whether it still says "Sam" as reported. **Unverified — flagging for confirmation, not fixing blind.**                                               | Global prompt should refer to the agent as "Kate" (or whichever name Brandon wants), consistent with the voice |
+| `webhook_url`                     | not set                                                                                                                                                                                                                                                                                                       | Point at the bh-systems Worker proxy — **sequencing-blocked, see below**                                       |
 
 ## Blocked on Brandon's decision — do not set unilaterally
 
-- **`pii_config.categories`** — currently `[]`, which means *nothing* is redacted from call recordings/transcripts today. This is a real-world PII exposure question for an insurance-claims product; Barton is not deciding what gets redacted on Brandon's behalf. Needs an explicit conversation with Brandon about which categories (if any) to enable.
+- **`pii_config.categories`** — currently `[]`, which means _nothing_ is redacted from call recordings/transcripts today. This is a real-world PII exposure question for an insurance-claims product; Barton is not deciding what gets redacted on Brandon's behalf. Needs an explicit conversation with Brandon about which categories (if any) to enable.
 - **Data retention** — deletion under a retention policy is irreversible. Same rule: needs Brandon's explicit sign-off on a number before this gets set, not a default picked for him.
 
 ## Blocked on sequencing — do after spec 014 ships
@@ -34,7 +34,7 @@ These two are uncontroversial per the original breakdown and don't gate on anyth
 - Raise `max_call_duration_ms` from `900000` to `2700000` (45 min).
 - Enable `opt_in_signed_url` so recording URLs are signed.
 
-**Not yet applied in this pass** — flagging them here rather than pushing a live mutation to Brandon's production agent from an unattended runbook write-up. Barton: say the word and I'll flip these two via the Retell API; they're low-risk and don't block on anything above.
+**Not yet applied in this pass** — flagging them here rather than pushing a live mutation to Brandon's production agent from an unattended runbook write-up. These two are low-risk and don't block on anything above; get explicit go-ahead before applying them via the Retell API.
 
 ## Checklist (for whoever executes the remaining items)
 
