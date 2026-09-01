@@ -51,9 +51,12 @@ describe('buildMasterTranscriptPrompt', () => {
       adjusterName: 'Brandon',
     })
 
-    expect(prompt.system).toContain('ElevenLabs first, Qwen second, Dograh last')
+    expect(prompt.system).toContain(
+      "ElevenLabs first, Qwen second, the call platform's live transcript last",
+    )
     expect(prompt.system).toContain('character for character')
     expect(prompt.system).toContain('You may not write a single word')
+    expect(prompt.system).not.toContain('Dograh')
   })
 
   it('labels all three transcripts, in precedence order', () => {
@@ -65,12 +68,28 @@ describe('buildMasterTranscriptPrompt', () => {
       glossary: [],
     })
 
-    const order = ['ElevenLabs Scribe v2', 'Qwen3 ASR Flash', 'Dograh'].map((label) =>
-      prompt.user.indexOf(label),
-    )
+    const order = [
+      'ElevenLabs Scribe v2',
+      'Qwen3 ASR Flash',
+      "The call platform's own real-time transcript",
+    ].map((label) => prompt.user.indexOf(label))
     expect(order.every((index) => index > -1)).toBe(true)
     expect(order[0]).toBeLessThan(order[1])
     expect(order[1]).toBeLessThan(order[2])
+  })
+
+  it('describes the third source identically for a retell precedence', () => {
+    const { sandbox } = harness()
+
+    const prompt = sandbox.buildMasterTranscriptPrompt({
+      sources: sources({ retell: sources().dograh }),
+      precedence: ['elevenlabs', 'qwen', 'retell'],
+      claim: null,
+      glossary: [],
+    })
+
+    expect(prompt.user).toContain("The call platform's own real-time transcript")
+    expect(prompt.user).not.toContain('Dograh')
   })
 
   it('renders ElevenLabs as diarized turns when it produced a words array', () => {
@@ -106,7 +125,7 @@ describe('buildMasterTranscriptPrompt', () => {
 
     expect(prompt.user).not.toContain('Qwen3 ASR Flash')
     expect(prompt.user).toContain('ElevenLabs Scribe v2')
-    expect(prompt.user).toContain('Dograh')
+    expect(prompt.user).toContain("The call platform's own real-time transcript")
   })
 
   it('works down to a single source', () => {
@@ -118,7 +137,7 @@ describe('buildMasterTranscriptPrompt', () => {
       glossary: [],
     })
 
-    expect(prompt.user).toContain('Dograh')
+    expect(prompt.user).toContain("The call platform's own real-time transcript")
     expect(prompt.user).not.toContain('ElevenLabs Scribe v2')
   })
 })
@@ -346,6 +365,30 @@ describe('buildGatedMasterTranscript', () => {
     // The rejected master is still rendered, so the caller can keep it in the
     // call folder for inspection.
     expect(result.text).toContain('adjuster: ')
+
+    const violation = logged.find((l) => l.event === 'master_transcript.verbatim_violation')
+    expect(violation?.fields.substituted_source).toBe('elevenlabs')
+  })
+
+  it('names the retell source when the gate rejects a master built with a retell precedence', () => {
+    const { sandbox, logged } = harness({
+      callOpenRouter: () => ({
+        content: {
+          turns: [{ speaker: 'adjuster', text: SOURCE_TEXT.replace(/and two$/, 'plus shingles') }],
+          contested_passages: [],
+        },
+        model: 'test-model',
+      }),
+    })
+
+    const result = sandbox.buildGatedMasterTranscript({
+      captureId: 'retell-1',
+      sources: { elevenlabs: { text: SOURCE_TEXT }, retell: { text: SOURCE_TEXT } },
+      precedence: ['elevenlabs', 'qwen', 'retell'],
+    })
+
+    expect(result.coverage).toBe(0.8)
+    expect(result.accepted).toBe(false)
 
     const violation = logged.find((l) => l.event === 'master_transcript.verbatim_violation')
     expect(violation?.fields.substituted_source).toBe('elevenlabs')

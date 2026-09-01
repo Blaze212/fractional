@@ -9,7 +9,14 @@ var TRANSCRIPT_SOURCE_FRAMING = {
   elevenlabs:
     'The transcript below is a single batch machine transcription of the call recording (ElevenLabs Scribe v2), re-read from the saved audio after the call. It is flat text with no speaker labels or turn structure.',
   qwen: 'The transcript below is a single batch machine transcription of the call recording (Qwen3 ASR Flash), re-read from the saved audio after the call. It is flat text with no speaker labels or turn structure.',
+  // Both voice-platform keys share this wording deliberately: prompt.js is
+  // loaded standalone in prompt.test.ts (no transcription.js), so this stays
+  // a plain literal rather than being generated from transcription.js's
+  // VOICE_PLATFORM_SOURCES — the extractor doesn't need to know which vendor
+  // handled the call, only that the transcript was captured live.
   dograh:
+    "The transcript below is the call's real-time streaming transcription, produced live during the call as the adjuster spoke.",
+  retell:
     "The transcript below is the call's real-time streaming transcription, produced live during the call as the adjuster spoke.",
 }
 

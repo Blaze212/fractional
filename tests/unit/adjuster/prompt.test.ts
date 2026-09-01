@@ -301,6 +301,15 @@ describe('transcript source framing', () => {
     expect(system).not.toContain('entirely within a single turn')
   })
 
+  it('describes the Retell transcript identically to the Dograh one', () => {
+    const dograh = buildPrompt({ transcript: 'anything', templateSpec, transcriptSource: 'dograh' })
+    const retell = buildPrompt({ transcript: 'anything', templateSpec, transcriptSource: 'retell' })
+
+    expect(retell.system).toContain('real-time streaming transcription')
+    expect(retell.system).not.toContain('entirely within a single turn')
+    expect(retell.system).toBe(dograh.system)
+  })
+
   it('leaves the prompt exactly as it was when no source is named (Telnyx)', () => {
     const withoutSource = buildPrompt({ transcript: 'anything', templateSpec })
     const withEmptySource = buildPrompt({

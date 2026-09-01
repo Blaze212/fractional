@@ -1,5 +1,6 @@
-// Batch transcription layer for Dograh calls — see docs/specs/012 and
-// docs/adr/007. Dograh's own transcript is a real-time Deepgram stream over a
+// Batch transcription layer for voice-platform calls (Dograh, Retell — see
+// VOICE_PLATFORM_SOURCES) — see docs/specs/012, docs/specs/016, and
+// docs/adr/007. A call platform's own transcript is a real-time stream over a
 // mobile codec: it hears each phrase once, live, and it is the weakest link in
 // the pipeline. This module re-reads the saved recording with two independent
 // high-accuracy batch models and hands all three readings to the merge step in
@@ -29,10 +30,19 @@ var TRANSCRIPTION_MODELS = {
 
 // One ordering governs every degraded path: which source wins a disagreement
 // inside the merge, and which source becomes the master when there is no usable
-// merge. Dograh is last on wording (single-pass, real-time, lossy codec) and
-// first on turn structure (it is the only source that knows when the agent
-// spoke). Defined once, consumed by both the merge prompt and the fallback.
+// merge. The job's own voice-platform transcript is last on wording
+// (single-pass, real-time, lossy codec) and first on turn structure (it is the
+// only source that knows when the agent spoke). Defined once, consumed by
+// both the merge prompt and the fallback. The literal third slot below
+// ('dograh') is this array's default/shape reference, used whenever a caller
+// doesn't pass a per-job precedence — the real per-job precedence is built
+// inline in runTranscriptionPass() as ['elevenlabs', 'qwen', voiceSource].
 var SOURCE_PRECEDENCE = ['elevenlabs', 'qwen', 'dograh']
+
+// Voice platforms this pass can source a streaming transcript from. A job
+// whose source isn't in this list (Telnyx, or anything future) skips stage A
+// entirely and rides the floor: whatever transcript already lives on the job.
+var VOICE_PLATFORM_SOURCES = ['dograh', 'retell']
 
 // ElevenLabs' documented keyterm rules. MAX_CHARS is 49 because the limit is
 // "less than 50 characters", not "at most 50" — a term of exactly 50 is refused.
@@ -786,9 +796,11 @@ function parseQwenResponse(bodyText) {
 
 // Every "fall back" in spec 012 resolves through here, so the fallback order and
 // the merge prompt's disagreement order can never drift apart.
-function selectFallbackTranscript(sources) {
-  for (var i = 0; i < SOURCE_PRECEDENCE.length; i++) {
-    var name = SOURCE_PRECEDENCE[i]
+function selectFallbackTranscript(sources, precedence) {
+  var order = precedence || SOURCE_PRECEDENCE
+
+  for (var i = 0; i < order.length; i++) {
+    var name = order[i]
     var entry = (sources || {})[name]
     var text = entry ? String(entry.text || '') : ''
     if (text.trim()) return { source: name, text: text }
@@ -797,8 +809,8 @@ function selectFallbackTranscript(sources) {
   return { source: '', text: '' }
 }
 
-function availableSources(sources) {
-  return SOURCE_PRECEDENCE.filter(function (name) {
+function availableSources(sources, precedence) {
+  return (precedence || SOURCE_PRECEDENCE).filter(function (name) {
     var entry = (sources || {})[name]
     return entry && String(entry.text || '').trim()
   })
@@ -809,25 +821,27 @@ function availableSources(sources) {
 // ---------------------------------------------------------------------------
 
 // Returns the Jobs-sheet fields stage A writes. Never throws for a transcription
-// problem: the floor is Dograh's own transcript, which is exactly today's
-// behavior, so a dead vendor degrades the run rather than failing the job.
+// problem: the floor is the job's own voice-platform transcript, which is
+// exactly today's behavior, so a dead vendor degrades the run rather than
+// failing the job.
 function runTranscriptionPass(job, claim) {
   var mode = getMasterTranscriptMode()
   var captureId = job.capture_id
+  var voiceSource = VOICE_PLATFORM_SOURCES.indexOf(job.source) !== -1 ? job.source : ''
 
   if (mode === 'off') {
     logEvent('transcription.skipped', { capture_id: captureId, reason: 'mode_off' })
-    return { extraction_input: 'dograh' }
+    return { extraction_input: voiceSource || 'dograh' }
   }
 
-  if (job.source !== 'dograh') {
-    logEvent('transcription.skipped', { capture_id: captureId, reason: 'not_dograh' })
+  if (!voiceSource) {
+    logEvent('transcription.skipped', { capture_id: captureId, reason: 'unsupported_source' })
     return {}
   }
 
   if (!job.audio_drive_id) {
     logEvent('transcription.skipped', { capture_id: captureId, reason: 'no_audio' })
-    return { extraction_input: 'dograh' }
+    return { extraction_input: voiceSource }
   }
 
   var folder = getOrCreateCallFolder(job, claim)
@@ -844,16 +858,17 @@ function runTranscriptionPass(job, claim) {
     openRouterKey: getOptionalConfig('OPENROUTER_API_KEY', ''),
   })
 
+  var precedence = ['elevenlabs', 'qwen', voiceSource]
   var sources = {
     elevenlabs: asr.elevenlabs || { text: '' },
     qwen: asr.qwen || { text: '' },
-    dograh: { text: String(job.transcript || '') },
   }
+  sources[voiceSource] = { text: String(job.transcript || '') }
 
   var artifactIds = writeRawTranscripts(folder, sources)
-  var available = availableSources(sources)
-  var merged = mergeIfPossible(job, claim, glossary, sources, available)
-  var fallback = selectFallbackTranscript(sources)
+  var available = availableSources(sources, precedence)
+  var merged = mergeIfPossible(job, claim, glossary, sources, available, precedence)
+  var fallback = selectFallbackTranscript(sources, precedence)
 
   var accepted = Boolean(merged && merged.accepted)
   var masterId =
@@ -861,7 +876,7 @@ function runTranscriptionPass(job, claim) {
   var resolvedSource = accepted ? 'master' : fallback.source
   // shadow runs everything and writes every artifact but leaves the draft on
   // today's input, so the real output can be read against real calls at no risk.
-  var extractionInput = mode === 'live' ? resolvedSource : 'dograh'
+  var extractionInput = mode === 'live' ? resolvedSource : voiceSource
 
   appendManifestRun(folder, {
     stage: 'transcription',
@@ -869,10 +884,11 @@ function runTranscriptionPass(job, claim) {
     at: new Date().toISOString(),
     capture_id: captureId,
     claim_id: (claim && claim.claim_id) || '',
+    voice_platform: job.source || '',
     match_method: job.match_method || '',
     fetch_mode: asr.fetch_mode,
     keyterm_count: keyterms.length,
-    sources: describeSourcesForManifest(sources),
+    sources: describeSourcesForManifest(sources, precedence),
     models: {
       elevenlabs: TRANSCRIPTION_MODELS.elevenlabs.id,
       qwen: TRANSCRIPTION_MODELS.qwen.id,
@@ -933,9 +949,12 @@ function writeRawTranscripts(folder, sources) {
 
 // Three sources merge; two merge and log the loss; one skips the merge entirely
 // (the master would just be that source restated by a model, which is exactly
-// what the verbatim constraint exists to prevent). Zero cannot happen — Dograh's
-// transcript is already on the job before stage A runs.
-function mergeIfPossible(job, claim, glossary, sources, available) {
+// what the verbatim constraint exists to prevent). Zero cannot happen — the
+// job's own voice-platform transcript is already on the job before stage A
+// runs.
+function mergeIfPossible(job, claim, glossary, sources, available, precedence) {
+  var order = precedence || SOURCE_PRECEDENCE
+
   if (available.length < 2) {
     logEvent('transcription.single_source', {
       capture_id: job.capture_id,
@@ -948,9 +967,11 @@ function mergeIfPossible(job, claim, glossary, sources, available) {
     logEvent('transcription.degraded', {
       capture_id: job.capture_id,
       available: available.join(','),
-      lost: SOURCE_PRECEDENCE.filter(function (name) {
-        return available.indexOf(name) === -1
-      }).join(','),
+      lost: order
+        .filter(function (name) {
+          return available.indexOf(name) === -1
+        })
+        .join(','),
     })
   }
 
@@ -964,6 +985,7 @@ function mergeIfPossible(job, claim, glossary, sources, available) {
       claim: claim,
       glossary: glossary,
       adjusterName: getOptionalConfig('ADJUSTER_NAME', 'Brandon'),
+      precedence: order,
     })
   } catch (err) {
     var described = describeError(err)
@@ -976,8 +998,8 @@ function mergeIfPossible(job, claim, glossary, sources, available) {
   }
 }
 
-function describeSourcesForManifest(sources) {
-  return SOURCE_PRECEDENCE.map(function (name) {
+function describeSourcesForManifest(sources, precedence) {
+  return (precedence || SOURCE_PRECEDENCE).map(function (name) {
     var entry = sources[name] || {}
     return {
       source: name,
@@ -996,13 +1018,15 @@ function describeSourcesForManifest(sources) {
 
 // extraction_input is decided in stage A and recorded on the job, so stage B
 // never re-derives it — it just loads whatever the earlier stage resolved to.
-// Every path degrades to Dograh's transcript, today's behavior.
+// Every path degrades to the job's own voice-platform transcript, today's
+// behavior, keyed by whichever platform actually produced it (job.source)
+// rather than a fixed 'dograh' literal — see VOICE_PLATFORM_SOURCES.
 function resolveExtractionTranscript(job) {
-  var dograhText = String(job.transcript || '')
-  var dograh = {
-    source: job.source === 'dograh' ? 'dograh' : '',
-    transcript: dograhText,
-    haystack: dograhText,
+  var voiceText = String(job.transcript || '')
+  var voiceFallback = {
+    source: VOICE_PLATFORM_SOURCES.indexOf(job.source) !== -1 ? job.source : '',
+    transcript: voiceText,
+    haystack: voiceText,
   }
   var input = String(job.extraction_input || '')
 
@@ -1013,7 +1037,7 @@ function resolveExtractionTranscript(job) {
       return { source: 'master', transcript: masterText, haystack: buildSpanHaystack(masterText) }
     }
     logEvent('transcription.master_unreadable', { capture_id: job.capture_id })
-    return dograh
+    return voiceFallback
   }
 
   if (input === 'elevenlabs' || input === 'qwen') {
@@ -1024,7 +1048,7 @@ function resolveExtractionTranscript(job) {
     logEvent('transcription.fallback_unreadable', { capture_id: job.capture_id, source: input })
   }
 
-  return dograh
+  return voiceFallback
 }
 
 // ---------------------------------------------------------------------------
