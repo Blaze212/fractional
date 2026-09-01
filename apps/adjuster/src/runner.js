@@ -11,7 +11,6 @@ function runPipelineTick() {
 
   try {
     reclaimStuckJobs()
-    promoteStaleAwaitingTranscript()
     ensureTranscriptionColumns()
     processOldestPendingJob()
     logEvent('runner.tick_end', { ms: Date.now() - startedAt })

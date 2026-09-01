@@ -1,9 +1,3 @@
-// Confirmed against a live Stage 1 call (Raw tab, 2026-08-19): Telnyx sends
-// PascalCase field names — CallSessionId, From, RecordingUrl, RecordingDuration,
-// RecordingStartTime, TranscriptionText — not the snake_case call_session_id the
-// spec's draft assumed. firstParam() still checks multiple candidates per field as
-// a hedge, but the confirmed real name is listed first.
-//
 // Logging contract: every request that reaches doPost produces at least two log
 // lines — webhook.received before any parsing or auth, and exactly one terminal
 // line (webhook.accepted / webhook.denied / webhook.failed) from the finally
@@ -60,9 +54,8 @@ function routeWebhook(event, params, e) {
   }
 
   // Dograh's Notetaker voice agent (workflow id 10551) posts one JSON body per
-  // completed call — no CallSessionId, no From number, none of the Telnyx call
-  // shape the checks below assume — so it has to branch off before them, right
-  // after the shared secret check.
+  // completed call — branches off right after the shared secret check, same
+  // as every other event below.
   if (event === 'dograh_notetaker') {
     // Raw, unparsed body — logged before parseJsonBody touches it so a webhook
     // that arrives with gathered_context already empty (a Dograh-side timing
@@ -151,33 +144,7 @@ function routeWebhook(event, params, e) {
     return accepted(manualCaptureId, handleManualRecordingInject(manualCaptureId, manualBody))
   }
 
-  var callSessionId = firstParam(params, ['CallSessionId', 'CallSid', 'call_session_id'])
-  if (!looksLikeTelnyxCallId(callSessionId)) {
-    return denied('bad_call_session_id', callSessionId, 'Bad Request')
-  }
-
-  var fromNumber = firstParam(params, ['From', 'from'])
-  if (fromNumber && !isAllowedCaller(fromNumber)) {
-    return denied('caller_not_allowed', callSessionId, 'Forbidden')
-  }
-
-  if (event === 'recording') return accepted(callSessionId, handleRecording(callSessionId, params))
-  if (event === 'transcription') {
-    return accepted(callSessionId, handleTranscription(callSessionId, params))
-  }
-  if (event === 'action') return accepted(callSessionId, handleAction())
-
-  // Telnyx's post-call analysis event (CallStatus: "analyzed") — carries
-  // Recordings once a phone number's "record the whole call" toggle is on.
-  // Shape-detected the same way as AIGather-ended: no `event` param of our
-  // own, delivered to the account-level callback URL. Distinguishable by
-  // Recordings+Cost being present with no Messages (AIGather-ended has
-  // Messages+ConversationId; this has ConversationId+Recordings+Cost).
-  if (looksLikeCallAnalyzed(params)) {
-    return accepted(callSessionId, handleCallAnalyzed(callSessionId, params))
-  }
-
-  return denied('unknown_event', callSessionId, 'OK')
+  return denied('unknown_event', '', 'OK')
 }
 
 function accepted(captureId, response) {
@@ -210,157 +177,12 @@ function redactParams(params) {
   return safe
 }
 
-// If Telnyx is ever switched from TeXML form posts to JSON webhooks, e.parameter
-// arrives empty and the payload is only in postData. Logging its shape makes that
-// misconfiguration obvious instead of looking like a silent field-name mismatch.
+// A JSON-body event (Dograh, Retell) with an empty e.postData is a real
+// misconfiguration — logging its shape makes that obvious instead of looking
+// like a silent parsing failure.
 function describePostData(e) {
   if (!e || !e.postData) return ''
   return String(e.postData.type || '') + ' ' + String(e.postData.contents || '').slice(0, 1000)
-}
-
-// Telnyx sends one recording callback per RecordingSid, and the live calls show two
-// per call with different start times — the shorter one begins after the greeting
-// and loses the opening seconds. Keep the longest recording and drop the rest,
-// otherwise the second callback overwrites the first's audio with worse audio and
-// pays for a second Drive copy.
-function handleRecording(callSessionId, params) {
-  var recordingUrl = firstParam(params, ['RecordingUrl', 'recording_url'])
-  var fromNumber = firstParam(params, ['From', 'from'])
-  var callStartedAt = firstParam(params, ['RecordingStartTime', 'start_time'])
-  var durationSec = Number(firstParam(params, ['RecordingDuration', 'recording_duration'])) || 0
-
-  var known = getJobByCaptureId(callSessionId)
-  if (known && known.audio_drive_id && Number(known.duration_sec || 0) >= durationSec) {
-    logEvent('webhook.recording_superseded', {
-      capture_id: callSessionId,
-      kept_duration_sec: Number(known.duration_sec || 0),
-      dropped_duration_sec: durationSec,
-    })
-    return ContentService.createTextOutput('OK')
-  }
-
-  // The S3 download and Drive upload take seconds. They run before the lock is
-  // taken so a slow recording callback cannot block the transcription callback
-  // that is arriving at the same moment.
-  var audioDriveId = ''
-  if (recordingUrl) {
-    audioDriveId = copyRecordingToDrive(recordingUrl, callSessionId, 'mp3')
-  }
-
-  return withJobLock(function () {
-    var job = getJobByCaptureId(callSessionId)
-
-    upsertJob(callSessionId, {
-      from_number: fromNumber || '',
-      call_started_at: callStartedAt || '',
-      call_ended_at: new Date().toISOString(),
-      duration_sec: durationSec || '',
-      recording_url: recordingUrl || '',
-      audio_drive_id: audioDriveId,
-      status: job && job.transcript ? 'pending' : 'awaiting_transcript',
-    })
-
-    return ContentService.createTextOutput('OK')
-  })
-}
-
-function handleTranscription(callSessionId, params) {
-  var transcript = firstParam(params, ['TranscriptionText', 'transcription_text'])
-  var text = transcript || ''
-
-  return withJobLock(function () {
-    var job = getJobByCaptureId(callSessionId)
-
-    upsertJob(callSessionId, {
-      transcript: text.slice(0, 45000),
-      transcript_source: 'telnyx-deepgram-nova-3',
-      transcript_chars: text.length,
-      // Never leave the status blank. A blank status is picked up by neither the
-      // runner nor promoteStaleAwaitingTranscript, so the job sits forever.
-      status: job && job.audio_drive_id ? 'pending' : 'awaiting_recording',
-    })
-
-    return ContentService.createTextOutput('OK')
-  })
-}
-
-// CallStatus: "analyzed" — Telnyx's post-call analysis event, carrying
-// Recordings once a phone number's "record the whole call" toggle is on.
-// Telnyx's public TeXML docs don't describe this payload's shape at all when
-// Recordings is non-empty, so this logs the full raw content on every call
-// (logServerOnly, not the Raw sheet — this can be large) and only attempts a
-// best-effort extraction of an obvious recording URL via firstRecordingUrl().
-// Confirm the real shape against a live call with recording genuinely on,
-// then tighten firstRecordingUrl() to match — same "confirm against a live
-// call, then replace the hedge" pattern this file's top-of-file comment and
-// guidedFlow.js's parseAIGatherResult() already followed.
-//
-// KNOWN GAP: in the one real call observed so far, this event arrived ~14
-// minutes after call.ai_gather.ended — almost certainly after runner.js has
-// already extracted fields and generated the doc from the AIGather-only
-// transcript. This still records the recording URL and appends it to the
-// transcript for a human reviewing the job, but does NOT re-trigger
-// extraction or regenerate an already-generated doc. Whether a late-arriving
-// recording should force re-extraction is an open design question, not
-// resolved here — see template/README.md, "Phase 3."
-function handleCallAnalyzed(callSessionId, params) {
-  logServerOnly('call_analyzed.raw', {
-    capture_id: callSessionId,
-    recordings: params.Recordings || '',
-    conversation_insights: params.ConversationInsights || '',
-    cost: params.Cost || '',
-  })
-
-  var recordingUrl = firstRecordingUrl(params.Recordings)
-  if (!recordingUrl) {
-    logEvent('call_analyzed.no_recording', { capture_id: callSessionId })
-    return ContentService.createTextOutput('OK')
-  }
-
-  logEvent('call_analyzed.recording_found', {
-    capture_id: callSessionId,
-    recording_url: recordingUrl,
-  })
-
-  return withJobLock(function () {
-    var job = getJobByCaptureId(callSessionId)
-    var transcript = appendTranscriptSection(job, '[CALL RECORDING]\n' + recordingUrl)
-
-    upsertJob(callSessionId, {
-      recording_url: recordingUrl,
-      transcript: transcript.slice(0, 45000),
-      transcript_chars: transcript.length,
-    })
-
-    return ContentService.createTextOutput('OK')
-  })
-}
-
-function appendTranscriptSection(existingJob, section) {
-  var existing = (existingJob && existingJob.transcript) || ''
-  return existing ? existing + '\n\n' + section : section
-}
-
-// Best-effort only — Telnyx's docs don't describe this field's shape. Handles
-// a bare array of URL strings and the common {url:...}/{recording_url:...}/
-// {download_url:...} object shapes; anything else falls through to '', and
-// handleCallAnalyzed()'s raw log is what tells us how to extend this once a
-// real payload is seen.
-function firstRecordingUrl(raw) {
-  var parsed = tryJsonParse(raw)
-  if (!parsed || !parsed.length) return ''
-  var entry = parsed[0]
-  if (typeof entry === 'string') return entry
-  if (entry && typeof entry === 'object') {
-    return entry.url || entry.recording_url || entry.download_url || ''
-  }
-  return ''
-}
-
-// Shares no fields with looksLikeAIGatherEnded's shape (Messages+ConversationId)
-// — this event has Recordings+Cost and no Messages.
-function looksLikeCallAnalyzed(params) {
-  return Boolean(params.Recordings !== undefined && params.Cost !== undefined && !params.Messages)
 }
 
 // Jobs-sheet columns shared by every "live extraction" source (a platform's own
@@ -720,12 +542,10 @@ function tryWriteCallArtifacts(folder, captureId, body, transcript, audioDriveId
 
 // UNCONFIRMED AGAINST A LIVE CALL: Dograh's docs describe transcript_url only as
 // "a public download URL for the call transcript" — the content type isn't
-// documented. Handles plain text and, in case it turns out to be structured the
-// same way Telnyx's AIGather result is, a JSON array of {role, content} turns
-// (reusing stitchAIGatherMessages() from guidedFlow.js); anything else falls
-// back to the raw response body. Confirm against a real Dograh Notetaker call
-// and tighten this the same way this file's other hedges already document
-// doing (see the top-of-file comment on Telnyx's PascalCase field names).
+// documented. Handles plain text and, in case it turns out to be a JSON array
+// of {role, content} turns (reusing stitchAIGatherMessages() from util.js),
+// anything else falls back to the raw response body. Confirm against a real
+// Dograh Notetaker call and tighten this once the real shape is known.
 function fetchDograhTranscript(url) {
   if (!url) return ''
 
@@ -919,18 +739,10 @@ function parseJsonBody(e) {
   return parsed && typeof parsed === 'object' ? parsed : {}
 }
 
-function handleAction() {
-  return ContentService.createTextOutput(
-    '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
-  ).setMimeType(ContentService.MimeType.XML)
-}
-
-// Telnyx's recordings are always mp3 (TeXML's <Record format="mp3">
-// confirms it) — its call site passes 'mp3' as the fallback below, not a
-// guess. Dograh's default looks to be wav, but nothing documents whether
-// that can change per workflow/account, so its call site passes 'wav' as
-// the fallback while still preferring whatever extension the URL itself
-// states, in case a given recording really is something else.
+// Dograh's and Retell's defaults look to be wav, but nothing documents
+// whether that can change per workflow/account/agent, so every call site
+// passes 'wav' as the fallback while still preferring whatever extension the
+// URL itself states, in case a given recording really is something else.
 function guessAudioExtension(recordingUrl, fallback) {
   var match = /\.(mp3|wav|m4a|ogg|webm)(\?|$)/i.exec(recordingUrl || '')
   return match ? match[1].toLowerCase() : fallback
@@ -938,8 +750,8 @@ function guessAudioExtension(recordingUrl, fallback) {
 
 // callFolder is the per-call artifact folder when one could be created; audio
 // lands there as a plainly-named audio.<ext> alongside the call's transcripts.
-// Without one (Telnyx, or CALL_ARTIFACTS_FOLDER_ID unset) it falls back to the
-// flat RECORDINGS_FOLDER_ID keyed by capture ID, exactly as before. Recordings
+// Without one (CALL_ARTIFACTS_FOLDER_ID unset) it falls back to the flat
+// RECORDINGS_FOLDER_ID keyed by capture ID, exactly as before. Recordings
 // already sitting in the flat folder are left where they are — no migration.
 function copyRecordingToDrive(recordingUrl, callSessionId, fallbackExtension, callFolder) {
   var response = UrlFetchApp.fetch(recordingUrl, { muteHttpExceptions: true })
@@ -952,24 +764,8 @@ function copyRecordingToDrive(recordingUrl, callSessionId, fallbackExtension, ca
   }
 
   var folder = callFolder || DriveApp.getFolderById(getConfig('RECORDINGS_FOLDER_ID'))
-  var extension = guessAudioExtension(recordingUrl, fallbackExtension || 'mp3')
+  var extension = guessAudioExtension(recordingUrl, fallbackExtension || 'wav')
   var fileName = (callFolder ? 'audio' : callSessionId) + '.' + extension
   var file = folder.createFile(response.getBlob().setName(fileName))
   return file.getId()
-}
-
-function isAllowedCaller(fromNumber) {
-  var allowed = getConfigList('ALLOWED_CALLERS', [])
-  return allowed.indexOf(fromNumber) !== -1
-}
-
-function looksLikeTelnyxCallId(value) {
-  return typeof value === 'string' && value.length >= 8
-}
-
-function firstParam(params, names) {
-  for (var i = 0; i < names.length; i++) {
-    if (params[names[i]]) return params[names[i]]
-  }
-  return ''
 }

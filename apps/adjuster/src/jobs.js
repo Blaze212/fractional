@@ -279,24 +279,6 @@ function reclaimStuckJobs() {
   })
 }
 
-function promoteStaleAwaitingTranscript() {
-  var sheet = getJobsSpreadsheet().getSheetByName(JOBS_TAB)
-  var data = getSheetRows(sheet)
-  var cutoff = new Date(Date.now() - 15 * 60 * 1000)
-
-  data.rows.forEach(function (row) {
-    if (row.status !== 'awaiting_transcript' && row.status !== 'awaiting_recording') return
-    if (new Date(row.created_at) >= cutoff) return
-
-    // awaiting_recording already holds a Telnyx transcript — only the audio is
-    // missing, so the source stays as recorded rather than being relabelled.
-    var fields = { status: 'pending' }
-    if (row.status === 'awaiting_transcript') fields.transcript_source = 'deepgram-direct'
-
-    writeRowFields(sheet, data.headers, row._rowIndex, fields)
-  })
-}
-
 function appendRaw(eventType, rawBody) {
   var sheet = getJobsSpreadsheet().getSheetByName(RAW_TAB)
   sheet.appendRow([new Date().toISOString(), eventType, rawBody])
