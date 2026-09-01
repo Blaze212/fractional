@@ -687,8 +687,15 @@ describe('Retell ingest', () => {
       )
 
       expect(jobs.size).toBe(0)
-      const terminal = logged.filter((l) => l.startsWith('{')).map((l) => JSON.parse(l))[1]
-      expect(terminal.reason).toBe('bad_retell_signature')
+      const lines = logged.filter((l) => l.startsWith('{')).map((l) => JSON.parse(l))
+      expect(lines.map((l) => l.event)).toEqual([
+        'webhook.received',
+        'retell.signature_mismatch',
+        'webhook.denied',
+      ])
+      expect(lines[1].received_digest).toBe('deadbeef')
+      expect(lines[1].expected_digest).toMatch(/^[0-9a-f]{64}$/)
+      expect(lines[2].reason).toBe('bad_retell_signature')
     })
 
     it('denies a signature whose timestamp is older than the 5 minute freshness window', () => {

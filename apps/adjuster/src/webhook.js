@@ -341,9 +341,20 @@ function verifyRetellSignature(rawSigParam, e) {
   var rawBody = (e && e.postData && e.postData.contents) || ''
   var expected = computeRetellSignature(rawBody, timestamp)
 
-  return constantTimeEquals(digest, expected)
-    ? { ok: true }
-    : { ok: false, reason: 'bad_retell_signature' }
+  if (constantTimeEquals(digest, expected)) return { ok: true }
+
+  // Diagnostic only — a digest is a one-way HMAC output, not the secret
+  // itself, so logging both sides here is safe. Lets us tell a wrong/stale
+  // RETELL_API_KEY (digests differ) apart from a raw-body transport issue
+  // (raw_body_length would be the tell) without ever seeing the key.
+  logServerOnly('retell.signature_mismatch', {
+    expected_digest: expected,
+    received_digest: digest,
+    timestamp: timestamp,
+    raw_body_length: rawBody.length,
+  })
+
+  return { ok: false, reason: 'bad_retell_signature' }
 }
 
 function computeRetellSignature(rawBody, timestamp) {
