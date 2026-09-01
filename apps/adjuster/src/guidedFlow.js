@@ -396,16 +396,8 @@ function handleGuidedAIGatherEnded(callSessionId, params) {
   })
 }
 
-function stitchAIGatherMessages(raw) {
-  var messages = tryJsonParse(raw)
-  if (!messages || !messages.length) return ''
-
-  return messages
-    .map(function (m) {
-      return (m.role === 'assistant' ? 'Q: ' : 'A: ') + m.content
-    })
-    .join('\n')
-}
+// tryJsonParse() and stitchAIGatherMessages() moved to util.js — also used
+// by the Dograh path in webhook.js.
 
 function handleGuidedRecordingStatus(callSessionId, params) {
   var step = params.step || ''
@@ -663,14 +655,6 @@ function tryBase64Decode(value) {
     return Utilities.newBlob(Utilities.base64Decode(value)).getDataAsString()
   } catch (err) {
     return ''
-  }
-}
-
-function tryJsonParse(value) {
-  try {
-    return JSON.parse(value)
-  } catch (err) {
-    return null
   }
 }
 
