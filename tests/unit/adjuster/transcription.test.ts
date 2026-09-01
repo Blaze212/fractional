@@ -251,6 +251,15 @@ describe('selectFallbackTranscript', () => {
     const { sandbox } = harness()
     expect(sandbox.SOURCE_PRECEDENCE).toEqual(['elevenlabs', 'qwen', 'dograh'])
   })
+
+  it('honors an explicit precedence with a retell source in the third slot', () => {
+    const { sandbox } = harness()
+    const retellSources = { elevenlabs: { text: '' }, qwen: { text: '' }, retell: { text: 'r' } }
+    const precedence = ['elevenlabs', 'qwen', 'retell']
+
+    expect(sandbox.selectFallbackTranscript(retellSources, precedence).source).toBe('retell')
+    expect(sandbox.availableSources(retellSources, precedence)).toEqual(['retell'])
+  })
 })
 
 describe('transcribeInParallel', () => {
@@ -755,6 +764,34 @@ describe('resolveExtractionTranscript', () => {
 
     expect(input).toEqual({ source: '', transcript: 'telnyx text', haystack: 'telnyx text' })
   })
+
+  it('resolves a Retell job to its own transcript with the right source label', () => {
+    const { sandbox } = harness()
+
+    const input = sandbox.resolveExtractionTranscript({
+      capture_id: 'retell-1',
+      source: 'retell',
+      extraction_input: 'retell',
+      transcript: 'retell text',
+    })
+
+    expect(input).toEqual({ source: 'retell', transcript: 'retell text', haystack: 'retell text' })
+  })
+
+  it('degrades a Retell job to its own transcript, not a blank source, when the master is unreadable', () => {
+    const { sandbox } = harness()
+
+    const input = sandbox.resolveExtractionTranscript({
+      capture_id: 'retell-1',
+      source: 'retell',
+      extraction_input: 'master',
+      transcript_master_id: 'gone',
+      transcript: 'retell text',
+    })
+
+    expect(input.source).toBe('retell')
+    expect(input.transcript).toBe('retell text')
+  })
 })
 
 describe('runTranscriptionPass', () => {
@@ -844,8 +881,67 @@ describe('runTranscriptionPass', () => {
 
     expect(fields).toEqual({})
     expect(logged.find((l) => l.event === 'transcription.skipped')?.fields.reason).toBe(
-      'not_dograh',
+      'unsupported_source',
     )
+  })
+
+  it('runs the full pass for a Retell job exactly like a Dograh one', () => {
+    const { sandbox, folder } = passHarness({ mode: 'live', merge: acceptedMerge })
+
+    const fields = sandbox.runTranscriptionPass({ ...job, source: 'retell' }, claim)
+
+    expect(fields.transcription_sources).toBe('elevenlabs,qwen,retell')
+    expect(fields.extraction_input).toBe('master')
+    expect(folder.files.map((f) => f.name)).toEqual([
+      'transcript-elevenlabs.txt',
+      'transcript-qwen.txt',
+      'transcript-master.txt',
+      'manifest.json',
+    ])
+  })
+
+  it('points a Retell job at its own live transcript when the gate rejects the master', () => {
+    const { sandbox } = passHarness({
+      mode: 'live',
+      merge: { ...acceptedMerge, accepted: false, coverage: 0.4 },
+    })
+
+    const fields = sandbox.runTranscriptionPass({ ...job, source: 'retell' }, claim)
+
+    expect(fields.extraction_input).toBe('elevenlabs')
+  })
+
+  it('leaves extraction on the Retell transcript in shadow mode', () => {
+    const { sandbox } = passHarness({ merge: acceptedMerge })
+
+    const fields = sandbox.runTranscriptionPass({ ...job, source: 'retell' }, claim)
+
+    expect(fields.extraction_input).toBe('retell')
+  })
+
+  it('rides on the Retell transcript alone when both ASR sources die', () => {
+    const { sandbox } = passHarness({ mode: 'live', eleven: null, qwen: null })
+
+    const fields = sandbox.runTranscriptionPass({ ...job, source: 'retell' }, claim)
+
+    expect(fields.transcription_sources).toBe('retell')
+    expect(fields.extraction_input).toBe('retell')
+  })
+
+  it('records voice_platform on the manifest run for both platforms', () => {
+    const dograhRun = passHarness({ mode: 'live', merge: acceptedMerge })
+    dograhRun.sandbox.runTranscriptionPass(job, claim)
+    const dograhManifest = JSON.parse(
+      dograhRun.folder.files.find((f) => f.name === 'manifest.json')!.content,
+    )
+    expect(dograhManifest.runs[0].voice_platform).toBe('dograh')
+
+    const retellRun = passHarness({ mode: 'live', merge: acceptedMerge })
+    retellRun.sandbox.runTranscriptionPass({ ...job, source: 'retell' }, claim)
+    const retellManifest = JSON.parse(
+      retellRun.folder.files.find((f) => f.name === 'manifest.json')!.content,
+    )
+    expect(retellManifest.runs[0].voice_platform).toBe('retell')
   })
 
   it('skips a Dograh job whose recording never made it to Drive', () => {
