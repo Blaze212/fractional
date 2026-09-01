@@ -1,6 +1,6 @@
 # Dograh-vs-Retell A/B Call Runbook
 
-Part of spec 017 (`docs/specs/017-adjuster-dograh-regression-guard.md`).
+Part of spec 017 (`docs/specs/completed/017-adjuster-dograh-regression-guard.md`).
 Once Retell exists as a second voice platform, this is how a human verifies
 that a call to the Retell number produces the same result as the same call
 made to the Dograh number — before trusting Retell for real claims.
@@ -97,8 +97,8 @@ and unit-tested (see `tests/unit/adjuster-compare-ab-drafts.test.ts`).
 If a FAIL here is bad enough to pull Retell traffic, unbinding the Retell
 phone number from its agent is the entire rollback — no code change is
 required. See "Rollback Path Confirmation" in
-`docs/specs/017-adjuster-dograh-regression-guard.md` for why: nothing
+`docs/specs/completed/017-adjuster-dograh-regression-guard.md` for why: nothing
 downstream of the webhook (`transcription.js`, `runner.js`) treats
-`job.source` as anything other than a loose `=== 'dograh'` / `!== 'dograh'`
+`job.source` as anything other than a strict `=== 'dograh'` / `!== 'dograh'`
 check, so Dograh calls keep working exactly as before the moment Retell
 traffic stops.

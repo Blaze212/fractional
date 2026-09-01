@@ -691,7 +691,7 @@ describe('doGet', () => {
 // elsewhere in this file. A partial check stays green when a field is
 // silently added, renamed, or dropped by a shared-helper edit made while
 // adding Retell support; a full-shape check does not. See
-// docs/specs/017-adjuster-dograh-regression-guard.md.
+// docs/specs/completed/017-adjuster-dograh-regression-guard.md.
 const ISO_TIMESTAMP = expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
 
 describe('Dograh regression contract — pre-Retell baseline', () => {

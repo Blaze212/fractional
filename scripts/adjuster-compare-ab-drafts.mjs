@@ -7,7 +7,7 @@
  *
  * Part of the Dograh-vs-Retell A/B call test procedure (see
  * apps/adjuster/docs/dograh-retell-ab-call-runbook.md and
- * docs/specs/017-adjuster-dograh-regression-guard.md). After reading the same
+ * docs/specs/completed/017-adjuster-dograh-regression-guard.md). After reading the same
  * script to both the Dograh number and the Retell number, export each call's
  * resulting Jobs-sheet row as JSON (copy the row into a .json file, one
  * object of column-name -> value) and run:

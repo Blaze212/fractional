@@ -213,9 +213,10 @@ places downstream of the webhook:
   (gates whether Dograh's live-captured field export is fed into extraction
   as a cross-check hint)
 
-Every one of these is a **loose equality check against the literal string
-`'dograh'`**, not a switch/enum validated against a fixed set of known
-platforms, and not a check that throws or errors on an unrecognized value.
+Every one of these is a **strict equality check against the literal string
+`'dograh'`** (`===`/`!==`, not `==`/`!=`), not a switch/enum validated
+against a fixed set of known platforms, and not a check that throws or
+errors on an unrecognized value.
 Telnyx-native jobs already exercise the `!== 'dograh'` branch today (Telnyx's
 `handleRecording`/`handleTranscription` never set `job.source` at all, so it
 reads as `undefined`, which fails the equality check the same as any other
