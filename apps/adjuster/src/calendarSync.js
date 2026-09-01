@@ -208,6 +208,17 @@ function syncClaimsFromCalendar() {
       }
     })
 
+    // Keeps webhook.js's pre-call claim-suggestion cache warm — see spec 015
+    // and jobs.js's refreshClaimCandidatesCache(). Own try/catch so a
+    // CacheService hiccup degrades to "no cache refresh this tick" the same
+    // way every other best-effort piece of this tick already does, rather
+    // than failing the sync or skipping the tick_end log below.
+    try {
+      refreshClaimCandidatesCache()
+    } catch (err) {
+      logEvent('calendar_sync.cache_refresh_failed', { error: String(err) })
+    }
+
     // One glance-able summary line per tick, on top of the per-event
     // claim_synced/event_failed/title_unparsed lines below — synced_titles and
     // skipped_titles so a bad sync is visible from the Raw sheet without having

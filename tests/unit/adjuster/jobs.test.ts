@@ -448,3 +448,85 @@ describe('ensureClaimsColumns', () => {
     expect(sheet.values[0]).toEqual(CLAIM_HEADERS)
   })
 })
+
+describe('claim candidates cache', () => {
+  function fakeCache(initial: Record<string, string> = {}) {
+    const store = new Map(Object.entries(initial))
+    const puts: Array<{ key: string; value: string; ttl: number }> = []
+
+    return {
+      store,
+      puts,
+      get: (key: string) => store.get(key) ?? null,
+      put: (key: string, value: string, ttl: number) => {
+        store.set(key, value)
+        puts.push({ key, value, ttl })
+      },
+    }
+  }
+
+  function claimsHarness(claimRows: string[][], cache: ReturnType<typeof fakeCache>) {
+    const headers = ['claim_id', 'insured_last_name']
+    const sheet = {
+      getDataRange: () => ({ getValues: () => [headers, ...claimRows] }),
+    }
+
+    return loadGs('apps/adjuster/src/jobs.js', {
+      getConfig: () => 'sheet-1',
+      SpreadsheetApp: { openById: () => ({ getSheetByName: () => sheet }) },
+      CacheService: { getScriptCache: () => cache },
+    })
+  }
+
+  it('refreshClaimCandidatesCache reads the Claims sheet and writes it to the script cache', () => {
+    const cache = fakeCache()
+    const sandbox = claimsHarness([['evt-1', 'Love']], cache)
+
+    const claims = sandbox.refreshClaimCandidatesCache()
+
+    expect(claims).toEqual([{ claim_id: 'evt-1', insured_last_name: 'Love', _rowIndex: 2 }])
+    expect(cache.puts).toHaveLength(1)
+    expect(cache.puts[0].key).toBe('claim_candidates_v1')
+    expect(JSON.parse(cache.puts[0].value)).toEqual(claims)
+    expect(cache.puts[0].ttl).toBe(21600)
+  })
+
+  it('getCachedClaims returns the cached value on a hit without reading the Sheet', () => {
+    const cache = fakeCache({
+      claim_candidates_v1: JSON.stringify([{ claim_id: 'cached-1', insured_last_name: 'Cached' }]),
+    })
+    const getDataRange = () => {
+      throw new Error('Sheet should not be read on a cache hit')
+    }
+    const sandbox = loadGs('apps/adjuster/src/jobs.js', {
+      getConfig: () => 'sheet-1',
+      SpreadsheetApp: {
+        openById: () => ({ getSheetByName: () => ({ getDataRange }) }),
+      },
+      CacheService: { getScriptCache: () => cache },
+    })
+
+    const claims = sandbox.getCachedClaims()
+
+    expect(claims).toEqual([{ claim_id: 'cached-1', insured_last_name: 'Cached' }])
+  })
+
+  it('getCachedClaims falls back to a live read and repopulates the cache on a miss', () => {
+    const cache = fakeCache()
+    const sandbox = claimsHarness([['evt-2', 'Barnes']], cache)
+
+    const claims = sandbox.getCachedClaims()
+
+    expect(claims).toEqual([{ claim_id: 'evt-2', insured_last_name: 'Barnes', _rowIndex: 2 }])
+    expect(cache.store.get('claim_candidates_v1')).toBe(JSON.stringify(claims))
+  })
+
+  it('getCachedClaims falls back to a live read when the cached entry is corrupt JSON', () => {
+    const cache = fakeCache({ claim_candidates_v1: 'not-json{' })
+    const sandbox = claimsHarness([['evt-3', 'Adams']], cache)
+
+    const claims = sandbox.getCachedClaims()
+
+    expect(claims).toEqual([{ claim_id: 'evt-3', insured_last_name: 'Adams', _rowIndex: 2 }])
+  })
+})
