@@ -79,6 +79,45 @@ function routeWebhook(event, params, e) {
     return accepted(captureId, handleDograhNotetaker(captureId, body))
   }
 
+  // Retell posts one JSON body per lifecycle event ({event, call} — call_ended,
+  // call_analyzed, and others we don't act on) — same reason as
+  // dograh_notetaker above, it has to branch off before the Telnyx shape checks
+  // below. Verified with its own second gate: Apps Script's doPost(e) has no
+  // access to HTTP request headers at all (a platform limitation, not a
+  // workaround we chose not to use — see apps/bh-systems/src/worker.js's
+  // comment on proxyToAppsScript), so the bh-systems Worker proxy reads
+  // Retell's X-Retell-Signature header and forwards it here as the retell_sig
+  // query param instead. Verified before any of the body's contents are
+  // trusted, same as the shared-secret gate above applying to every event.
+  if (event === 'retell') {
+    var sigResult = verifyRetellSignature(params.retell_sig, e)
+    if (!sigResult.ok) return denied(sigResult.reason, '', 'Forbidden')
+
+    logServerOnly('retell.raw_payload', {
+      post_data_type: (e && e.postData && e.postData.type) || '',
+      post_data_contents: (e && e.postData && e.postData.contents) || '',
+    })
+
+    var retellBody = parseJsonBody(e)
+    var call = retellBody.call || {}
+    var callId = String(call.call_id || '')
+    if (!callId) return denied('missing_call_id', '', 'Bad Request')
+
+    var retellCaptureId = 'retell-' + callId
+    var retellEventType = String(retellBody.event || '')
+
+    if (retellEventType === 'call_ended') {
+      return accepted(retellCaptureId, handleRetellCallEnded(retellCaptureId, call))
+    }
+    if (retellEventType === 'call_analyzed') {
+      return accepted(retellCaptureId, handleRetellCallAnalyzed(retellCaptureId, call))
+    }
+
+    // call_started and any other lifecycle event we don't act on — acked OK so
+    // Retell doesn't treat it as a delivery failure and retry it.
+    return denied('retell_unhandled_event', retellCaptureId, 'OK')
+  }
+
   // Dograh's Pre-Call Data Fetch (Beta Notetaker workflow's Start Call node)
   // POSTs here the instant an inbound call arrives, before the agent speaks —
   // same shared-secret gate as every other event, no CallSessionId yet since
@@ -175,12 +214,15 @@ function denied(reason, captureId, body) {
   }
 }
 
-// params.t is the shared secret — never log it. Values are truncated so a long
+// params.t is the shared secret and params.retell_sig is Retell's forwarded
+// HMAC signature — never log either. Values are truncated so a long
 // transcript cannot push the terminal outcome line out of a readable log entry.
+var SECRET_PARAM_KEYS = ['t', 'retell_sig']
+
 function redactParams(params) {
   var safe = {}
   Object.keys(params).forEach(function (key) {
-    if (key === 't') {
+    if (SECRET_PARAM_KEYS.indexOf(key) !== -1) {
       safe[key] = params[key] ? '[redacted]' : '[missing]'
       return
     }
@@ -398,9 +440,26 @@ function looksLikeCallAnalyzed(params) {
   return Boolean(params.Recordings !== undefined && params.Cost !== undefined && !params.Messages)
 }
 
+// Jobs-sheet columns shared by every "live extraction" source (a platform's own
+// LLM handing back a final per-field value during the call, rather than a
+// verbatim transcript span — see validateLiveFields()'s comment in validate.js).
+// live_fields/live_fields_validated are renames of the columns this file used to
+// call dograh_fields/dograh_validated; live_fields_source is new. A production
+// Jobs sheet still has the old dograh_fields/dograh_validated headers sitting
+// unused — same "no migration" precedent copyRecordingToDrive's comment already
+// documents for the flat recordings folder — so every write site here calls
+// ensureJobsColumns(JOBS_LIVE_FIELDS_COLUMNS) first, same as
+// JOBS_TRANSCRIPTION_COLUMNS below.
+var JOBS_LIVE_FIELDS_COLUMNS = [
+  'live_fields',
+  'live_fields_validated',
+  'live_fields_source',
+  'call_analysis_data',
+]
+
 // Dograh's webhook node payload_template mirrors apps/adjuster/template/enums.json
 // 1:1 (see the "Notetaker Export" node on workflow id 10551) — every gathered_context
-// field lands in `body` under the exact same tag name validateDograhFields() and
+// field lands in `body` under the exact same tag name validateLiveFields() and
 // loadEnums() already use, so no field-name translation happens here. capture_id
 // is the "dograh-{{workflow_run_id}}" string Dograh's payload template renders,
 // namespaced so it can never collide with a Telnyx CallSessionId in the same
@@ -426,7 +485,7 @@ function handleDograhNotetaker(captureId, body) {
 
   return withJobLock(function () {
     var tagSchema = loadEnums()
-    var validated = validateDograhFields(body, tagSchema)
+    var validated = validateLiveFields(body, tagSchema, 'dograh')
     var transcript = fetchDograhTranscript(body.transcript_url)
 
     tryWriteCallArtifacts(callFolder, captureId, body, transcript, audioDriveId)
@@ -435,6 +494,7 @@ function handleDograhNotetaker(captureId, body) {
     // writeRowFields throws on a header it can't find, so they have to exist
     // before call_folder_id below is written into an already-present row.
     ensureJobsColumns(JOBS_TRANSCRIPTION_COLUMNS)
+    ensureJobsColumns(JOBS_LIVE_FIELDS_COLUMNS)
 
     upsertJob(captureId, {
       source: 'dograh',
@@ -448,8 +508,9 @@ function handleDograhNotetaker(captureId, body) {
       transcript: transcript.slice(0, 45000),
       transcript_source: 'dograh-notetaker',
       transcript_chars: transcript.length,
-      dograh_fields: JSON.stringify(body),
-      dograh_validated: JSON.stringify(validated),
+      live_fields: JSON.stringify(body),
+      live_fields_validated: JSON.stringify(validated),
+      live_fields_source: 'dograh',
       status: 'pending',
     })
 
@@ -481,6 +542,7 @@ function handleManualRecordingInject(captureId, body) {
     // throws on a header it can't find, and these columns postdate every Jobs
     // sheet in existence.
     ensureJobsColumns(JOBS_TRANSCRIPTION_COLUMNS)
+    ensureJobsColumns(JOBS_LIVE_FIELDS_COLUMNS)
 
     upsertJob(captureId, {
       source: 'dograh',
@@ -494,13 +556,195 @@ function handleManualRecordingInject(captureId, body) {
       transcript: transcript.slice(0, 45000),
       transcript_source: 'manual-test-inject',
       transcript_chars: transcript.length,
-      dograh_fields: JSON.stringify({}),
-      dograh_validated: JSON.stringify({}),
+      live_fields: JSON.stringify({}),
+      live_fields_validated: JSON.stringify({}),
+      live_fields_source: 'dograh',
       status: 'pending',
     })
 
     return ContentService.createTextOutput('OK')
   })
+}
+
+// ---------------------------------------------------------------------------
+// Retell
+// ---------------------------------------------------------------------------
+
+// Retell's X-Retell-Signature header — see docs.retellai.com/features/secure-webhook
+// — is "v={unix_ms_timestamp},d={hex_hmac_sha256_digest}", where the digest is
+// HMAC-SHA256(raw_body + timestamp, retell_api_key) and the key is the account's
+// Retell API key (the one with the "webhook" badge in the Retell dashboard, not
+// a separate secret). The Worker proxy hands this value in as
+// params.retell_sig (see routeWebhook's 'retell' branch for why it can't be
+// read as a header directly).
+var RETELL_SIGNATURE_MAX_AGE_MS = 5 * 60 * 1000
+var RETELL_SIGNATURE_PATTERN = /^v=(\d+),d=([0-9a-f]+)$/i
+
+function verifyRetellSignature(rawSigParam, e) {
+  if (!rawSigParam) return { ok: false, reason: 'missing_retell_signature' }
+
+  var match = RETELL_SIGNATURE_PATTERN.exec(rawSigParam)
+  if (!match) return { ok: false, reason: 'malformed_retell_signature' }
+
+  var timestamp = match[1]
+  var digest = match[2].toLowerCase()
+  var age = Date.now() - Number(timestamp)
+  if (age < 0 || age > RETELL_SIGNATURE_MAX_AGE_MS) {
+    return { ok: false, reason: 'stale_retell_signature' }
+  }
+
+  var rawBody = (e && e.postData && e.postData.contents) || ''
+  var expected = computeRetellSignature(rawBody, timestamp)
+
+  return constantTimeEquals(digest, expected)
+    ? { ok: true }
+    : { ok: false, reason: 'bad_retell_signature' }
+}
+
+function computeRetellSignature(rawBody, timestamp) {
+  var bytes = Utilities.computeHmacSha256Signature(rawBody + timestamp, getConfig('RETELL_API_KEY'))
+  return bytesToHex(bytes)
+}
+
+// Utilities.computeHmacSha256Signature returns Java's signed bytes (-128..127),
+// same quirk transcription.js's readByte() already masks with & 0xff.
+function bytesToHex(bytes) {
+  return bytes
+    .map(function (byte) {
+      var hex = (byte & 0xff).toString(16)
+      return hex.length === 1 ? '0' + hex : hex
+    })
+    .join('')
+}
+
+// Apps Script has no built-in constant-time compare (no crypto.timingSafeEqual
+// equivalent) — this reduces the obvious timing side channel without claiming
+// to be a cryptographically rigorous constant-time comparison.
+function constantTimeEquals(a, b) {
+  if (a.length !== b.length) return false
+  var diff = 0
+  for (var i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  return diff === 0
+}
+
+function retellStartIso(call) {
+  return call.start_timestamp ? new Date(Number(call.start_timestamp)).toISOString() : ''
+}
+
+function retellDurationSec(call) {
+  return call.duration_ms ? Number(call.duration_ms) / 1000 : ''
+}
+
+// call_ended: the recording and transcript are ready, but post-call analysis
+// (call_analyzed) may not have run yet. Namespaced retell-<call_id> (see
+// routeWebhook) so it can never collide with dograh-<workflow_run_id> or a raw
+// Telnyx CallSessionId in the same Jobs sheet — same reasoning
+// handleDograhNotetaker's comment already documents for its own namespace.
+//
+// Mirrors handleDograhNotetaker's job-shell creation (tryGetCallFolder,
+// copyRecordingToDrive, writeCallArtifact, writeManifest — all reused as-is,
+// not duplicated) rather than building a parallel Drive subsystem.
+//
+// Idempotent regardless of which of the two Retell webhooks arrives first:
+// status only becomes 'pending' once this job already carries
+// call_analysis_data from a call_analyzed that got here first; otherwise it's
+// 'awaiting_analysis', mirroring the existing handleRecording/
+// handleTranscription idiom for two independent Telnyx signals.
+function handleRetellCallEnded(captureId, call) {
+  var recordingUrl = call.recording_url || ''
+  var callFolder = tryGetCallFolder({
+    capture_id: captureId,
+    call_started_at: retellStartIso(call),
+  })
+  var audioDriveId = recordingUrl
+    ? copyRecordingToDrive(recordingUrl, captureId, 'wav', callFolder)
+    : ''
+
+  return withJobLock(function () {
+    var job = getJobByCaptureId(captureId)
+    var transcript = String(call.transcript || '')
+
+    tryWriteRetellCallArtifacts(callFolder, captureId, call, transcript, audioDriveId)
+    ensureJobsColumns(JOBS_TRANSCRIPTION_COLUMNS)
+    ensureJobsColumns(JOBS_LIVE_FIELDS_COLUMNS)
+
+    upsertJob(captureId, {
+      source: 'retell',
+      call_folder_id: callFolder ? callFolder.getId() : '',
+      duration_sec: retellDurationSec(call),
+      call_started_at: retellStartIso(call),
+      call_ended_at: new Date().toISOString(),
+      recording_url: recordingUrl,
+      audio_drive_id: audioDriveId,
+      transcript: transcript.slice(0, 45000),
+      transcript_source: 'retell-call-ended',
+      transcript_chars: transcript.length,
+      status: job && job.call_analysis_data ? 'pending' : 'awaiting_analysis',
+    })
+
+    return ContentService.createTextOutput('OK')
+  })
+}
+
+// call_analyzed: post-call analysis and Retell's own extracted dynamic
+// variables are ready, but call_ended may not have landed yet (out-of-order
+// delivery is possible even though the events are generated in order). Mirror
+// image of handleRetellCallEnded's ordering check: 'pending' only once this
+// job already carries call_ended_at, else 'awaiting_call_ended'.
+function handleRetellCallAnalyzed(captureId, call) {
+  return withJobLock(function () {
+    ensureJobsColumns(JOBS_LIVE_FIELDS_COLUMNS)
+
+    var job = getJobByCaptureId(captureId)
+    var tagSchema = loadEnums()
+    var dynamicVariables = call.collected_dynamic_variables || {}
+    var validated = validateLiveFields(dynamicVariables, tagSchema, 'retell')
+
+    upsertJob(captureId, {
+      source: 'retell',
+      live_fields: JSON.stringify(dynamicVariables),
+      live_fields_validated: JSON.stringify(validated),
+      live_fields_source: 'retell',
+      call_analysis_data: JSON.stringify(call.call_analysis || {}),
+      status: job && job.call_ended_at ? 'pending' : 'awaiting_call_ended',
+    })
+
+    return ContentService.createTextOutput('OK')
+  })
+}
+
+// Companion to tryWriteCallArtifacts (Dograh's version) — same Drive helpers
+// (writeCallArtifact, writeManifest), Retell's own field names and filenames.
+// transcript_object (per-word timings) is only written when Retell actually
+// sent one — call_analyzed's payload may not carry it.
+function tryWriteRetellCallArtifacts(folder, captureId, call, transcript, audioDriveId) {
+  if (!folder) return
+
+  try {
+    if (transcript) writeCallArtifact(folder, 'transcript-retell.txt', transcript)
+
+    if (call.transcript_object && call.transcript_object.length) {
+      writeCallArtifact(
+        folder,
+        'transcript-retell-words.json',
+        JSON.stringify(call.transcript_object),
+      )
+    }
+
+    writeManifest(folder, {
+      capture_id: captureId,
+      source: 'retell',
+      created_at: new Date().toISOString(),
+      call_started_at: retellStartIso(call),
+      duration_sec: retellDurationSec(call),
+      recording_url: call.recording_url || '',
+      audio_drive_id: audioDriveId,
+      transcript_chars: transcript.length,
+      runs: [],
+    })
+  } catch (err) {
+    logEvent('retell.call_artifacts_failed', { capture_id: captureId, error: String(err) })
+  }
 }
 
 // Mirrors copyRecordingToDrive's folder-selection rule (the per-call folder
