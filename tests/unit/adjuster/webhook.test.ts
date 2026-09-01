@@ -726,6 +726,27 @@ describe('Retell Inbound Call Webhook', () => {
     Object.values(vars).forEach((value) => expect(typeof value).toBe('string'))
   })
 
+  it('toRetellDynamicVariables stringifies non-boolean, non-string values too (not just booleans)', () => {
+    const { sandbox } = harness({ getCachedClaims: () => [] })
+
+    const vars = sandbox.toRetellDynamicVariables({
+      has_claim_suggestion: true,
+      suggested_insured_last_name: 'Love',
+      call_count: 3,
+      empty: null,
+      missing: undefined,
+    })
+
+    expect(vars).toEqual({
+      has_claim_suggestion: 'true',
+      suggested_insured_last_name: 'Love',
+      call_count: '3',
+      empty: '',
+      missing: '',
+    })
+    Object.values(vars).forEach((value) => expect(typeof value).toBe('string'))
+  })
+
   it('returns every dynamic_variables key as an empty string, never omitted, when there is no suggestion', () => {
     const { sandbox } = harness({
       getCachedClaims: () => [claim({ appt_end: hoursAgoIso(30) })],

@@ -678,17 +678,21 @@ function handleRetellInbound() {
   }
 }
 
-// Retell requires every dynamic_variables value to be a string — booleans/
-// numbers are rejected outright (confirmed against Retell's dynamic-variables
-// docs). has_claim_suggestion is the one key buildClaimSuggestionContext()
-// returns as a real boolean (Dograh's initial_context has always taken it as
-// one); this is the only conversion needed since every other key is already
-// a string.
+// Retell requires every dynamic_variables value to be a string — non-strings
+// are rejected outright (confirmed against Retell's dynamic-variables docs).
+// has_claim_suggestion is the one key buildClaimSuggestionContext() returns
+// as a real boolean today (Dograh's initial_context has always taken it as
+// one), but stringify any non-string value rather than only booleans, so a
+// future numeric/other field never slips through as a raw value.
 function toRetellDynamicVariables(context) {
   var out = {}
   Object.keys(context).forEach(function (key) {
     var value = context[key]
-    out[key] = typeof value === 'boolean' ? String(value) : value || ''
+    if (value === null || value === undefined) {
+      out[key] = ''
+      return
+    }
+    out[key] = typeof value === 'string' ? value : String(value)
   })
   return out
 }

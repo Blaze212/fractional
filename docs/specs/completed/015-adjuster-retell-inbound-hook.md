@@ -202,9 +202,9 @@ research):
 - **A variable referenced in the agent's prompt that is missing from
   `dynamic_variables` is spoken literally**, curly braces and all (e.g. the
   agent would say "suggested insured last name is
-  suggested*insured_last_name"). An explicit empty string is treated as a
-  valid value and substitutes to nothing — this is exactly the case
-  `buildClaimSuggestionContext()`'s always-present `suggested*\*` keys exist
+  `{{suggested_insured_last_name}}`"). An explicit empty string is treated as
+  a valid value and substitutes to nothing — this is exactly the case
+  `buildClaimSuggestionContext()`'s always-present `suggested_*` keys exist
   to guarantee.
 
 ```js

@@ -132,24 +132,34 @@ var CLAIM_CANDIDATES_CACHE_TTL_SECONDS = 21600 // CacheService's own max: 6h
 
 function refreshClaimCandidatesCache() {
   var claims = getClaims()
-  CacheService.getScriptCache().put(
-    CLAIM_CANDIDATES_CACHE_KEY,
-    JSON.stringify(claims),
-    CLAIM_CANDIDATES_CACHE_TTL_SECONDS,
-  )
+  try {
+    CacheService.getScriptCache().put(
+      CLAIM_CANDIDATES_CACHE_KEY,
+      JSON.stringify(claims),
+      CLAIM_CANDIDATES_CACHE_TTL_SECONDS,
+    )
+  } catch (err) {
+    // The live read above still succeeded -- a cache-write failure (e.g.
+    // CacheService quota/size limits) shouldn't turn a good result into a
+    // thrown error for the caller. Just skip caching this round.
+  }
   return claims
 }
 
 // Read-through: a hit skips the Sheet read entirely. A miss (nothing has
 // synced in the last 6h — CacheService's own max TTL — or this is the first
-// call since a fresh deploy) falls back to a live read and repopulates the
-// cache, so this is always correct, just slower on a miss than getClaims()
-// itself would be.
+// call since a fresh deploy), a cached value that isn't the array shape we
+// wrote, or a corrupt cache entry all fall back to a live read and
+// repopulate the cache, so this is always correct, just slower on a miss
+// than getClaims() itself would be.
 function getCachedClaims() {
   var cached = CacheService.getScriptCache().get(CLAIM_CANDIDATES_CACHE_KEY)
   if (cached) {
     try {
-      return JSON.parse(cached)
+      var parsed = JSON.parse(cached)
+      if (Array.isArray(parsed)) {
+        return parsed
+      }
     } catch (err) {
       // Fall through to a live read below.
     }

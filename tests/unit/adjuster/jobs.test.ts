@@ -529,4 +529,36 @@ describe('claim candidates cache', () => {
 
     expect(claims).toEqual([{ claim_id: 'evt-3', insured_last_name: 'Adams', _rowIndex: 2 }])
   })
+
+  it('getCachedClaims falls back to a live read when the cached entry parses but is not an array', () => {
+    const cache = fakeCache({ claim_candidates_v1: JSON.stringify({ not: 'an array' }) })
+    const sandbox = claimsHarness([['evt-4', 'Ortiz']], cache)
+
+    const claims = sandbox.getCachedClaims()
+
+    expect(claims).toEqual([{ claim_id: 'evt-4', insured_last_name: 'Ortiz', _rowIndex: 2 }])
+  })
+
+  it('refreshClaimCandidatesCache returns the live claims even when the cache write itself throws', () => {
+    const claimRows = [['evt-5', 'Diaz']]
+    const headers = ['claim_id', 'insured_last_name']
+    const sheet = {
+      getDataRange: () => ({ getValues: () => [headers, ...claimRows] }),
+    }
+    const cache = {
+      get: () => null,
+      put: () => {
+        throw new Error('cache quota exceeded')
+      },
+    }
+    const sandbox = loadGs('apps/adjuster/src/jobs.js', {
+      getConfig: () => 'sheet-1',
+      SpreadsheetApp: { openById: () => ({ getSheetByName: () => sheet }) },
+      CacheService: { getScriptCache: () => cache },
+    })
+
+    const claims = sandbox.getCachedClaims()
+
+    expect(claims).toEqual([{ claim_id: 'evt-5', insured_last_name: 'Diaz', _rowIndex: 2 }])
+  })
 })
