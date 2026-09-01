@@ -398,9 +398,26 @@ function looksLikeCallAnalyzed(params) {
   return Boolean(params.Recordings !== undefined && params.Cost !== undefined && !params.Messages)
 }
 
+// Jobs-sheet columns shared by every "live extraction" source (a platform's own
+// LLM handing back a final per-field value during the call, rather than a
+// verbatim transcript span — see validateLiveFields()'s comment in validate.js).
+// live_fields/live_fields_validated are renames of the columns this file used to
+// call dograh_fields/dograh_validated; live_fields_source is new. A production
+// Jobs sheet still has the old dograh_fields/dograh_validated headers sitting
+// unused — same "no migration" precedent copyRecordingToDrive's comment already
+// documents for the flat recordings folder — so every write site here calls
+// ensureJobsColumns(JOBS_LIVE_FIELDS_COLUMNS) first, same as
+// JOBS_TRANSCRIPTION_COLUMNS below.
+var JOBS_LIVE_FIELDS_COLUMNS = [
+  'live_fields',
+  'live_fields_validated',
+  'live_fields_source',
+  'call_analysis_data',
+]
+
 // Dograh's webhook node payload_template mirrors apps/adjuster/template/enums.json
 // 1:1 (see the "Notetaker Export" node on workflow id 10551) — every gathered_context
-// field lands in `body` under the exact same tag name validateDograhFields() and
+// field lands in `body` under the exact same tag name validateLiveFields() and
 // loadEnums() already use, so no field-name translation happens here. capture_id
 // is the "dograh-{{workflow_run_id}}" string Dograh's payload template renders,
 // namespaced so it can never collide with a Telnyx CallSessionId in the same
@@ -426,7 +443,7 @@ function handleDograhNotetaker(captureId, body) {
 
   return withJobLock(function () {
     var tagSchema = loadEnums()
-    var validated = validateDograhFields(body, tagSchema)
+    var validated = validateLiveFields(body, tagSchema, 'dograh')
     var transcript = fetchDograhTranscript(body.transcript_url)
 
     tryWriteCallArtifacts(callFolder, captureId, body, transcript, audioDriveId)
@@ -435,6 +452,7 @@ function handleDograhNotetaker(captureId, body) {
     // writeRowFields throws on a header it can't find, so they have to exist
     // before call_folder_id below is written into an already-present row.
     ensureJobsColumns(JOBS_TRANSCRIPTION_COLUMNS)
+    ensureJobsColumns(JOBS_LIVE_FIELDS_COLUMNS)
 
     upsertJob(captureId, {
       source: 'dograh',
@@ -448,8 +466,9 @@ function handleDograhNotetaker(captureId, body) {
       transcript: transcript.slice(0, 45000),
       transcript_source: 'dograh-notetaker',
       transcript_chars: transcript.length,
-      dograh_fields: JSON.stringify(body),
-      dograh_validated: JSON.stringify(validated),
+      live_fields: JSON.stringify(body),
+      live_fields_validated: JSON.stringify(validated),
+      live_fields_source: 'dograh',
       status: 'pending',
     })
 
@@ -481,6 +500,7 @@ function handleManualRecordingInject(captureId, body) {
     // throws on a header it can't find, and these columns postdate every Jobs
     // sheet in existence.
     ensureJobsColumns(JOBS_TRANSCRIPTION_COLUMNS)
+    ensureJobsColumns(JOBS_LIVE_FIELDS_COLUMNS)
 
     upsertJob(captureId, {
       source: 'dograh',
@@ -494,8 +514,9 @@ function handleManualRecordingInject(captureId, body) {
       transcript: transcript.slice(0, 45000),
       transcript_source: 'manual-test-inject',
       transcript_chars: transcript.length,
-      dograh_fields: JSON.stringify({}),
-      dograh_validated: JSON.stringify({}),
+      live_fields: JSON.stringify({}),
+      live_fields_validated: JSON.stringify({}),
+      live_fields_source: 'dograh',
       status: 'pending',
     })
 

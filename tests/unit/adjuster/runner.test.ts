@@ -92,7 +92,7 @@ function dograhJob(overrides: Job = {}): Job {
     status: 'pending',
     transcript: 'dograh text',
     audio_drive_id: 'audio-1',
-    dograh_fields: '{}',
+    live_fields: '{}',
     _rowIndex: 2,
     ...overrides,
   }
@@ -300,7 +300,7 @@ describe('stage B', () => {
       dograhJob({
         status: 'transcribed',
         claim_id: 'claim-1',
-        dograh_fields: JSON.stringify({ contacted_party_name: 'Henderson' }),
+        live_fields: JSON.stringify({ contacted_party_name: 'Henderson' }),
       }),
     ])
 

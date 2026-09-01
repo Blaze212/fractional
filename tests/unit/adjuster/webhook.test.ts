@@ -281,7 +281,7 @@ describe('Dograh Notetaker recording', () => {
   function dograhHarness(overrides: Record<string, unknown> = {}) {
     return harness({
       loadEnums: () => ({}),
-      validateDograhFields: () => ({}),
+      validateLiveFields: () => ({}),
       ...overrides,
     })
   }
@@ -487,7 +487,7 @@ describe('Manual recording inject', () => {
   function manualHarness(overrides: Record<string, unknown> = {}) {
     return harness({
       loadEnums: () => ({}),
-      validateDograhFields: () => ({}),
+      validateLiveFields: () => ({}),
       ...overrides,
     })
   }
