@@ -347,7 +347,10 @@ function verifyRetellSignature(rawSigParam, e) {
   // itself, so logging both sides here is safe. Lets us tell a wrong/stale
   // RETELL_API_KEY (digests differ) apart from a raw-body transport issue
   // (raw_body_length would be the tell) without ever seeing the key.
-  logServerOnly('retell.signature_mismatch', {
+  // logEvent (not logServerOnly) so this lands in the Raw sheet — Executions
+  // doesn't show doPost's own console.log output for externally-triggered
+  // web app calls.
+  logEvent('retell.signature_mismatch', {
     expected_digest: expected,
     received_digest: digest,
     timestamp: timestamp,

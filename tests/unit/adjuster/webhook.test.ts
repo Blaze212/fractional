@@ -680,7 +680,7 @@ describe('Retell ingest', () => {
     })
 
     it('denies a signature whose digest does not match the recomputed HMAC', () => {
-      const { sandbox, jobs, logged } = retellHarness()
+      const { sandbox, jobs, logged, raw } = retellHarness()
 
       sandbox.doPost(
         retellPost('call_ended', callEndedBody(), { sig: 'v=' + Date.now() + ',d=deadbeef' }),
@@ -696,6 +696,12 @@ describe('Retell ingest', () => {
       expect(lines[1].received_digest).toBe('deadbeef')
       expect(lines[1].expected_digest).toMatch(/^[0-9a-f]{64}$/)
       expect(lines[2].reason).toBe('bad_retell_signature')
+
+      // Executions doesn't surface doPost's own console.log output for
+      // externally-triggered web app calls — the Raw sheet is the only
+      // place this is actually visible, so it has to go through logEvent,
+      // not logServerOnly.
+      expect(raw.some((r) => r.event === 'retell.signature_mismatch')).toBe(true)
     })
 
     it('denies a signature whose timestamp is older than the 5 minute freshness window', () => {
