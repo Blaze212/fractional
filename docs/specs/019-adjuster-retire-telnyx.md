@@ -206,14 +206,14 @@ They must survive `guidedFlow.js`'s deletion in Phase 2.
 
 ## Edge Cases & Risk
 
-| Risk | Likelihood | Impact | Mitigation |
-| ---- | ---------- | ------ | ---------- |
-| Deleting `guidedFlow.js` before extracting `tryJsonParse()`/`stitchAIGatherMessages()` breaks the live Dograh transcript-fetch path | M | H | Phase 1 extracts both functions first and is verified with the full test suite before Phase 2 touches `guidedFlow.js` |
-| `webhook.test.ts`'s logging-contract test silently loses coverage if its Telnyx fixture is deleted instead of rewritten | M | M | Phase 2 explicitly rewrites (not deletes) the `"doPost logging contract"` block to use a surviving event |
-| Orphaned dead code (`appendTranscriptSection`, stale `'mp3'` comment) missed because it wasn't named in the original Linear tickets | L | L | Both are called out explicitly in this spec's Phase 3, found via code audit rather than ticket titles alone |
-| `routeWebhook()`'s `denied('unknown_event', callSessionId, ...)` fallthrough references a variable removed earlier in the same function | H if missed | M | Phase 3 explicitly calls out fixing this reference |
-| A production Telnyx call still lands mid-deploy (number not yet unbound) and 404s or silently drops | L | M | Out of scope for this spec (number unbinding is a Phase 0/ops action, not code) — confirm with Barton the Telnyx number is already unbound or scheduled for unbinding before merging this PR |
-| `apps/bh-systems` deploy breaks because `deploy.sh` still references deleted TeXML files elsewhere (e.g. CI config) | L | M | Grep the whole repo for `texml` references after Phase 2's deletions, not just the files named in this spec |
+| Risk                                                                                                                                    | Likelihood  | Impact | Mitigation                                                                                                                                                                                   |
+| --------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deleting `guidedFlow.js` before extracting `tryJsonParse()`/`stitchAIGatherMessages()` breaks the live Dograh transcript-fetch path     | M           | H      | Phase 1 extracts both functions first and is verified with the full test suite before Phase 2 touches `guidedFlow.js`                                                                        |
+| `webhook.test.ts`'s logging-contract test silently loses coverage if its Telnyx fixture is deleted instead of rewritten                 | M           | M      | Phase 2 explicitly rewrites (not deletes) the `"doPost logging contract"` block to use a surviving event                                                                                     |
+| Orphaned dead code (`appendTranscriptSection`, stale `'mp3'` comment) missed because it wasn't named in the original Linear tickets     | L           | L      | Both are called out explicitly in this spec's Phase 3, found via code audit rather than ticket titles alone                                                                                  |
+| `routeWebhook()`'s `denied('unknown_event', callSessionId, ...)` fallthrough references a variable removed earlier in the same function | H if missed | M      | Phase 3 explicitly calls out fixing this reference                                                                                                                                           |
+| A production Telnyx call still lands mid-deploy (number not yet unbound) and 404s or silently drops                                     | L           | M      | Out of scope for this spec (number unbinding is a Phase 0/ops action, not code) — confirm with Barton the Telnyx number is already unbound or scheduled for unbinding before merging this PR |
+| `apps/bh-systems` deploy breaks because `deploy.sh` still references deleted TeXML files elsewhere (e.g. CI config)                     | L           | M      | Grep the whole repo for `texml` references after Phase 2's deletions, not just the files named in this spec                                                                                  |
 
 ## Acceptance Criteria
 
@@ -234,7 +234,7 @@ They must survive `guidedFlow.js`'s deletion in Phase 2.
       references (`grep -rn` for each name returns nothing under
       `apps/adjuster` and `tests/unit/adjuster`).
   - [ ] `WEBHOOK_SECRET` still gates Dograh and Retell events — confirmed
-      unchanged.
+        unchanged.
 - [ ] `docs/adr/008-telnyx-retired.md` exists.
 - [ ] `docs/specs/011-adjuster-mvp.md`'s Telnyx-specific sections are marked
       superseded/archived, not deleted; non-Telnyx sections are untouched.
