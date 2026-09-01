@@ -347,17 +347,31 @@ function verifyRetellSignature(rawSigParam, e) {
   // itself, so logging both sides here is safe. Lets us tell a wrong/stale
   // RETELL_API_KEY (digests differ) apart from a raw-body transport issue
   // (raw_body_length would be the tell) without ever seeing the key.
+  // key_preview/key_length are 4+4 characters and a count, not enough to
+  // reconstruct the key, but enough to visually confirm at runtime whether
+  // getConfig('RETELL_API_KEY') is really returning what was pasted into
+  // Script Properties.
   // logEvent (not logServerOnly) so this lands in the Raw sheet — Executions
   // doesn't show doPost's own console.log output for externally-triggered
   // web app calls.
+  var apiKey = getConfig('RETELL_API_KEY')
   logEvent('retell.signature_mismatch', {
     expected_digest: expected,
     received_digest: digest,
     timestamp: timestamp,
     raw_body_length: rawBody.length,
+    key_length: apiKey.length,
+    key_preview: previewSecret(apiKey),
   })
 
   return { ok: false, reason: 'bad_retell_signature' }
+}
+
+// Never returns enough of the value to reconstruct it — just enough for a
+// human to visually cross-check against a dashboard.
+function previewSecret(value) {
+  if (value.length <= 8) return '(too short to preview safely)'
+  return value.slice(0, 4) + '...' + value.slice(-4)
 }
 
 function computeRetellSignature(rawBody, timestamp) {

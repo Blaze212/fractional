@@ -695,6 +695,8 @@ describe('Retell ingest', () => {
       ])
       expect(lines[1].received_digest).toBe('deadbeef')
       expect(lines[1].expected_digest).toMatch(/^[0-9a-f]{64}$/)
+      expect(lines[1].key_length).toBe(RETELL_API_KEY.length)
+      expect(lines[1].key_preview).toBe('rete...test')
       expect(lines[2].reason).toBe('bad_retell_signature')
 
       // Executions doesn't surface doPost's own console.log output for
