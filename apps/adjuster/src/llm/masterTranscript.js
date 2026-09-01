@@ -21,9 +21,14 @@ var MASTER_TRANSCRIPT_SPEAKERS = ['adjuster', 'agent']
 var SOURCE_LABELS = {
   elevenlabs: 'ElevenLabs Scribe v2 — batch, diarized, keyterm-biased, ranked FIRST on wording',
   qwen: 'Qwen3 ASR Flash — batch, keyterm-biased, ranked SECOND on wording',
-  dograh:
-    'Dograh — real-time streaming transcript captured during the call. FIRST on turn structure, LAST on wording.',
 }
+
+// The job's own live transcript, from whichever voice platform handled the
+// call (see VOICE_PLATFORM_SOURCES in transcription.js) — not a fixed
+// SOURCE_LABELS entry because the platform varies per job. Every precedence
+// name that isn't 'elevenlabs' or 'qwen' falls back to this generic label.
+var STREAMING_SOURCE_LABEL =
+  "The call platform's own real-time transcript — captured live during the call. FIRST on turn structure, LAST on wording."
 
 // The verbatim constraint, stated as an absolute. Quoted into the system prompt
 // and enforced independently by checkVerbatimCoverage().
@@ -38,23 +43,24 @@ var VERBATIM_CONSTRAINT = [
 function buildMasterTranscriptPrompt(input) {
   var sources = input.sources || {}
   var adjusterName = input.adjusterName || 'Brandon'
+  var precedence = input.precedence || SOURCE_PRECEDENCE
 
   var system = [
     'You are reconciling three independent machine transcriptions of one recording into a single master transcript.',
     'What this audio is: a cell-phone call placed by ' +
       adjusterName +
       ', an independent insurance field adjuster driving away from a property inspection. He is dictating what he just saw, from a moving vehicle, to an automated intake agent that asks him questions section by section. Expect road and wind noise, a lossy mobile codec, clipped starts after each agent prompt, trade jargon, spelled-out numbers ("six twelve" for a 6/12 pitch), addresses, carrier names, and proper nouns.',
-    "What the three sources are, and their standing order. ElevenLabs Scribe v2 and Qwen3 ASR Flash are batch models that reprocessed the full saved recording after the call, with the claim's proper nouns and the trade glossary supplied as keyterms. Dograh is a real-time streaming transcript produced during the call: it has the turn structure right because it is the only source that knows when the agent spoke, and it is the least accurate on wording because it heard each phrase once, live, at streaming latency.",
-    'Resolve every disagreement in this order, ElevenLabs first, Qwen second, Dograh last:\n' +
+    "What the three sources are, and their standing order. ElevenLabs Scribe v2 and Qwen3 ASR Flash are batch models that reprocessed the full saved recording after the call, with the claim's proper nouns and the trade glossary supplied as keyterms. The third source is the call platform's own real-time transcript, produced live during the call: it has the turn structure right because it is the only source that knows when the agent spoke, and it is the least accurate on wording because it heard each phrase once, live, at streaming latency.",
+    "Resolve every disagreement in this order, ElevenLabs first, Qwen second, the call platform's live transcript last:\n" +
       [
         '- Where all three agree, use that wording.',
-        '- Where ElevenLabs and Qwen agree and Dograh differs, they are right. Dograh disagreeing with both batch models is the expected case, not a signal.',
-        "- Where ElevenLabs and Qwen disagree, prefer ElevenLabs unless the claim context or the trade glossary positively supports Qwen's reading. A name, address, carrier, or trade term that Qwen got right and ElevenLabs did not is exactly the case for overriding, and a real word in this domain beats one that is not. Dograh agreeing with Qwen is weak corroboration and is not on its own enough to overturn ElevenLabs.",
-        "- Use Dograh's wording only where it is the sole source that produced intelligible text for that passage.",
+        "- Where ElevenLabs and Qwen agree and the call platform's live transcript differs, they are right. The live transcript disagreeing with both batch models is the expected case, not a signal.",
+        "- Where ElevenLabs and Qwen disagree, prefer ElevenLabs unless the claim context or the trade glossary positively supports Qwen's reading. A name, address, carrier, or trade term that Qwen got right and ElevenLabs did not is exactly the case for overriding, and a real word in this domain beats one that is not. The live transcript agreeing with Qwen is weak corroboration and is not on its own enough to overturn ElevenLabs.",
+        "- Use the live transcript's wording only where it is the sole source that produced intelligible text for that passage.",
         '- Record any passage where you had to override ElevenLabs, or where the choice was a genuine coin flip, in contested_passages.',
       ].join('\n'),
     'The verbatim constraint, which is absolute: ' + VERBATIM_CONSTRAINT,
-    'Output shape: speaker-labeled turns. Use Dograh\'s turn boundaries as the skeleton and the batch models\' wording as the content. speaker is "adjuster" for ' +
+    'Output shape: speaker-labeled turns. Use the call platform\'s live-transcript turn boundaries as the skeleton and the batch models\' wording as the content. speaker is "adjuster" for ' +
       adjusterName +
       ' and "agent" for the automated intake agent. contested_passages holds the verbatim text of any passage where the sources disagreed and the choice was a genuine coin flip; leave it empty when there were none.',
   ].join('\n\n')
@@ -64,16 +70,18 @@ function buildMasterTranscriptPrompt(input) {
   var glossaryBlock = formatGlossary(input.glossary || [])
   if (glossaryBlock) sections.push('Trade glossary:\n' + glossaryBlock)
 
-  SOURCE_PRECEDENCE.forEach(function (name) {
+  precedence.forEach(function (name) {
     var text = renderSourceForPrompt(name, sources[name])
-    if (text) sections.push('Transcript source: ' + SOURCE_LABELS[name] + '\n' + text)
+    var label = SOURCE_LABELS[name] || STREAMING_SOURCE_LABEL
+    if (text) sections.push('Transcript source: ' + label + '\n' + text)
   })
 
   return { system: system, user: sections.join('\n\n') }
 }
 
 // ElevenLabs is rendered as its diarized turns rather than as flat text, so the
-// merge has something to align Dograh's turn boundaries against.
+// merge has something to align the call platform's live-transcript turn
+// boundaries against.
 function renderSourceForPrompt(name, entry) {
   if (!entry) return ''
 
@@ -167,7 +175,7 @@ function buildGatedMasterTranscript(input) {
       capture_id: input.captureId,
       coverage: coverage.coverage,
       shingles: coverage.total,
-      substituted_source: selectFallbackTranscript(input.sources).source,
+      substituted_source: selectFallbackTranscript(input.sources, input.precedence).source,
       failing_shingles: coverage.failing.join(' | ').slice(0, 1000),
     })
   } else if (coverage.coverage < MASTER_TRANSCRIPT_COVERAGE_ACCEPT) {
