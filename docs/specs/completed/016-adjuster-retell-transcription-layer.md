@@ -1,6 +1,6 @@
 # Retell in the Transcription Layer
 
-**Status:** Ready for implementation
+**Status:** Implemented — completed 2026-08-31
 **Owner:** Adjuster (Brandon)
 **Last updated:** 2026-08-31
 
