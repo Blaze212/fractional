@@ -379,8 +379,21 @@ function previewSecret(value) {
   return value.slice(0, 4) + '...' + value.slice(-4)
 }
 
+// The 2-arg computeHmacSha256Signature(value, key) overload's byte encoding
+// is undocumented by Google (confirmed against the Utilities reference) —
+// unlike Retell's own SDK, which explicitly UTF-8 encodes both the message
+// and the key (TextEncoder().encode()) before hashing. Passing Charset.UTF_8
+// explicitly is the only way to guarantee this matches: any non-ASCII
+// character in a real call payload (an em dash or curly quote in an
+// LLM-written call_summary, an accented name) would silently hash to a
+// completely different digest under whatever the implicit default turns
+// out to be, while every ASCII-only test string would keep passing.
 function computeRetellSignature(rawBody, timestamp) {
-  var bytes = Utilities.computeHmacSha256Signature(rawBody + timestamp, getConfig('RETELL_API_KEY'))
+  var bytes = Utilities.computeHmacSha256Signature(
+    rawBody + timestamp,
+    getConfig('RETELL_API_KEY'),
+    Utilities.Charset.UTF_8,
+  )
   return bytesToHex(bytes)
 }
 

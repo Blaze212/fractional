@@ -65,7 +65,8 @@ function harness(overrides: Record<string, unknown> = {}) {
           getDataAsString: () => Buffer.from(bytes).toString('utf-8'),
         }),
         computeHmacSha256Signature: (value: string, key: string) =>
-          Array.from(crypto.createHmac('sha256', key).update(value).digest()),
+          Array.from(crypto.createHmac('sha256', key).update(value, 'utf-8').digest()),
+        Charset: { UTF_8: 'UTF-8' },
       },
       ...overrides,
     },
@@ -723,6 +724,26 @@ describe('Retell ingest', () => {
       const { sandbox, jobs } = retellHarness()
 
       sandbox.doPost(retellPost('call_ended', callEndedBody()))
+
+      expect(jobs.has('retell-' + CALL_ID)).toBe(true)
+    })
+
+    // Utilities.computeHmacSha256Signature(value, key)'s 2-arg overload has
+    // an undocumented byte encoding on the real Apps Script runtime — an
+    // ASCII-only body can pass this test either way, since ASCII is encoded
+    // identically under every common charset. Explicitly requesting
+    // Utilities.Charset.UTF_8 (verified via the third-argument call below)
+    // is what actually matters on the real runtime; this only proves the
+    // JS-side concatenation/hashing logic itself handles non-ASCII content
+    // correctly, not that the platform quirk is fixed — that needs a real
+    // Apps Script test call.
+    it('accepts a correctly signed request whose body contains non-ASCII characters', () => {
+      const { sandbox, jobs } = retellHarness()
+      const body = callEndedBody({
+        transcript: 'Agent: Hi — the insured is Renée Dupônt. User: "3-tab" shingles.',
+      })
+
+      sandbox.doPost(retellPost('call_ended', body))
 
       expect(jobs.has('retell-' + CALL_ID)).toBe(true)
     })
