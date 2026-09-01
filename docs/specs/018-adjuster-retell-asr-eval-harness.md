@@ -108,14 +108,15 @@ testable with in-memory fixtures. `main()` is the only impure part — it reads
 the manifest and glossary files, calls the pure functions, and writes/prints
 the report. Exported functions (`scripts/adjuster-asr-eval.mjs`):
 
-- `normalizeForMatch(text)` — lowercase, strip punctuation except internal
-  hyphens (glossary has terms like "3-tab shingle", "counter-flashing"),
+- `normalizeForMatch(text)` — lowercase, strip punctuation (hyphens
+  included, since ASR sources are inconsistent about hyphenating compound
+  terms like "3-tab shingle" — "3-tab" and "3 tab" must compare equal),
   collapse whitespace. Used on both terms and transcripts before matching.
 - `extractGlossaryTerms(glossary)` — `glossary` is the parsed
   `glossary.json` array; returns `string[]` of `.term` values.
 - `termOccursIn(term, transcriptText)` — word-boundary-safe substring check
   on normalized text (`\bridge\b` must not match inside `ridge cap` as a
-  false positive for a *different* term, but the multi-word term `ridge cap`
+  false positive for a _different_ term, but the multi-word term `ridge cap`
   matches its own literal phrase). Both `term` and `transcriptText` are
   normalized via `normalizeForMatch` before comparison.
 - `findExpectedTerms({ referenceText, glossaryTerms, properNouns })` — the
@@ -128,7 +129,7 @@ the report. Exported functions (`scripts/adjuster-asr-eval.mjs`):
   `matched.length / expectedTerms.length`, or `1` when `expectedTerms` is
   empty — no vocabulary to miss).
 - `scoreCall(call, glossaryTerms)` — `call` is one manifest entry with
-  transcript *text* already loaded (not file paths — that resolution is
+  transcript _text_ already loaded (not file paths — that resolution is
   `main()`'s job). Computes `findExpectedTerms` once, then
   `scoreTranscript` for each of `retell` / `elevenlabs` / `qwen`. Returns
   `{ callId, expectedTerms, sources: { retell, elevenlabs, qwen } }`.
@@ -158,7 +159,7 @@ node scripts/adjuster-asr-eval.mjs --calls path/to/manifest.json \
 - `--glossary` — defaults to `apps/adjuster/template/glossary.json`.
 - `--out` — file to write the report to; defaults to stdout.
 - `--format` — `md` (default) or `json` (raw `{ callScores, aggregate,
-  ranking }` for downstream tooling).
+ranking }` for downstream tooling).
 
 Zero dependencies, Node 20+ built-ins only (`node:fs`, `node:path`), matching
 the existing `scripts/*.mjs` convention. Not wired into `pnpm` scripts or the
@@ -197,14 +198,14 @@ app — run directly, same as `stt-transcribe.mjs`.
 
 ## Edge Cases & Risk
 
-| Risk | Likelihood | Impact | Mitigation |
-| --- | --- | --- | --- |
-| A glossary term is itself a substring of another glossary term ("ridge" inside "ridge cap") | H | L | Both terms score independently and both are legitimately "in the call" if "ridge cap" was said — this double-counts related terms rather than hiding a bug. Documented behavior, not a defect; a future refinement could dedupe overlapping terms if it proves noisy in practice |
-| Manifest references a transcript file that doesn't exist | M | M | `main()` throws a clear "file not found" error naming the call and field, rather than silently scoring an empty transcript |
-| A call's reference transcript contains none of the glossary/proper-noun vocabulary | L | L | `findExpectedTerms` returns `[]`; `scoreTranscript` reports `accuracy: 1` (nothing to miss) but the call is excluded from the aggregate denominator so it can't inflate or deflate the ranking |
-| Punctuation/casing differences between reference and ASR output cause false misses | H | M | `normalizeForMatch` strips punctuation and case before comparison on both sides |
-| Proper nouns are call-specific and easy to forget when building a fixture | M | M | Manifest schema requires `properNouns` per call explicitly (empty array if truly none), rather than only relying on the shared glossary |
-| Ranking is based on only ~10 calls — small sample, easy to over-read | M | H | Called out explicitly in Acceptance Criteria and the eventual report: this harness produces a directional signal from a small sample, not a statistically definitive verdict |
+| Risk                                                                                        | Likelihood | Impact | Mitigation                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------- | ---------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A glossary term is itself a substring of another glossary term ("ridge" inside "ridge cap") | H          | L      | Both terms score independently and both are legitimately "in the call" if "ridge cap" was said — this double-counts related terms rather than hiding a bug. Documented behavior, not a defect; a future refinement could dedupe overlapping terms if it proves noisy in practice |
+| Manifest references a transcript file that doesn't exist                                    | M          | M      | `main()` throws a clear "file not found" error naming the call and field, rather than silently scoring an empty transcript                                                                                                                                                       |
+| A call's reference transcript contains none of the glossary/proper-noun vocabulary          | L          | L      | `findExpectedTerms` returns `[]`; `scoreTranscript` reports `accuracy: 1` (nothing to miss) but the call is excluded from the aggregate denominator so it can't inflate or deflate the ranking                                                                                   |
+| Punctuation/casing differences between reference and ASR output cause false misses          | H          | M      | `normalizeForMatch` strips punctuation and case before comparison on both sides                                                                                                                                                                                                  |
+| Proper nouns are call-specific and easy to forget when building a fixture                   | M          | M      | Manifest schema requires `properNouns` per call explicitly (empty array if truly none), rather than only relying on the shared glossary                                                                                                                                          |
+| Ranking is based on only ~10 calls — small sample, easy to over-read                        | M          | H      | Called out explicitly in Acceptance Criteria and the eventual report: this harness produces a directional signal from a small sample, not a statistically definitive verdict                                                                                                     |
 
 ## Acceptance Criteria
 
