@@ -35,7 +35,8 @@ var TRANSCRIPTION_MODELS = {
 // only source that knows when the agent spoke). Defined once, consumed by
 // both the merge prompt and the fallback. The literal third slot below
 // ('dograh') is this array's default/shape reference, used whenever a caller
-// doesn't pass a per-job precedence — see sourcePrecedenceForJob().
+// doesn't pass a per-job precedence — the real per-job precedence is built
+// inline in runTranscriptionPass() as ['elevenlabs', 'qwen', voiceSource].
 var SOURCE_PRECEDENCE = ['elevenlabs', 'qwen', 'dograh']
 
 // Voice platforms this pass can source a streaming transcript from. A job
