@@ -115,10 +115,12 @@ the report. Exported functions (`scripts/adjuster-asr-eval.mjs`):
 - `extractGlossaryTerms(glossary)` — `glossary` is the parsed
   `glossary.json` array; returns `string[]` of `.term` values.
 - `termOccursIn(term, transcriptText)` — word-boundary-safe substring check
-  on normalized text (`\bridge\b` must not match inside `ridge cap` as a
-  false positive for a _different_ term, but the multi-word term `ridge cap`
-  matches its own literal phrase). Both `term` and `transcriptText` are
-  normalized via `normalizeForMatch` before comparison.
+  on normalized text (`\bridge\b` must not match inside a single word like
+  "fridge", but it does match inside "ridge cap" since "ridge" is itself a
+  standalone word there — both terms legitimately score independently; see
+  the Edge Cases table below). The multi-word term `ridge cap` separately
+  matches its own literal phrase, in word order. Both `term` and
+  `transcriptText` are normalized via `normalizeForMatch` before comparison.
 - `findExpectedTerms({ referenceText, glossaryTerms, properNouns })` — the
   subset of `glossaryTerms ∪ properNouns` that actually occurs in
   `referenceText`. This is "what vocabulary this specific call actually

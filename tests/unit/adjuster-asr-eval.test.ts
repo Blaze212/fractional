@@ -1,10 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
 
 // @ts-expect-error standalone zero-dependency script, no type declarations
 import {
   aggregateBySource,
   extractGlossaryTerms,
   findExpectedTerms,
+  loadManifest,
   normalizeForMatch,
   rankSources,
   renderMarkdownReport,
@@ -263,5 +267,69 @@ describe('renderMarkdownReport', () => {
       ranking,
     })
     expect(report).toContain('No glossary or proper-noun terms found')
+  })
+})
+
+describe('loadManifest', () => {
+  let dir: string
+
+  afterEach(() => {
+    if (dir) rmSync(dir, { recursive: true, force: true })
+  })
+
+  function writeManifest(contents: unknown) {
+    dir = mkdtempSync(join(tmpdir(), 'adjuster-asr-eval-test-'))
+    const manifestPath = join(dir, 'manifest.json')
+    writeFileSync(manifestPath, JSON.stringify(contents))
+    return manifestPath
+  }
+
+  it('throws a clear error when the manifest JSON is not an array', () => {
+    const manifestPath = writeManifest({ callId: 'call-001' })
+
+    expect(() => loadManifest(manifestPath)).toThrow(/must be a JSON array/)
+  })
+
+  it('throws a clear error when a manifest entry is missing "reference"', () => {
+    const manifestPath = writeManifest([{ callId: 'call-001', retell: 'retell.txt' }])
+
+    expect(() => loadManifest(manifestPath)).toThrow(/call-001.*missing "reference"/)
+  })
+
+  it('loads a valid manifest and resolves each file relative to the manifest', () => {
+    dir = mkdtempSync(join(tmpdir(), 'adjuster-asr-eval-test-'))
+    const manifestPath = join(dir, 'manifest.json')
+    writeFileSync(join(dir, 'reference.txt'), 'the roof needed a ridge cap')
+    writeFileSync(join(dir, 'retell.txt'), 'the roof needed a ridge cap')
+    writeFileSync(join(dir, 'elevenlabs.txt'), 'the roof needed a ridge cap')
+    writeFileSync(join(dir, 'qwen.txt'), 'the roof needed a ridge cap')
+    writeFileSync(
+      manifestPath,
+      JSON.stringify([
+        {
+          callId: 'call-001',
+          reference: 'reference.txt',
+          retell: 'retell.txt',
+          elevenlabs: 'elevenlabs.txt',
+          qwen: 'qwen.txt',
+          properNouns: ['Smith'],
+        },
+      ]),
+    )
+
+    const calls = loadManifest(manifestPath)
+
+    expect(calls).toEqual([
+      {
+        callId: 'call-001',
+        referenceText: 'the roof needed a ridge cap',
+        sources: {
+          retell: 'the roof needed a ridge cap',
+          elevenlabs: 'the roof needed a ridge cap',
+          qwen: 'the roof needed a ridge cap',
+        },
+        properNouns: ['Smith'],
+      },
+    ])
   })
 })

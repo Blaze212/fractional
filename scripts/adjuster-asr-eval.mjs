@@ -266,13 +266,19 @@ function readTextFile(path, label) {
   return readFileSync(path, 'utf8')
 }
 
-function loadManifest(manifestPath) {
+export function loadManifest(manifestPath) {
   const raw = readFileSync(manifestPath, 'utf8')
   const entries = JSON.parse(raw)
+  if (!Array.isArray(entries)) {
+    throw new Error(
+      `Manifest at ${manifestPath} must be a JSON array of call entries, got ${typeof entries}`,
+    )
+  }
   const baseDir = dirname(resolve(manifestPath))
 
   return entries.map((entry) => {
     if (!entry.callId) throw new Error('Manifest entry is missing "callId"')
+    if (!entry.reference) throw new Error(`${entry.callId} is missing "reference"`)
 
     const referenceText = readTextFile(
       resolve(baseDir, entry.reference),
