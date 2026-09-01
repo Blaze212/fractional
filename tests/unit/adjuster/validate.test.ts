@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { loadGs } from './loadGs'
 
-const { validateFields, applyCalendarFallback } = loadGs('apps/adjuster/src/validate.js')
+const { validateFields, applyCalendarFallback, validateLiveFields } = loadGs(
+  'apps/adjuster/src/validate.js',
+)
 
 const transcript =
   'The roof covering is architectural shingle and the pitch is six twelve. There is not a mortgage on the property.'
@@ -307,5 +309,98 @@ describe('applyCalendarFallback', () => {
     )
 
     expect(result.interior_damage_narrative).toEqual(needsInput('Interior damage narrative'))
+  })
+})
+
+// The generalized rename of validateDograhFields — Dograh's Notetaker export and
+// Retell's post-call analysis both hand back a final per-field value with no
+// verbatim transcript span, so both platforms go through this same function,
+// distinguished only by the `source` argument that lands on each valid field's
+// confidence tier.
+describe('validateLiveFields', () => {
+  it("stamps a valid field's confidence with the passed source, for Dograh", () => {
+    const result = validateLiveFields(
+      { roof_covering_type: 'architectural shingle' },
+      tagSchema,
+      'dograh',
+    )
+
+    expect(result.roof_covering_type).toEqual({
+      valid: true,
+      label: 'Roof covering type',
+      value: 'architectural shingle',
+      source_span: '',
+      confidence: 'dograh',
+    })
+  })
+
+  it("stamps a valid field's confidence with the passed source, for Retell", () => {
+    const result = validateLiveFields(
+      { roof_covering_type: 'architectural shingle' },
+      tagSchema,
+      'retell',
+    )
+
+    expect(result.roof_covering_type).toEqual({
+      valid: true,
+      label: 'Roof covering type',
+      value: 'architectural shingle',
+      source_span: '',
+      confidence: 'retell',
+    })
+  })
+
+  it('rejects a value that is not a member of the enum list, regardless of source', () => {
+    const result = validateLiveFields({ roof_covering_type: 'wood shake' }, tagSchema, 'retell')
+
+    expect(result.roof_covering_type).toEqual({
+      valid: false,
+      empty: false,
+      label: 'Roof covering type',
+    })
+  })
+
+  it('accepts a variant field whose value matches one of the option keys', () => {
+    const result = validateLiveFields({ mortgage_status: 'no_mortgage' }, tagSchema, 'retell')
+
+    expect(result.mortgage_status).toEqual({
+      valid: true,
+      label: 'Mortgage status',
+      value: 'no_mortgage',
+      source_span: '',
+      confidence: 'retell',
+    })
+  })
+
+  it('rejects a variant field whose value is not one of the option keys', () => {
+    const result = validateLiveFields({ mortgage_status: 'unknown_status' }, tagSchema, 'retell')
+
+    expect(result.mortgage_status).toEqual({
+      valid: false,
+      empty: false,
+      label: 'Mortgage status',
+    })
+  })
+
+  it('always routes a narrative/free-text field to manual review, regardless of source', () => {
+    const result = validateLiveFields({ roof_pitch: '6/12' }, tagSchema, 'retell')
+
+    expect(result.roof_pitch).toEqual({ valid: false, empty: false, label: 'Roof pitch' })
+  })
+
+  it('treats a missing required field as needing input', () => {
+    const result = validateLiveFields({}, tagSchema, 'retell')
+
+    expect(result.roof_covering_type).toEqual({
+      valid: false,
+      empty: false,
+      label: 'Roof covering type',
+    })
+  })
+
+  it('treats a missing optional field as validly omitted, not needing input', () => {
+    const result = validateLiveFields({}, tagSchema, 'retell')
+
+    expect(result.mortgage_company).toEqual({ valid: true, empty: true, label: 'Mortgage company' })
   })
 })

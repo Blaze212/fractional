@@ -185,24 +185,25 @@ function runExtractionStage(job) {
     : null
 
   var tagSchema = loadEnums()
-  var isDograh = job.source === 'dograh'
-  // Dograh's Notetaker export (see webhook.js's handleDograhNotetaker) is a
-  // per-field value captured live during the call, with no verbatim span into
-  // the transcript — it used to skip the OpenRouter pass entirely and go
-  // straight to doc generation, which meant every field outside the small
-  // enum/variant set (validateDograhFields' only checkable case) was forced to
-  // NEEDS INPUT regardless of what Dograh actually captured. Feeding it into
-  // the same OpenRouter pass as a cross-check hint (see prompt.js's
+  // Both Dograh's Notetaker export (see webhook.js's handleDograhNotetaker) and
+  // Retell's post-call analysis (see webhook.js's handleRetellCallAnalyzed) hand
+  // back a per-field value captured live during the call, with no verbatim span
+  // into the transcript — without a cross-check pass every field outside the
+  // small enum/variant set (validateLiveFields' only checkable case) would be
+  // forced to NEEDS INPUT regardless of what the platform actually captured.
+  // Feeding it into the OpenRouter pass as a cross-check hint (see prompt.js's
   // formatLiveExtraction) lets the model re-derive every field from the
-  // transcript itself, with a real source_span, using Dograh's export only to
-  // know what to listen for. calendar_fields (see calendarSync.js) is the same
-  // kind of hint sourced from the scheduling note instead of the call — Dograh
-  // wins on overlap since it was captured live during this specific call.
-  var dograhFields = isDograh ? JSON.parse(job.dograh_fields || '{}') : {}
+  // transcript itself, with a real source_span, using the platform's export
+  // only to know what to listen for. calendar_fields (see calendarSync.js) is
+  // the same kind of hint sourced from the scheduling note instead of the call
+  // — the live export wins on overlap since it was captured live during this
+  // specific call.
+  var hasLiveExport = job.source === 'dograh' || job.source === 'retell'
+  var liveFields = hasLiveExport ? JSON.parse(job.live_fields || '{}') : {}
   var calendarFields = parseCalendarFields(claim)
   var liveExtraction =
-    Object.keys(dograhFields).length > 0 || Object.keys(calendarFields).length > 0
-      ? Object.assign({}, calendarFields, dograhFields)
+    Object.keys(liveFields).length > 0 || Object.keys(calendarFields).length > 0
+      ? Object.assign({}, calendarFields, liveFields)
       : null
 
   // Decided in stage A and recorded on the job, so this stage never re-derives

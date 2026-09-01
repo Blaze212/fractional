@@ -48,18 +48,26 @@ function validateFields(fields, transcript, tagSchema) {
   return result
 }
 
-// Dograh's Notetaker workflow (see webhook.js's handleDograhNotetaker) hands back
-// a final value per field, extracted live during the call by Dograh's own LLM —
-// there is no verbatim span into a transcript the way validateFields() checks
-// OpenRouter's output against job.transcript, so that guardrail can't run here.
-// Enum/variant fields have a closed set of allowed values, so membership in that
-// set is itself a meaningful check; narrative and free-text fields have no such
-// check available, so they always route to manual review regardless of what
-// Dograh returned, same shape as an unfilled field.
-function validateDograhFields(dograhFields, tagSchema) {
+// Dograh's Notetaker workflow (see webhook.js's handleDograhNotetaker) and
+// Retell's post-call analysis (see webhook.js's handleRetellCallAnalyzed) both
+// hand back a final value per field, extracted live during the call by the
+// platform's own LLM — there is no verbatim span into a transcript the way
+// validateFields() checks OpenRouter's output against job.transcript, so that
+// guardrail can't run here. Enum/variant fields have a closed set of allowed
+// values, so membership in that set is itself a meaningful check; narrative
+// and free-text fields have no such check available, so they always route to
+// manual review regardless of what the platform returned, same shape as an
+// unfilled field.
+//
+// `source` ('dograh' or 'retell') is stamped onto every valid field's
+// confidence tier, so a valid field from either platform reads the same way
+// downstream as it always has — the rename from validateDograhFields is a
+// pure parametrization: calling this with source: 'dograh' reproduces
+// validateDograhFields' output byte-for-byte.
+function validateLiveFields(rawFields, tagSchema, source) {
   var raw = {}
   Object.keys(tagSchema || {}).forEach(function (tag) {
-    var value = (dograhFields || {})[tag]
+    var value = (rawFields || {})[tag]
     if (value) raw[tag] = { value: value }
   })
 
@@ -94,7 +102,7 @@ function validateDograhFields(dograhFields, tagSchema) {
       label: label,
       value: field.value,
       source_span: '',
-      confidence: 'dograh',
+      confidence: source,
     }
   })
 

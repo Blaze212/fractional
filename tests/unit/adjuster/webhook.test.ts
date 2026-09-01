@@ -1,8 +1,10 @@
+import crypto from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadGs } from './loadGs'
 
 const SECRET = 'shared-secret'
 const CAPTURE = '410b941e-9c3a-11f1-9361-52d0a1d78284'
+const RETELL_API_KEY = 'retell-api-key-test'
 
 type Job = Record<string, unknown>
 
@@ -22,6 +24,7 @@ function harness(overrides: Record<string, unknown> = {}) {
       getConfig: (key: string) => {
         if (key === 'WEBHOOK_SECRET') return SECRET
         if (key === 'RECORDINGS_FOLDER_ID') return 'folder-1'
+        if (key === 'RETELL_API_KEY') return RETELL_API_KEY
         throw new Error('Missing script property: ' + key)
       },
       getConfigList: () => ['+18176762145'],
@@ -61,6 +64,8 @@ function harness(overrides: Record<string, unknown> = {}) {
         newBlob: (bytes: Buffer) => ({
           getDataAsString: () => Buffer.from(bytes).toString('utf-8'),
         }),
+        computeHmacSha256Signature: (value: string, key: string) =>
+          Array.from(crypto.createHmac('sha256', key).update(value).digest()),
       },
       ...overrides,
     },
@@ -161,6 +166,30 @@ describe('doPost logging contract', () => {
     expect(received.params.t).toBe('[redacted]')
     expect(JSON.stringify(received)).not.toContain(SECRET)
     expect(received.param_names).toBe('CallSessionId,From,event,t')
+  })
+
+  it('redacts retell_sig so the HMAC signature never lands in logs or the Raw sheet', () => {
+    const { sandbox, logged } = harness({
+      loadEnums: () => ({}),
+      validateLiveFields: () => ({}),
+    })
+
+    const rawBody = JSON.stringify({ event: 'call_ended', call: { call_id: 'call_redact_test' } })
+    const timestamp = Date.now()
+    const digest = crypto
+      .createHmac('sha256', RETELL_API_KEY)
+      .update(rawBody + timestamp)
+      .digest('hex')
+    const sig = 'v=' + timestamp + ',d=' + digest
+
+    sandbox.doPost({
+      parameter: { t: SECRET, event: 'retell', retell_sig: sig },
+      postData: { type: 'application/json', contents: rawBody },
+    })
+
+    const received = JSON.parse(logged.filter((l) => l.startsWith('{'))[0])
+    expect(received.params.retell_sig).toBe('[redacted]')
+    expect(JSON.stringify(received)).not.toContain(digest)
   })
 })
 
@@ -281,7 +310,7 @@ describe('Dograh Notetaker recording', () => {
   function dograhHarness(overrides: Record<string, unknown> = {}) {
     return harness({
       loadEnums: () => ({}),
-      validateDograhFields: () => ({}),
+      validateLiveFields: () => ({}),
       ...overrides,
     })
   }
@@ -487,7 +516,7 @@ describe('Manual recording inject', () => {
   function manualHarness(overrides: Record<string, unknown> = {}) {
     return harness({
       loadEnums: () => ({}),
-      validateDograhFields: () => ({}),
+      validateLiveFields: () => ({}),
       ...overrides,
     })
   }
@@ -678,6 +707,244 @@ describe('Dograh Pre-Call Data Fetch', () => {
   })
 })
 
+describe('Retell ingest', () => {
+  const CALL_ID = 'call_ef89bbc984713ff092a32719f09'
+
+  function retellSignature(rawBody: string, timestamp: number) {
+    const digest = crypto
+      .createHmac('sha256', RETELL_API_KEY)
+      .update(rawBody + timestamp)
+      .digest('hex')
+    return 'v=' + timestamp + ',d=' + digest
+  }
+
+  function retellPost(
+    eventType: string,
+    call: Record<string, unknown>,
+    options: { sig?: string; timestamp?: number } = {},
+  ) {
+    const rawBody = JSON.stringify({ event: eventType, call })
+    const timestamp = options.timestamp ?? Date.now()
+    const sig = options.sig !== undefined ? options.sig : retellSignature(rawBody, timestamp)
+    return {
+      parameter: { t: SECRET, event: 'retell', retell_sig: sig },
+      postData: { type: 'application/json', contents: rawBody },
+    }
+  }
+
+  function retellHarness(overrides: Record<string, unknown> = {}) {
+    return harness({
+      loadEnums: () => ({}),
+      validateLiveFields: () => ({}),
+      ...overrides,
+    })
+  }
+
+  function callEndedBody(overrides: Record<string, unknown> = {}) {
+    return {
+      call_id: CALL_ID,
+      start_timestamp: 1788215566692,
+      duration_ms: 118264,
+      transcript: 'Agent: Hi. User: The roof is 3-tab.',
+      transcript_object: [
+        { role: 'agent', content: 'Hi.', words: [{ word: 'Hi.', start: 0, end: 0.5 }] },
+      ],
+      recording_url: 'https://retell.example/recording.wav',
+      ...overrides,
+    }
+  }
+
+  function callAnalyzedBody(overrides: Record<string, unknown> = {}) {
+    return {
+      call_id: CALL_ID,
+      collected_dynamic_variables: { roof_covering_type: '3-tab' },
+      call_analysis: { call_summary: 'Roof is 3-tab.', user_sentiment: 'Neutral' },
+      ...overrides,
+    }
+  }
+
+  describe('signature verification', () => {
+    it('denies a request with no retell_sig at all', () => {
+      const { sandbox, jobs, logged } = retellHarness()
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody(), { sig: '' }))
+
+      expect(jobs.size).toBe(0)
+      const terminal = logged.filter((l) => l.startsWith('{')).map((l) => JSON.parse(l))[1]
+      expect(terminal.event).toBe('webhook.denied')
+      expect(terminal.reason).toBe('missing_retell_signature')
+    })
+
+    it('denies a malformed retell_sig that does not match v=...,d=...', () => {
+      const { sandbox, jobs, logged } = retellHarness()
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody(), { sig: 'not-a-signature' }))
+
+      expect(jobs.size).toBe(0)
+      const terminal = logged.filter((l) => l.startsWith('{')).map((l) => JSON.parse(l))[1]
+      expect(terminal.reason).toBe('malformed_retell_signature')
+    })
+
+    it('denies a signature whose digest does not match the recomputed HMAC', () => {
+      const { sandbox, jobs, logged } = retellHarness()
+
+      sandbox.doPost(
+        retellPost('call_ended', callEndedBody(), { sig: 'v=' + Date.now() + ',d=deadbeef' }),
+      )
+
+      expect(jobs.size).toBe(0)
+      const terminal = logged.filter((l) => l.startsWith('{')).map((l) => JSON.parse(l))[1]
+      expect(terminal.reason).toBe('bad_retell_signature')
+    })
+
+    it('denies a signature whose timestamp is older than the 5 minute freshness window', () => {
+      const { sandbox, jobs, logged } = retellHarness()
+      const staleTimestamp = Date.now() - 6 * 60 * 1000
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody(), { timestamp: staleTimestamp }))
+
+      expect(jobs.size).toBe(0)
+      const terminal = logged.filter((l) => l.startsWith('{')).map((l) => JSON.parse(l))[1]
+      expect(terminal.reason).toBe('stale_retell_signature')
+    })
+
+    it('accepts a correctly signed, fresh request', () => {
+      const { sandbox, jobs } = retellHarness()
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody()))
+
+      expect(jobs.has('retell-' + CALL_ID)).toBe(true)
+    })
+  })
+
+  describe('namespacing', () => {
+    it('keys the job as retell-<call_id>, distinct from a same-id dograh- row', () => {
+      const { sandbox, jobs } = retellHarness()
+      jobs.set('dograh-' + CALL_ID, { capture_id: 'dograh-' + CALL_ID, source: 'dograh' })
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody()))
+
+      expect(jobs.has('retell-' + CALL_ID)).toBe(true)
+      expect(jobs.get('dograh-' + CALL_ID)).toEqual({
+        capture_id: 'dograh-' + CALL_ID,
+        source: 'dograh',
+      })
+    })
+  })
+
+  describe('two-phase ingest ordering', () => {
+    it('call_ended then call_analyzed: ends pending with transcript, audio, and live fields', () => {
+      const { sandbox, jobs } = retellHarness()
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody()))
+      sandbox.doPost(retellPost('call_analyzed', callAnalyzedBody()))
+
+      const job = jobs.get('retell-' + CALL_ID)!
+      expect(job.status).toBe('pending')
+      expect(job.source).toBe('retell')
+      expect(job.transcript).toBe('Agent: Hi. User: The roof is 3-tab.')
+      expect(job.audio_drive_id).toBe('drive-1')
+      expect(job.live_fields).toBe(JSON.stringify({ roof_covering_type: '3-tab' }))
+      expect(job.call_analysis_data).toBe(
+        JSON.stringify({ call_summary: 'Roof is 3-tab.', user_sentiment: 'Neutral' }),
+      )
+    })
+
+    it('call_analyzed then call_ended (reverse order): same end state, no crash at either step', () => {
+      const { sandbox, jobs } = retellHarness()
+
+      expect(() => sandbox.doPost(retellPost('call_analyzed', callAnalyzedBody()))).not.toThrow()
+
+      const midway = jobs.get('retell-' + CALL_ID)!
+      expect(midway.status).toBe('awaiting_call_ended')
+      expect(midway.call_analysis_data).toBe(
+        JSON.stringify({ call_summary: 'Roof is 3-tab.', user_sentiment: 'Neutral' }),
+      )
+
+      expect(() => sandbox.doPost(retellPost('call_ended', callEndedBody()))).not.toThrow()
+
+      const job = jobs.get('retell-' + CALL_ID)!
+      expect(job.status).toBe('pending')
+      expect(job.transcript).toBe('Agent: Hi. User: The roof is 3-tab.')
+      expect(job.audio_drive_id).toBe('drive-1')
+    })
+
+    it('call_ended alone leaves the job awaiting_analysis', () => {
+      const { sandbox, jobs } = retellHarness()
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody()))
+
+      expect(jobs.get('retell-' + CALL_ID)!.status).toBe('awaiting_analysis')
+    })
+  })
+
+  describe('call artifacts', () => {
+    function folderHarness(overrides: Record<string, unknown> = {}) {
+      const artifacts: Array<{ name: string; content: string }> = []
+      const createFile = vi.fn(() => ({ getId: () => 'audio-file-1' }))
+      const callFolder = { getId: () => 'call-folder-1', createFile }
+
+      const built = retellHarness({
+        getOrCreateCallFolder: vi.fn(() => callFolder),
+        writeCallArtifact: (_folder: unknown, name: string, content: string) => {
+          artifacts.push({ name, content })
+          return 'artifact-' + name
+        },
+        UrlFetchApp: {
+          fetch: () => ({
+            getResponseCode: () => 200,
+            getBlob: () => ({ setName: () => 'blob' }),
+          }),
+        },
+        ...overrides,
+      })
+
+      return { ...built, artifacts }
+    }
+
+    it('writes the inline transcript and per-word transcript_object into the call folder', () => {
+      const { sandbox, artifacts } = folderHarness()
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody()))
+
+      expect(artifacts).toContainEqual({
+        name: 'transcript-retell.txt',
+        content: 'Agent: Hi. User: The roof is 3-tab.',
+      })
+      const wordsArtifact = artifacts.find((a) => a.name === 'transcript-retell-words.json')
+      expect(wordsArtifact).toBeDefined()
+      expect(JSON.parse(wordsArtifact!.content)).toEqual(callEndedBody().transcript_object)
+    })
+
+    it('does not write transcript-retell-words.json when transcript_object is absent', () => {
+      const { sandbox, artifacts } = folderHarness()
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody({ transcript_object: undefined })))
+
+      expect(artifacts.some((a) => a.name === 'transcript-retell-words.json')).toBe(false)
+    })
+  })
+
+  it('denies (but 200s) an unhandled Retell lifecycle event like call_started', () => {
+    const { sandbox, jobs, logged } = retellHarness()
+
+    const response = sandbox.doPost(retellPost('call_started', { call_id: CALL_ID }))
+
+    expect(response.body).toBe('OK')
+    expect(jobs.size).toBe(0)
+    const lines = logged.filter((l) => l.startsWith('{')).map((l) => JSON.parse(l))
+    expect(lines[lines.length - 1].reason).toBe('retell_unhandled_event')
+  })
+
+  it('denies a payload missing call.call_id', () => {
+    const { sandbox, jobs } = retellHarness()
+
+    sandbox.doPost(retellPost('call_ended', { call_id: '' }))
+
+    expect(jobs.size).toBe(0)
+  })
+})
+
 describe('Retell Inbound Call Webhook', () => {
   function retellInboundPost(fromNumber = '+18176762145') {
     return {
@@ -817,5 +1084,158 @@ describe('doGet', () => {
     expect(response.body).toBe('adjuster-webhook ok')
     expect(events(logged)).toEqual(['webhook.ping'])
     expect(logged[0]).toContain('"response_body":"adjuster-webhook ok"')
+  })
+})
+
+// Spec 017 — Dograh regression guard. These pin the COMPLETE Jobs-sheet row
+// (or, for dograh_pre_call, the complete response body) each pre-Retell event
+// produces, via toEqual rather than the toMatchObject partial checks used
+// elsewhere in this file. A partial check stays green when a field is
+// silently added, renamed, or dropped by a shared-helper edit made while
+// adding Retell support; a full-shape check does not. See
+// docs/specs/completed/017-adjuster-dograh-regression-guard.md.
+const ISO_TIMESTAMP = expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+
+describe('Dograh regression contract — pre-Retell baseline', () => {
+  function dograhPost(body: Record<string, unknown>) {
+    return {
+      parameter: { t: SECRET, event: 'dograh_notetaker' },
+      postData: { type: 'application/json', contents: JSON.stringify(body) },
+    }
+  }
+
+  function manualPost(body: Record<string, unknown>) {
+    return {
+      parameter: { t: SECRET, event: 'manual_recording_inject' },
+      postData: { type: 'application/json', contents: JSON.stringify(body) },
+    }
+  }
+
+  function preCallPost(fromNumber: string) {
+    return {
+      parameter: { t: SECRET, event: 'dograh_pre_call' },
+      postData: {
+        type: 'application/json',
+        contents: JSON.stringify({
+          event: 'call_inbound',
+          call_inbound: { agent_id: 10849, from_number: fromNumber, to_number: '+18005550199' },
+        }),
+      },
+    }
+  }
+
+  it('writes the complete Jobs row for a dograh_notetaker call', () => {
+    const { sandbox, jobs } = harness({ loadEnums: () => ({}), validateLiveFields: () => ({}) })
+    const body = {
+      capture_id: 'dograh-contract-1',
+      recording_url: 'https://dograh.example/audio/contract-1.wav',
+      transcript_url: '',
+      duration_sec: 245,
+      call_time: '2026-08-20T14:30:00.000Z',
+      call_disposition: 'completed-full-inspection',
+    }
+
+    sandbox.doPost(dograhPost(body))
+
+    expect(jobs.get('dograh-contract-1')).toEqual({
+      source: 'dograh',
+      call_folder_id: '',
+      call_disposition: 'completed-full-inspection',
+      duration_sec: 245,
+      call_started_at: '2026-08-20T14:30:00.000Z',
+      call_ended_at: ISO_TIMESTAMP,
+      recording_url: 'https://dograh.example/audio/contract-1.wav',
+      audio_drive_id: 'drive-1',
+      transcript: '',
+      transcript_source: 'dograh-notetaker',
+      transcript_chars: 0,
+      live_fields: JSON.stringify(body),
+      live_fields_validated: '{}',
+      live_fields_source: 'dograh',
+      status: 'pending',
+    })
+  })
+
+  it('writes the complete Jobs row for a manual_recording_inject call', () => {
+    const { sandbox, jobs } = harness({ loadEnums: () => ({}), validateLiveFields: () => ({}) })
+    const transcript = 'the roof shows granule loss on the south slope'
+
+    sandbox.doPost(
+      manualPost({
+        capture_id: 'manual-contract-1',
+        transcript,
+        audio_base64: Buffer.from('fake-audio-bytes').toString('base64'),
+        audio_extension: 'wav',
+        call_time: '2026-08-20T14:30:00.000Z',
+        duration_sec: 180,
+        call_disposition: 'completed-partial',
+      }),
+    )
+
+    expect(jobs.get('manual-contract-1')).toEqual({
+      source: 'dograh',
+      call_folder_id: '',
+      call_disposition: 'completed-partial',
+      duration_sec: 180,
+      call_started_at: '2026-08-20T14:30:00.000Z',
+      call_ended_at: ISO_TIMESTAMP,
+      recording_url: '',
+      audio_drive_id: 'drive-1',
+      transcript,
+      transcript_source: 'manual-test-inject',
+      transcript_chars: transcript.length,
+      live_fields: '{}',
+      live_fields_validated: '{}',
+      live_fields_source: 'dograh',
+      status: 'pending',
+    })
+  })
+
+  it('returns the complete initial_context shape when a claim suggestion exists', () => {
+    const { sandbox } = harness({
+      getCachedClaims: () => [
+        {
+          claim_id: 'evt-1',
+          insured_last_name: 'Love',
+          address_line1: '1234 Happy Path Lane',
+          city: 'Concord',
+          claim_number: 'CLF-00153289',
+          appt_start: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+          appt_end: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+        },
+      ],
+    })
+
+    const response = sandbox.doPost(preCallPost('+18176762145'))
+    const body = JSON.parse(response.body)
+
+    expect(body).toEqual({
+      initial_context: {
+        has_claim_suggestion: true,
+        suggested_insured_last_name: 'Love',
+        suggested_address_line1: '1234 Happy Path Lane',
+        suggested_city: 'Concord',
+        suggested_claim_number: 'CLF-00153289',
+        claims_candidates_text: '- Love | 1234 Happy Path Lane | Concord | CLF-00153289',
+      },
+    })
+  })
+
+  it('returns the complete initial_context shape when there is no claim suggestion', () => {
+    const { sandbox } = harness({ getCachedClaims: () => [] })
+
+    const response = sandbox.doPost(preCallPost('+18176762145'))
+    const body = JSON.parse(response.body)
+
+    expect(body).toEqual({
+      initial_context: {
+        has_claim_suggestion: false,
+        suggested_insured_last_name: '',
+        suggested_address_line1: '',
+        suggested_city: '',
+        suggested_claim_number: '',
+        claims_candidates_text: '',
+      },
+    })
   })
 })

@@ -26,6 +26,17 @@ async function proxyToAppsScript(request, url, env) {
     const target = new URL(env.GAS_EXEC_URL)
     target.search = url.search
 
+    // Apps Script's doPost(e) event object has no access to HTTP request
+    // headers at all — a long-standing platform limitation (Google Issue
+    // Tracker 67764685), not something fixable on the Apps Script side. Retell's
+    // webhook signature arrives as the X-Retell-Signature header, so it has to
+    // ride in on the query string instead — Apps Script recomputes the HMAC
+    // itself once it has the raw body, this just gets the header value there.
+    // Dograh/Telnyx requests never carry this header, so their query string is
+    // unaffected.
+    const retellSignature = request.headers.get('x-retell-signature')
+    if (retellSignature) target.searchParams.set('retell_sig', retellSignature)
+
     const upstream = await fetch(target, {
       method: request.method,
       headers: {
