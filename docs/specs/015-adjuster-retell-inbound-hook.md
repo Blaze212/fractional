@@ -127,8 +127,7 @@ function handleDograhPreCall() {
 **Minor, deliberate behavior change to Dograh's existing output:** today, the
 no-suggestion and error paths omit `suggested_*` keys entirely; after this
 change they're present as `''`. This is additive only (no key removed, no
-type changed) and is the same fix the task requires for Retell — see Change
-3. Flagging per `.claude/CLAUDE.md`'s guidance on backwards-incompatible
+type changed) and is the same fix the task requires for Retell — see Change 3. Flagging per `.claude/CLAUDE.md`'s guidance on backwards-incompatible
 changes: this is **not** expected to be breaking (Dograh's own Notetaker
 workflow template substitution has not been observed to choke on an extra
 key), but it does change the wire shape Dograh receives, so it's called out
@@ -181,7 +180,9 @@ function handleRetellInbound() {
     logEvent('retell_inbound.failed', { error: described.error, stack: described.stack })
     return ContentService.createTextOutput(
       JSON.stringify({
-        call_inbound: { dynamic_variables: toRetellDynamicVariables(EMPTY_CLAIM_SUGGESTION_CONTEXT) },
+        call_inbound: {
+          dynamic_variables: toRetellDynamicVariables(EMPTY_CLAIM_SUGGESTION_CONTEXT),
+        },
       }),
     ).setMimeType(ContentService.MimeType.JSON)
   }
@@ -201,9 +202,9 @@ research):
 - **A variable referenced in the agent's prompt that is missing from
   `dynamic_variables` is spoken literally**, curly braces and all (e.g. the
   agent would say "suggested insured last name is
-  suggested_insured_last_name"). An explicit empty string is treated as a
+  suggested*insured_last_name"). An explicit empty string is treated as a
   valid value and substitutes to nothing — this is exactly the case
-  `buildClaimSuggestionContext()`'s always-present `suggested_*` keys exist
+  `buildClaimSuggestionContext()`'s always-present `suggested*\*` keys exist
   to guarantee.
 
 ```js
@@ -387,14 +388,14 @@ of `getClaims()` directly — this is the only call site that changes.
 
 ## Edge Cases & Risk
 
-| Risk                                                                                             | Likelihood | Impact | Mitigation                                                                                                                          |
-| -------------------------------------------------------------------------------------------------- | ---------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Cache never refreshed (calendar sync trigger deleted/failing) — `getCachedClaims()` serves stale data for up to 6h, then falls back to live | L          | M      | `refreshClaimCandidatesCache()`'s own failure is logged (`calendar_sync.cache_refresh_failed`); CacheService's 6h max TTL bounds the staleness window even in total silence |
-| Claims sheet grows large enough that the cached JSON blob approaches CacheService's 100KB per-key limit | L          | M      | Not hit at current scale (Claims tab is a rolling window of recent appointments, not permanent history); flagged here as a future risk, not solved by this spec — `put()` throwing on an oversized value is caught by `refreshClaimCandidatesCache`'s own try/catch at the call site in `calendarSync.js`, degrading to "no cache refresh this tick" rather than failing sync |
-| Retell retries the same inbound webhook up to 3x on a slow/failed first attempt                  | M          | L      | `buildClaimSuggestionContext()` and `getCachedClaims()` are read-only and idempotent — concurrent/repeated calls are safe with no locking needed |
-| A cold Apps Script start plus a cache miss (first request after a >6h gap) both land on the same call | L          | M      | Worst case is a live `getClaims()` read — the exact latency profile that exists today for Dograh; not a regression, just the cache's floor |
-| Dograh's own template substitution behaves differently than Retell's on a missing/extra key (unconfirmed for Dograh, since its docs don't specify this the way Retell's do) | L          | L      | `buildClaimSuggestionContext()`'s change is additive only (extra empty-string keys, nothing removed/retyped) — a template engine that ignores unused keys is unaffected either way |
-| `event=retell_inbound` reachable without ever being wired to a real Retell agent (until spec 014 / dashboard config lands) | H (by design) | None | No live traffic hits this route until Retell's dashboard is pointed at it — same "reachable but unused until wired up" state `guided_start`/`guided`/etc. are already in today |
+| Risk                                                                                                                                                                        | Likelihood    | Impact | Mitigation                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cache never refreshed (calendar sync trigger deleted/failing) — `getCachedClaims()` serves stale data for up to 6h, then falls back to live                                 | L             | M      | `refreshClaimCandidatesCache()`'s own failure is logged (`calendar_sync.cache_refresh_failed`); CacheService's 6h max TTL bounds the staleness window even in total silence                                                                                                                                                                                                   |
+| Claims sheet grows large enough that the cached JSON blob approaches CacheService's 100KB per-key limit                                                                     | L             | M      | Not hit at current scale (Claims tab is a rolling window of recent appointments, not permanent history); flagged here as a future risk, not solved by this spec — `put()` throwing on an oversized value is caught by `refreshClaimCandidatesCache`'s own try/catch at the call site in `calendarSync.js`, degrading to "no cache refresh this tick" rather than failing sync |
+| Retell retries the same inbound webhook up to 3x on a slow/failed first attempt                                                                                             | M             | L      | `buildClaimSuggestionContext()` and `getCachedClaims()` are read-only and idempotent — concurrent/repeated calls are safe with no locking needed                                                                                                                                                                                                                              |
+| A cold Apps Script start plus a cache miss (first request after a >6h gap) both land on the same call                                                                       | L             | M      | Worst case is a live `getClaims()` read — the exact latency profile that exists today for Dograh; not a regression, just the cache's floor                                                                                                                                                                                                                                    |
+| Dograh's own template substitution behaves differently than Retell's on a missing/extra key (unconfirmed for Dograh, since its docs don't specify this the way Retell's do) | L             | L      | `buildClaimSuggestionContext()`'s change is additive only (extra empty-string keys, nothing removed/retyped) — a template engine that ignores unused keys is unaffected either way                                                                                                                                                                                            |
+| `event=retell_inbound` reachable without ever being wired to a real Retell agent (until spec 014 / dashboard config lands)                                                  | H (by design) | None   | No live traffic hits this route until Retell's dashboard is pointed at it — same "reachable but unused until wired up" state `guided_start`/`guided`/etc. are already in today                                                                                                                                                                                                |
 
 ## Acceptance Criteria
 
@@ -417,7 +418,7 @@ of `getClaims()` directly — this is the only call site that changes.
       cache hit/miss/corrupt-entry behavior; sync-tick cache refresh and its
       own failure isolation
 - [ ] `pnpm typecheck`, `pnpm vitest run tests/unit/adjuster/webhook.test.ts
-      tests/unit/adjuster/calendarSync.test.ts`, `pnpm format`, `pnpm lint`
+tests/unit/adjuster/calendarSync.test.ts`, `pnpm format`, `pnpm lint`
       all pass
 - [ ] No hardcoded secrets; no change to `WEBHOOK_SECRET`/auth scheme
 - [ ] Existing Dograh Pre-Call and calendar-sync tests continue to pass
