@@ -684,3 +684,147 @@ describe('doGet', () => {
     expect(logged[0]).toContain('"response_body":"adjuster-webhook ok"')
   })
 })
+
+// Spec 017 — Dograh regression guard. These pin the COMPLETE Jobs-sheet row
+// (or, for dograh_pre_call, the complete response body) each pre-Retell event
+// produces, via toEqual rather than the toMatchObject partial checks used
+// elsewhere in this file. A partial check stays green when a field is
+// silently added, renamed, or dropped by a shared-helper edit made while
+// adding Retell support; a full-shape check does not. See
+// docs/specs/017-adjuster-dograh-regression-guard.md.
+const ISO_TIMESTAMP = expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+
+describe('Dograh regression contract — pre-Retell baseline', () => {
+  function dograhPost(body: Record<string, unknown>) {
+    return {
+      parameter: { t: SECRET, event: 'dograh_notetaker' },
+      postData: { type: 'application/json', contents: JSON.stringify(body) },
+    }
+  }
+
+  function manualPost(body: Record<string, unknown>) {
+    return {
+      parameter: { t: SECRET, event: 'manual_recording_inject' },
+      postData: { type: 'application/json', contents: JSON.stringify(body) },
+    }
+  }
+
+  function preCallPost(fromNumber: string) {
+    return {
+      parameter: { t: SECRET, event: 'dograh_pre_call' },
+      postData: {
+        type: 'application/json',
+        contents: JSON.stringify({
+          event: 'call_inbound',
+          call_inbound: { agent_id: 10849, from_number: fromNumber, to_number: '+18005550199' },
+        }),
+      },
+    }
+  }
+
+  it('writes the complete Jobs row for a dograh_notetaker call', () => {
+    const { sandbox, jobs } = harness({ loadEnums: () => ({}), validateDograhFields: () => ({}) })
+    const body = {
+      capture_id: 'dograh-contract-1',
+      recording_url: 'https://dograh.example/audio/contract-1.wav',
+      transcript_url: '',
+      duration_sec: 245,
+      call_time: '2026-08-20T14:30:00.000Z',
+      call_disposition: 'completed-full-inspection',
+    }
+
+    sandbox.doPost(dograhPost(body))
+
+    expect(jobs.get('dograh-contract-1')).toEqual({
+      source: 'dograh',
+      call_folder_id: '',
+      call_disposition: 'completed-full-inspection',
+      duration_sec: 245,
+      call_started_at: '2026-08-20T14:30:00.000Z',
+      call_ended_at: ISO_TIMESTAMP,
+      recording_url: 'https://dograh.example/audio/contract-1.wav',
+      audio_drive_id: 'drive-1',
+      transcript: '',
+      transcript_source: 'dograh-notetaker',
+      transcript_chars: 0,
+      dograh_fields: JSON.stringify(body),
+      dograh_validated: '{}',
+      status: 'pending',
+    })
+  })
+
+  it('writes the complete Jobs row for a manual_recording_inject call', () => {
+    const { sandbox, jobs } = harness({ loadEnums: () => ({}), validateDograhFields: () => ({}) })
+    const transcript = 'the roof shows granule loss on the south slope'
+
+    sandbox.doPost(
+      manualPost({
+        capture_id: 'manual-contract-1',
+        transcript,
+        audio_base64: Buffer.from('fake-audio-bytes').toString('base64'),
+        audio_extension: 'wav',
+        call_time: '2026-08-20T14:30:00.000Z',
+        duration_sec: 180,
+        call_disposition: 'completed-partial',
+      }),
+    )
+
+    expect(jobs.get('manual-contract-1')).toEqual({
+      source: 'dograh',
+      call_folder_id: '',
+      call_disposition: 'completed-partial',
+      duration_sec: 180,
+      call_started_at: '2026-08-20T14:30:00.000Z',
+      call_ended_at: ISO_TIMESTAMP,
+      recording_url: '',
+      audio_drive_id: 'drive-1',
+      transcript,
+      transcript_source: 'manual-test-inject',
+      transcript_chars: transcript.length,
+      dograh_fields: '{}',
+      dograh_validated: '{}',
+      status: 'pending',
+    })
+  })
+
+  it('returns the complete initial_context shape when a claim suggestion exists', () => {
+    const { sandbox } = harness({
+      getClaims: () => [
+        {
+          claim_id: 'evt-1',
+          insured_last_name: 'Love',
+          address_line1: '1234 Happy Path Lane',
+          city: 'Concord',
+          claim_number: 'CLF-00153289',
+          appt_start: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+          appt_end: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+        },
+      ],
+    })
+
+    const response = sandbox.doPost(preCallPost('+18176762145'))
+    const body = JSON.parse(response.body)
+
+    expect(body).toEqual({
+      initial_context: {
+        has_claim_suggestion: true,
+        suggested_insured_last_name: 'Love',
+        suggested_address_line1: '1234 Happy Path Lane',
+        suggested_city: 'Concord',
+        suggested_claim_number: 'CLF-00153289',
+        claims_candidates_text: '- Love | 1234 Happy Path Lane | Concord | CLF-00153289',
+      },
+    })
+  })
+
+  it('returns the complete initial_context shape when there is no claim suggestion', () => {
+    const { sandbox } = harness({ getClaims: () => [] })
+
+    const response = sandbox.doPost(preCallPost('+18176762145'))
+    const body = JSON.parse(response.body)
+
+    expect(body).toEqual({
+      initial_context: { has_claim_suggestion: false, claims_candidates_text: '' },
+    })
+  })
+})
