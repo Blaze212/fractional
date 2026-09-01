@@ -89,6 +89,15 @@ function routeWebhook(event, params, e) {
     return accepted('precall:' + fromNumber, handleDograhPreCall())
   }
 
+  // Retell's inbound webhook — same shape and same "before the call has a
+  // CallSessionId" placement as dograh_pre_call above. See spec 015 and
+  // handleRetellInbound().
+  if (event === 'retell_inbound') {
+    var retellBody = parseJsonBody(e)
+    var retellFromNumber = (retellBody.call_inbound && retellBody.call_inbound.from_number) || ''
+    return accepted('retell_inbound:' + retellFromNumber, handleRetellInbound())
+  }
+
   // Manual test injection — see scripts/adjuster-inject-test-job.mjs. Lets
   // someone who pulled a transcript and recording off the Dograh dashboard by
   // hand (no live call, so no real dograh_notetaker webhook ever fired) drop
@@ -588,28 +597,49 @@ var PRE_CALL_SUGGESTION_WINDOW_HOURS = 6
 var PRE_CALL_CANDIDATE_WINDOW_HOURS = 12
 var PRE_CALL_CANDIDATE_LIMIT = 15
 
+// Shared by both voice platforms' pre-connect hooks (handleDograhPreCall and
+// handleRetellInbound below) — the only thing that differs between them is
+// how this result gets wrapped and typed for each platform's own webhook
+// contract. Always returns every suggested_* key, defaulted to '' when
+// there's no suggestion, rather than omitting them: Retell's dynamic_variables
+// speak a referenced-but-missing key's {{template}} placeholder literally
+// (confirmed against Retell's dynamic-variables docs — see spec 015), so a
+// key that's merely absent is a real defect there, not a harmless omission.
+// Does not catch errors itself — each platform handler's own try/catch keeps
+// its own failure-log event name (dograh_pre_call.failed vs.
+// retell_inbound.failed) and its own "degrade to no-suggestion" fallback.
+function buildClaimSuggestionContext() {
+  var now = new Date()
+  var claims = getCachedClaims()
+  var suggestion = pickMostRecentlyCompletedClaim(claims, now)
+  var candidatesText = formatClaimsCandidates(claims, now)
+
+  return {
+    has_claim_suggestion: Boolean(suggestion),
+    suggested_insured_last_name: (suggestion && suggestion.insured_last_name) || '',
+    suggested_address_line1: (suggestion && suggestion.address_line1) || '',
+    suggested_city: (suggestion && suggestion.city) || '',
+    suggested_claim_number: (suggestion && suggestion.claim_number) || '',
+    claims_candidates_text: candidatesText,
+  }
+}
+
+var EMPTY_CLAIM_SUGGESTION_CONTEXT = {
+  has_claim_suggestion: false,
+  suggested_insured_last_name: '',
+  suggested_address_line1: '',
+  suggested_city: '',
+  suggested_claim_number: '',
+  claims_candidates_text: '',
+}
+
 // Never throws, never blocks — Dograh's Pre-Call Data Fetch contract is that
 // a slow or failing fetch just proceeds without the extra context, so a
 // claims-lookup problem here should degrade to no-suggestion, not fail the
 // call.
 function handleDograhPreCall() {
   try {
-    var now = new Date()
-    var claims = getClaims()
-    var suggestion = pickMostRecentlyCompletedClaim(claims, now)
-    var candidatesText = formatClaimsCandidates(claims, now)
-
-    var initialContext = suggestion
-      ? {
-          has_claim_suggestion: true,
-          suggested_insured_last_name: suggestion.insured_last_name || '',
-          suggested_address_line1: suggestion.address_line1 || '',
-          suggested_city: suggestion.city || '',
-          suggested_claim_number: suggestion.claim_number || '',
-          claims_candidates_text: candidatesText,
-        }
-      : { has_claim_suggestion: false, claims_candidates_text: candidatesText }
-
+    var initialContext = buildClaimSuggestionContext()
     return ContentService.createTextOutput(
       JSON.stringify({ initial_context: initialContext }),
     ).setMimeType(ContentService.MimeType.JSON)
@@ -617,9 +647,50 @@ function handleDograhPreCall() {
     var described = describeError(err)
     logEvent('dograh_pre_call.failed', { error: described.error, stack: described.stack })
     return ContentService.createTextOutput(
-      JSON.stringify({ initial_context: { has_claim_suggestion: false } }),
+      JSON.stringify({ initial_context: EMPTY_CLAIM_SUGGESTION_CONTEXT }),
     ).setMimeType(ContentService.MimeType.JSON)
   }
+}
+
+// Retell's inbound webhook — see spec 015. Same "never throws, never blocks"
+// contract as handleDograhPreCall above: Retell retries the webhook up to 3x
+// on a failure/timeout before falling back to the number's default agent, so
+// a claims-lookup problem here should degrade to no-suggestion, not eat a
+// retry or fail the call.
+function handleRetellInbound() {
+  try {
+    var initialContext = buildClaimSuggestionContext()
+    return ContentService.createTextOutput(
+      JSON.stringify({
+        call_inbound: { dynamic_variables: toRetellDynamicVariables(initialContext) },
+      }),
+    ).setMimeType(ContentService.MimeType.JSON)
+  } catch (err) {
+    var described = describeError(err)
+    logEvent('retell_inbound.failed', { error: described.error, stack: described.stack })
+    return ContentService.createTextOutput(
+      JSON.stringify({
+        call_inbound: {
+          dynamic_variables: toRetellDynamicVariables(EMPTY_CLAIM_SUGGESTION_CONTEXT),
+        },
+      }),
+    ).setMimeType(ContentService.MimeType.JSON)
+  }
+}
+
+// Retell requires every dynamic_variables value to be a string — booleans/
+// numbers are rejected outright (confirmed against Retell's dynamic-variables
+// docs). has_claim_suggestion is the one key buildClaimSuggestionContext()
+// returns as a real boolean (Dograh's initial_context has always taken it as
+// one); this is the only conversion needed since every other key is already
+// a string.
+function toRetellDynamicVariables(context) {
+  var out = {}
+  Object.keys(context).forEach(function (key) {
+    var value = context[key]
+    out[key] = typeof value === 'boolean' ? String(value) : value || ''
+  })
+  return out
 }
 
 function pickMostRecentlyCompletedClaim(claims, now) {

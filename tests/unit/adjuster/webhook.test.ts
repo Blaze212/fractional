@@ -43,7 +43,7 @@ function harness(overrides: Record<string, unknown> = {}) {
         MimeType: { XML: 'XML', JSON: 'JSON' },
         createTextOutput: (body: string) => ({ body, setMimeType: () => ({ body }) }),
       },
-      getClaims: () => [],
+      getCachedClaims: () => [],
       ensureJobsColumns: () => [],
       JOBS_TRANSCRIPTION_COLUMNS: ['call_folder_id'],
       // Loaded from transcription.js at runtime; stubbed off by default here so
@@ -617,7 +617,7 @@ describe('Dograh Pre-Call Data Fetch', () => {
 
   it('suggests the claim whose appointment most recently ended', () => {
     const { sandbox } = harness({
-      getClaims: () => [
+      getCachedClaims: () => [
         claim({ claim_id: 'old', insured_last_name: 'Old', appt_end: hoursAgoIso(5) }),
         claim({ claim_id: 'recent', insured_last_name: 'Love', appt_end: hoursAgoIso(0.5) }),
       ],
@@ -631,20 +631,24 @@ describe('Dograh Pre-Call Data Fetch', () => {
     expect(body.initial_context.suggested_address_line1).toBe('1234 Happy Path Lane')
   })
 
-  it('reports no suggestion when nothing ended within the recency window', () => {
+  it('reports no suggestion when nothing ended within the recency window, with empty-string suggested_* defaults', () => {
     const { sandbox } = harness({
-      getClaims: () => [claim({ appt_end: hoursAgoIso(30) })],
+      getCachedClaims: () => [claim({ appt_end: hoursAgoIso(30) })],
     })
 
     const response = sandbox.doPost(preCallPost())
     const body = JSON.parse(response.body)
 
     expect(body.initial_context.has_claim_suggestion).toBe(false)
+    expect(body.initial_context.suggested_insured_last_name).toBe('')
+    expect(body.initial_context.suggested_address_line1).toBe('')
+    expect(body.initial_context.suggested_city).toBe('')
+    expect(body.initial_context.suggested_claim_number).toBe('')
   })
 
   it('still returns has_claim_suggestion: false rather than failing the call when the claims lookup throws', () => {
     const { sandbox, logged } = harness({
-      getClaims: () => {
+      getCachedClaims: () => {
         throw new Error('Missing column: appt_end')
       },
     })
@@ -653,12 +657,13 @@ describe('Dograh Pre-Call Data Fetch', () => {
     const body = JSON.parse(response.body)
 
     expect(body.initial_context.has_claim_suggestion).toBe(false)
+    expect(body.initial_context.suggested_insured_last_name).toBe('')
     expect(events(logged)).toContain('dograh_pre_call.failed')
   })
 
   it('formats the candidate list for fallback matching, most recent first', () => {
     const { sandbox } = harness({
-      getClaims: () => [
+      getCachedClaims: () => [
         claim({ claim_id: 'a', insured_last_name: 'Adams', appt_end: hoursAgoIso(5) }),
         claim({ claim_id: 'b', insured_last_name: 'Barnes', appt_end: hoursAgoIso(1) }),
       ],
@@ -670,6 +675,115 @@ describe('Dograh Pre-Call Data Fetch', () => {
 
     expect(lines[0]).toContain('Barnes')
     expect(lines[1]).toContain('Adams')
+  })
+})
+
+describe('Retell Inbound Call Webhook', () => {
+  function retellInboundPost(fromNumber = '+18176762145') {
+    return {
+      parameter: { t: SECRET, event: 'retell_inbound' },
+      postData: {
+        type: 'application/json',
+        contents: JSON.stringify({
+          event: 'call_inbound',
+          call_inbound: { agent_id: 'agent-1', from_number: fromNumber, to_number: '+18005550199' },
+        }),
+      },
+    }
+  }
+
+  function hoursAgoIso(hours: number) {
+    return new Date(Date.now() - hours * 60 * 60 * 1000).toISOString()
+  }
+
+  function claim(overrides: Record<string, unknown> = {}) {
+    return {
+      claim_id: 'evt-1',
+      insured_last_name: 'Love',
+      address_line1: '1234 Happy Path Lane',
+      city: 'Concord',
+      claim_number: 'CLF-00153289',
+      appt_start: hoursAgoIso(1),
+      appt_end: hoursAgoIso(0.5),
+      ...overrides,
+    }
+  }
+
+  it('returns call_inbound.dynamic_variables with every value as a string when a suggestion is found', () => {
+    const { sandbox } = harness({
+      getCachedClaims: () => [claim()],
+    })
+
+    const response = sandbox.doPost(retellInboundPost())
+    const body = JSON.parse(response.body)
+    const vars = body.call_inbound.dynamic_variables
+
+    expect(vars.has_claim_suggestion).toBe('true')
+    expect(vars.suggested_insured_last_name).toBe('Love')
+    expect(vars.suggested_address_line1).toBe('1234 Happy Path Lane')
+    expect(vars.suggested_city).toBe('Concord')
+    expect(vars.suggested_claim_number).toBe('CLF-00153289')
+    Object.values(vars).forEach((value) => expect(typeof value).toBe('string'))
+  })
+
+  it('returns every dynamic_variables key as an empty string, never omitted, when there is no suggestion', () => {
+    const { sandbox } = harness({
+      getCachedClaims: () => [claim({ appt_end: hoursAgoIso(30) })],
+    })
+
+    const response = sandbox.doPost(retellInboundPost())
+    const body = JSON.parse(response.body)
+    const vars = body.call_inbound.dynamic_variables
+
+    expect(vars.has_claim_suggestion).toBe('false')
+    expect(vars.suggested_insured_last_name).toBe('')
+    expect(vars.suggested_address_line1).toBe('')
+    expect(vars.suggested_city).toBe('')
+    expect(vars.suggested_claim_number).toBe('')
+    expect(vars.claims_candidates_text).toBe('')
+    expect(Object.keys(vars).sort()).toEqual(
+      [
+        'claims_candidates_text',
+        'has_claim_suggestion',
+        'suggested_address_line1',
+        'suggested_city',
+        'suggested_claim_number',
+        'suggested_insured_last_name',
+      ].sort(),
+    )
+  })
+
+  it('degrades to empty-string defaults and logs retell_inbound.failed (not dograh_pre_call.failed) when the claims lookup throws', () => {
+    const { sandbox, logged } = harness({
+      getCachedClaims: () => {
+        throw new Error('Missing column: appt_end')
+      },
+    })
+
+    const response = sandbox.doPost(retellInboundPost())
+    const body = JSON.parse(response.body)
+    const vars = body.call_inbound.dynamic_variables
+
+    expect(vars.has_claim_suggestion).toBe('false')
+    expect(vars.suggested_insured_last_name).toBe('')
+    expect(events(logged)).toContain('retell_inbound.failed')
+    expect(events(logged)).not.toContain('dograh_pre_call.failed')
+  })
+
+  it('is gated by the same shared secret as every other event', () => {
+    const { sandbox, logged } = harness({ getCachedClaims: () => [] })
+
+    sandbox.doPost({
+      parameter: { t: 'wrong', event: 'retell_inbound' },
+      postData: { type: 'application/json', contents: '{}' },
+    })
+
+    const lines = logged.filter((l: string) => l.startsWith('{')).map((l: string) => JSON.parse(l))
+    expect(lines.map((l: { event: string }) => l.event)).toEqual([
+      'webhook.received',
+      'webhook.denied',
+    ])
+    expect(lines[1].reason).toBe('bad_secret')
   })
 })
 
