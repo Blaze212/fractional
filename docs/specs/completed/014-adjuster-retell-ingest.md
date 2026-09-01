@@ -1,6 +1,6 @@
 # Retell Ingest into Apps Script
 
-**Status:** Ready for implementation
+**Status:** Implemented — completed 2026-08-31
 **Owner:** Brandon Adjuster / Phase 0
 **Last updated:** 2026-08-31
 
