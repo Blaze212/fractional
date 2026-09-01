@@ -27,7 +27,6 @@ function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
     SpreadsheetApp: { flush: () => {} },
 
     reclaimStuckJobs: () => {},
-    promoteStaleAwaitingTranscript: () => {},
     ensureJobsColumns: () => [],
     JOBS_TRANSCRIPTION_COLUMNS: ['call_folder_id'],
 
@@ -334,7 +333,6 @@ describe('runPipelineTick', () => {
     const order: string[] = []
     const { sandbox } = harness([], {
       reclaimStuckJobs: () => order.push('reclaim'),
-      promoteStaleAwaitingTranscript: () => order.push('promote'),
       ensureJobsColumns: () => {
         order.push('ensure_columns')
         return ['call_folder_id']
@@ -343,7 +341,7 @@ describe('runPipelineTick', () => {
 
     sandbox.runPipelineTick()
 
-    expect(order).toEqual(['reclaim', 'promote', 'ensure_columns'])
+    expect(order).toEqual(['reclaim', 'ensure_columns'])
   })
 
   it('reports the columns it had to add', () => {

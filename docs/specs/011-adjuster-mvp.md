@@ -4,6 +4,15 @@
 **Owner:** Barton
 **Last updated:** 2026-08-15
 
+> **Telnyx sections superseded (spec-019, 2026-09-01).** This spec's
+> call-capture path was Telnyx (a phone number + TeXML). Telnyx has since
+> been retired — see [ADR 008](../adr/008-telnyx-retired.md) — and Retell
+> and Dograh are the supported voice platforms. The Telnyx-specific sections
+> below are left in place as history and marked superseded inline; the rest
+> of this spec (matcher, extraction, the trust boundary, the doc generator,
+> acceptance criteria) still describes the pipeline Retell and Dograh feed
+> into today.
+
 ## Objective
 
 A phone call placed from a moving truck produces a draft inspection report as a
@@ -48,12 +57,13 @@ Any capture method living in a phone app has to be validated on the device it
 will run on, and an Android test proves nothing about an iPhone. A phone call
 behaves identically on both. Every hour of local testing is real signal.
 
-**Telnyx first, Twilio as fallback.** Telnyx TeXML `<Record>` records,
-transcribes via Deepgram, and POSTs the finished text in one step. Twilio's
-built-in transcription is capped at two minutes, English-only, and deprecated,
-which forces a fetch-and-transcribe pattern. That pattern is the documented
-fallback here and works on either vendor, so switching costs one component, not a
-rebuild.
+**Telnyx first, Twilio as fallback.** _Superseded (spec-019) — Telnyx is
+retired; see [ADR 008](../adr/008-telnyx-retired.md)._ Telnyx TeXML
+`<Record>` records, transcribes via Deepgram, and POSTs the finished text in
+one step. Twilio's built-in transcription is capped at two minutes,
+English-only, and deprecated, which forces a fetch-and-transcribe pattern.
+That pattern is the documented fallback here and works on either vendor, so
+switching costs one component, not a rebuild.
 
 **Runtime is Google Apps Script.** Chosen deliberately over this repo's
 TypeScript/Supabase stack: the deliverable is a Google Doc in a Google Drive
@@ -125,6 +135,10 @@ after stage 4 passes. Consequences the build must respect:
 
 ### Telephony: TeXML contract
 
+> **Superseded (spec-019).** This entire section describes the Telnyx TeXML
+> `<Record>` contract, which no longer exists in the codebase — see
+> [ADR 008](../adr/008-telnyx-retired.md). Left in place as history.
+
 Verified against Telnyx TeXML `<Record>` docs on 2026-08-15. Attribute names
 below are exact; the earlier draft's `transcribe` is Twilio's spelling and does
 not apply.
@@ -194,30 +208,30 @@ any chance of re-transcribing a bad call.
 One spreadsheet, tab `Jobs`. Row 1 is the header; the code resolves columns by
 header name, not index, so columns can be reordered safely.
 
-| Column              | Type     | Notes                                                                     |
-| ------------------- | -------- | ------------------------------------------------------------------------- |
-| `capture_id`        | string   | Telnyx `call_session_id`. Primary key, upsert key.                        |
-| `created_at`        | ISO 8601 | First callback received.                                                  |
-| `updated_at`        | ISO 8601 | Any write.                                                                |
-| `from_number`       | string   | E.164. Used for the caller allowlist.                                     |
-| `call_started_at`   | ISO 8601 | Primary key for claim matching.                                           |
-| `call_ended_at`     | ISO 8601 |                                                                           |
-| `duration_sec`      | number   |                                                                           |
-| `recording_url`     | string   | Telnyx URL. Expires; kept for debugging only.                             |
-| `audio_drive_id`    | string   | Drive file ID of the copied mp3.                                          |
-| `transcript`        | string   | Full text. Truncated at 45,000 chars (cell limit is 50k).                 |
-| `transcript_source` | enum     | `telnyx-deepgram-nova-3` \| `deepgram-direct` \| `manual`                 |
-| `transcript_chars`  | number   | Cheap truncation detector against `duration_sec`.                         |
-| `status`            | enum     | See below.                                                                |
-| `attempts`          | number   | Incremented per runner pickup. Max 3.                                     |
-| `lease_until`       | ISO 8601 | Stuck-job recovery.                                                       |
-| `claim_id`          | string   | Key into the Claims sheet. Blank when unmatched.                          |
-| `match_method`      | enum     | `calendar-exact` \| `calendar-nearest` \| `ambiguous` \| `none`           |
-| `match_confidence`  | enum     | `high` \| `low` \| `none`                                                 |
-| `doc_url`           | string   | Generated draft.                                                          |
-| `needs_input_count` | number   | Quality metric over time.                                                 |
-| `model`             | string   | OpenRouter model ID that actually produced the draft, after any fallback. |
-| `error`             | string   | Last error message.                                                       |
+| Column              | Type     | Notes                                                                                                                                          |
+| ------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `capture_id`        | string   | Telnyx `call_session_id`. Primary key, upsert key.                                                                                             |
+| `created_at`        | ISO 8601 | First callback received.                                                                                                                       |
+| `updated_at`        | ISO 8601 | Any write.                                                                                                                                     |
+| `from_number`       | string   | E.164. Used for the caller allowlist.                                                                                                          |
+| `call_started_at`   | ISO 8601 | Primary key for claim matching.                                                                                                                |
+| `call_ended_at`     | ISO 8601 |                                                                                                                                                |
+| `duration_sec`      | number   |                                                                                                                                                |
+| `recording_url`     | string   | Originally a Telnyx URL (spec-019: Telnyx retired). Dograh and Retell also populate it, alongside `audio_drive_id`, which is the durable copy. |
+| `audio_drive_id`    | string   | Drive file ID of the copied mp3.                                                                                                               |
+| `transcript`        | string   | Full text. Truncated at 45,000 chars (cell limit is 50k).                                                                                      |
+| `transcript_source` | enum     | `telnyx-deepgram-nova-3` \| `deepgram-direct` \| `manual`                                                                                      |
+| `transcript_chars`  | number   | Cheap truncation detector against `duration_sec`.                                                                                              |
+| `status`            | enum     | See below.                                                                                                                                     |
+| `attempts`          | number   | Incremented per runner pickup. Max 3.                                                                                                          |
+| `lease_until`       | ISO 8601 | Stuck-job recovery.                                                                                                                            |
+| `claim_id`          | string   | Key into the Claims sheet. Blank when unmatched.                                                                                               |
+| `match_method`      | enum     | `calendar-exact` \| `calendar-nearest` \| `ambiguous` \| `none`                                                                                |
+| `match_confidence`  | enum     | `high` \| `low` \| `none`                                                                                                                      |
+| `doc_url`           | string   | Generated draft.                                                                                                                               |
+| `needs_input_count` | number   | Quality metric over time.                                                                                                                      |
+| `model`             | string   | OpenRouter model ID that actually produced the draft, after any fallback.                                                                      |
+| `error`             | string   | Last error message.                                                                                                                            |
 
 Status values: `awaiting_transcript` → `pending` → `matching` → `extracting` →
 `generating` → `done`. Terminal off-ramps: `failed`, `needs_review` (draft exists
@@ -466,6 +480,10 @@ The longest single task and the real bottleneck. Not code.
 
 ### Phase 1 — Telnyx number and TeXML
 
+> **Superseded (spec-019).** Telnyx is retired — see
+> [ADR 008](../adr/008-telnyx-retired.md). This phase's number, TeXML
+> Application, and static XML no longer exist.
+
 - Buy the number, create the TeXML Application, point it at the static
   `/texml/field-notes.xml` on Cloudflare Pages.
 - Deploy the Apps Script web app as "Anyone", record the deploy ID.
@@ -601,21 +619,21 @@ No consent issue: he is dictating alone, not recording another party.
 
 ## Edge cases and risk
 
-| Risk                                                              | Likelihood | Impact | Signal to watch                                                                             | Mitigation                                                                                                                                                                                                            |
-| ----------------------------------------------------------------- | ---------- | ------ | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Telnyx TeXML transcription has an undocumented duration cap       | M          | H      | First call over 2 minutes returns short text; `transcript_chars` low against `duration_sec` | Fall back to the stored Drive audio and POST to Deepgram directly. Works on either vendor and is why audio is copied on arrival.                                                                                      |
-| Recording URL expires before the audio is copied                  | M          | H      | `audio_drive_id` blank on a completed job                                                   | Copy inside the `recording` POST, never in the trigger. Alert on any `pending` row with a blank `audio_drive_id`.                                                                                                     |
-| Duplicate callbacks from Telnyx retries after the Apps Script 302 | M          | M      | Two rows per call                                                                           | Upsert by `capture_id`. Verified explicitly in stage 1.                                                                                                                                                               |
-| Dropped call mid-recording loses everything                       | M          | H      | Call ends early and no job appears                                                          | Test deliberately in stage 1 by hanging up at 20 seconds. Telnyx docs imply partial recordings are preserved but do not say so outright. If they are not, add `recordingStatusCallbackEvent="in-progress completed"`. |
-| Bluetooth car audio mangles trade terms                           | M          | M      | Stage 2 transcript unreadable on jargon                                                     | Switch `transcriptionModel` to `deepgram/nova-2-phonecall`, built for 8 kHz phone audio. Then lean harder on the glossary in the prompt.                                                                              |
-| Claim matching picks the wrong appointment                        | M          | H      | Draft comes back under the wrong name                                                       | Designed as a flag rather than a silent guess: contested matches set `needs_review` and name both candidates in the draft header.                                                                                     |
-| Template flattening misses a conditional section                  | H          | M      | Draft missing a section for a given loss type                                               | Expected on the first pass. `unplaced_notes` surfaces what had nowhere to go; that is what stage 3 is for.                                                                                                            |
-| OpenRouter outage or a silent fallback to a weaker model          | L          | M      | A draft header naming a model you did not pin                                               | Fallback chain is explicit and the model used is recorded per job. A run with no `OPENROUTER_MODEL` match fails the job rather than guessing.                                                                         |
-| A fallback model ignores `json_schema` and returns prose          | M          | M      | Parse failure in the extractor                                                              | Pin every fallback to a structured-output-capable model. Treat a malformed response as a hard job failure, never as partial data.                                                                                     |
-| Model invents a value with a plausible source span                | L          | H      | A number in the draft that is not in the transcript                                         | Exact-substring validation, not fuzzy. Heavily unit-tested.                                                                                                                                                           |
-| Apps Script quota exhaustion after migration                      | L          | M      | Triggers stop firing                                                                        | Confirm account type before migrating. One job per tick keeps runtime low.                                                                                                                                            |
-| Webhook secret leaks via query string in logs                     | L          | L      | None practically                                                                            | Accepted for MVP. Worst case is a junk row in a private sheet. Rotate the secret at migration.                                                                                                                        |
-| Ownership migration breaks triggers                               | M          | M      | No drafts after handover                                                                    | Re-authorize triggers under Brandon's account as an explicit checklist step, then run one live test call before declaring it done.                                                                                    |
+| Risk                                                                                        | Likelihood | Impact | Signal to watch                                                                             | Mitigation                                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------- | ---------- | ------ | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| _Superseded (spec-019) — Telnyx TeXML transcription has an undocumented duration cap_       | M          | H      | First call over 2 minutes returns short text; `transcript_chars` low against `duration_sec` | Fall back to the stored Drive audio and POST to Deepgram directly. Works on either vendor and is why audio is copied on arrival.                                                                                      |
+| Recording URL expires before the audio is copied                                            | M          | H      | `audio_drive_id` blank on a completed job                                                   | Still relevant — copy audio inside the webhook handler itself, never in the trigger. Alert on any `pending` row with a blank `audio_drive_id`.                                                                        |
+| _Superseded (spec-019) — Duplicate callbacks from Telnyx retries after the Apps Script 302_ | M          | M      | Two rows per call                                                                           | Upsert by `capture_id`. Verified explicitly in stage 1.                                                                                                                                                               |
+| _Superseded (spec-019) — Dropped call mid-recording loses everything_                       | M          | H      | Call ends early and no job appears                                                          | Test deliberately in stage 1 by hanging up at 20 seconds. Telnyx docs imply partial recordings are preserved but do not say so outright. If they are not, add `recordingStatusCallbackEvent="in-progress completed"`. |
+| _Superseded (spec-019) — Bluetooth car audio mangles trade terms_                           | M          | M      | Stage 2 transcript unreadable on jargon                                                     | Switch `transcriptionModel` to `deepgram/nova-2-phonecall`, built for 8 kHz phone audio. Then lean harder on the glossary in the prompt.                                                                              |
+| Claim matching picks the wrong appointment                                                  | M          | H      | Draft comes back under the wrong name                                                       | Designed as a flag rather than a silent guess: contested matches set `needs_review` and name both candidates in the draft header.                                                                                     |
+| Template flattening misses a conditional section                                            | H          | M      | Draft missing a section for a given loss type                                               | Expected on the first pass. `unplaced_notes` surfaces what had nowhere to go; that is what stage 3 is for.                                                                                                            |
+| OpenRouter outage or a silent fallback to a weaker model                                    | L          | M      | A draft header naming a model you did not pin                                               | Fallback chain is explicit and the model used is recorded per job. A run with no `OPENROUTER_MODEL` match fails the job rather than guessing.                                                                         |
+| A fallback model ignores `json_schema` and returns prose                                    | M          | M      | Parse failure in the extractor                                                              | Pin every fallback to a structured-output-capable model. Treat a malformed response as a hard job failure, never as partial data.                                                                                     |
+| Model invents a value with a plausible source span                                          | L          | H      | A number in the draft that is not in the transcript                                         | Exact-substring validation, not fuzzy. Heavily unit-tested.                                                                                                                                                           |
+| Apps Script quota exhaustion after migration                                                | L          | M      | Triggers stop firing                                                                        | Confirm account type before migrating. One job per tick keeps runtime low.                                                                                                                                            |
+| Webhook secret leaks via query string in logs                                               | L          | L      | None practically                                                                            | Accepted for MVP. Worst case is a junk row in a private sheet. Rotate the secret at migration.                                                                                                                        |
+| Ownership migration breaks triggers                                                         | M          | M      | No drafts after handover                                                                    | Re-authorize triggers under Brandon's account as an explicit checklist step, then run one live test call before declaring it done.                                                                                    |
 
 ---
 

@@ -249,47 +249,6 @@ describe('reclaimStuckJobs', () => {
   })
 })
 
-describe('promoteStaleAwaitingTranscript', () => {
-  const stale = new Date(Date.now() - 60 * 60 * 1000).toISOString()
-  const fresh = new Date().toISOString()
-
-  function row(captureId: string, createdAt: string, status: string, transcript = '') {
-    return ['', '', '', '', '', '', '', '', ''].map((_, i) => {
-      if (i === HEADERS.indexOf('capture_id')) return captureId
-      if (i === HEADERS.indexOf('created_at')) return createdAt
-      if (i === HEADERS.indexOf('status')) return status
-      if (i === HEADERS.indexOf('transcript')) return transcript
-      return ''
-    })
-  }
-
-  it('promotes a stale awaiting_recording job without relabelling its transcript source', () => {
-    const { sandbox, sheet } = harness([row('a', stale, 'awaiting_recording', 'roof is 3-tab')])
-
-    sandbox.promoteStaleAwaitingTranscript()
-
-    expect(column(sheet, 'status', 1)).toBe('pending')
-    expect(column(sheet, 'transcript_source', 1)).toBe('')
-  })
-
-  it('promotes a stale awaiting_transcript job and marks it for direct transcription', () => {
-    const { sandbox, sheet } = harness([row('a', stale, 'awaiting_transcript')])
-
-    sandbox.promoteStaleAwaitingTranscript()
-
-    expect(column(sheet, 'status', 1)).toBe('pending')
-    expect(column(sheet, 'transcript_source', 1)).toBe('deepgram-direct')
-  })
-
-  it('leaves a job inside the grace window alone', () => {
-    const { sandbox, sheet } = harness([row('a', fresh, 'awaiting_recording', 'roof is 3-tab')])
-
-    sandbox.promoteStaleAwaitingTranscript()
-
-    expect(column(sheet, 'status', 1)).toBe('awaiting_recording')
-  })
-})
-
 describe('withJobLock flushing', () => {
   it('flushes buffered sheet writes before releasing the lock', () => {
     const order: string[] = []

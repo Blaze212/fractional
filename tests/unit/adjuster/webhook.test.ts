@@ -15,7 +15,7 @@ function harness(overrides: Record<string, unknown> = {}) {
   const lock = { held: 0, maxHeld: 0 }
 
   const sandbox = loadGs(
-    ['apps/adjuster/src/log.js', 'apps/adjuster/src/webhook.js', 'apps/adjuster/src/guidedFlow.js'],
+    ['apps/adjuster/src/log.js', 'apps/adjuster/src/util.js', 'apps/adjuster/src/webhook.js'],
     {
       console: {
         log: (line: string) => logged.push(line),
@@ -83,26 +83,18 @@ function events(logged: string[]) {
 }
 
 describe('doPost logging contract', () => {
-  it('logs a received line and an accepted line for a valid recording callback', () => {
+  it('logs a received line and an accepted line for a valid Dograh pre-call request', () => {
     const { sandbox, logged } = harness()
 
-    sandbox.doPost(
-      post({
-        event: 'recording',
-        CallSessionId: CAPTURE,
-        From: '+18176762145',
-        RecordingUrl: 'https://s3/x.mp3',
-      }),
-    )
+    sandbox.doPost(post({ event: 'dograh_pre_call' }))
 
     expect(events(logged)).toEqual(['webhook.received', 'webhook.accepted'])
   })
 
   it.each([
-    ['bad_secret', { t: 'wrong', event: 'recording', CallSessionId: CAPTURE }],
-    ['bad_call_session_id', { event: 'recording', CallSessionId: 'short' }],
-    ['caller_not_allowed', { event: 'recording', CallSessionId: CAPTURE, From: '+15550000000' }],
-    ['unknown_event', { CallSessionId: CAPTURE, From: '+18176762145' }],
+    ['bad_secret', { t: 'wrong', event: 'dograh_pre_call' }],
+    ['missing_capture_id', { event: 'manual_recording_inject' }],
+    ['unknown_event', {}],
   ])('logs a denied line with reason %s', (reason, params) => {
     const { sandbox, logged } = harness()
 
@@ -120,9 +112,17 @@ describe('doPost logging contract', () => {
       },
     })
 
-    sandbox.doPost(
-      post({ event: 'transcription', CallSessionId: CAPTURE, TranscriptionText: 'hello' }),
-    )
+    sandbox.doPost({
+      parameter: { t: SECRET, event: 'manual_recording_inject' },
+      postData: {
+        type: 'application/json',
+        contents: JSON.stringify({
+          capture_id: CAPTURE,
+          transcript: 'hello',
+          audio_base64: 'aGVsbG8=',
+        }),
+      },
+    })
 
     const terminal = logged.filter((l) => l.startsWith('{')).map((l) => JSON.parse(l))[1]
     expect(terminal.event).toBe('webhook.failed')
@@ -137,7 +137,7 @@ describe('doPost logging contract', () => {
       },
     })
 
-    sandbox.doPost(post({ event: 'action', CallSessionId: CAPTURE, From: '+18176762145' }))
+    sandbox.doPost(post({ event: 'dograh_pre_call' }))
 
     expect(events(logged)).toEqual(['webhook.received', 'webhook.accepted'])
     expect(logged.some((l) => l.startsWith('raw_sheet_write_failed'))).toBe(true)
@@ -150,7 +150,7 @@ describe('doPost logging contract', () => {
       },
     })
 
-    sandbox.doPost(post({ event: 'recording', CallSessionId: CAPTURE }))
+    sandbox.doPost(post({ event: 'dograh_pre_call' }))
 
     const terminal = logged.filter((l) => l.startsWith('{')).map((l) => JSON.parse(l))[1]
     expect(terminal.event).toBe('webhook.failed')
@@ -160,12 +160,12 @@ describe('doPost logging contract', () => {
   it('redacts the shared secret and reports the raw parameter names', () => {
     const { sandbox, logged } = harness()
 
-    sandbox.doPost(post({ event: 'recording', CallSessionId: CAPTURE, From: '+18176762145' }))
+    sandbox.doPost(post({ event: 'dograh_pre_call' }))
 
     const received = JSON.parse(logged.filter((l) => l.startsWith('{'))[0])
     expect(received.params.t).toBe('[redacted]')
     expect(JSON.stringify(received)).not.toContain(SECRET)
-    expect(received.param_names).toBe('CallSessionId,From,event,t')
+    expect(received.param_names).toBe('event,t')
   })
 
   it('redacts retell_sig so the HMAC signature never lands in logs or the Raw sheet', () => {
@@ -190,112 +190,6 @@ describe('doPost logging contract', () => {
     const received = JSON.parse(logged.filter((l) => l.startsWith('{'))[0])
     expect(received.params.retell_sig).toBe('[redacted]')
     expect(JSON.stringify(received)).not.toContain(digest)
-  })
-})
-
-describe('transcript persistence', () => {
-  it('keeps the transcript when the recording callback lands after it', () => {
-    const { sandbox, jobs } = harness()
-
-    sandbox.doPost(
-      post({ event: 'transcription', CallSessionId: CAPTURE, TranscriptionText: 'roof is 3-tab' }),
-    )
-    sandbox.doPost(
-      post({
-        event: 'recording',
-        CallSessionId: CAPTURE,
-        From: '+18176762145',
-        RecordingUrl: 'https://s3/x.mp3',
-        RecordingDuration: '13',
-      }),
-    )
-
-    const job = jobs.get(CAPTURE)!
-    expect(job.transcript).toBe('roof is 3-tab')
-    expect(job.audio_drive_id).toBe('drive-1')
-    expect(job.status).toBe('pending')
-  })
-
-  it('marks the job pending when the transcript lands after the recording', () => {
-    const { sandbox, jobs } = harness()
-
-    sandbox.doPost(
-      post({
-        event: 'recording',
-        CallSessionId: CAPTURE,
-        From: '+18176762145',
-        RecordingUrl: 'https://s3/x.mp3',
-      }),
-    )
-    sandbox.doPost(
-      post({ event: 'transcription', CallSessionId: CAPTURE, TranscriptionText: 'roof is 3-tab' }),
-    )
-
-    expect(jobs.get(CAPTURE)!.status).toBe('pending')
-  })
-
-  it('never leaves a transcript-only job with a blank status', () => {
-    const { sandbox, jobs } = harness()
-
-    sandbox.doPost(
-      post({ event: 'transcription', CallSessionId: CAPTURE, TranscriptionText: 'roof is 3-tab' }),
-    )
-
-    expect(jobs.get(CAPTURE)!.status).toBe('awaiting_recording')
-  })
-
-  it('takes the job lock for every sheet mutation', () => {
-    const { sandbox, lock } = harness()
-
-    sandbox.doPost(post({ event: 'transcription', CallSessionId: CAPTURE, TranscriptionText: 'x' }))
-
-    expect(lock.maxHeld).toBe(1)
-    expect(lock.held).toBe(0)
-  })
-})
-
-describe('duplicate recording callbacks', () => {
-  const recording = (duration: string, url: string) =>
-    post({
-      event: 'recording',
-      CallSessionId: CAPTURE,
-      From: '+18176762145',
-      RecordingUrl: url,
-      RecordingDuration: duration,
-    })
-
-  it('keeps the longer recording when the shorter one arrives second', () => {
-    const { sandbox, jobs, logged } = harness()
-
-    sandbox.doPost(recording('13', 'https://s3/long.mp3'))
-    sandbox.doPost(recording('9', 'https://s3/short.mp3'))
-
-    expect(jobs.get(CAPTURE)!.duration_sec).toBe(13)
-    expect(jobs.get(CAPTURE)!.recording_url).toBe('https://s3/long.mp3')
-    expect(events(logged)).toContain('webhook.recording_superseded')
-  })
-
-  it('replaces the recording when a longer one arrives second', () => {
-    const { sandbox, jobs } = harness()
-
-    sandbox.doPost(recording('9', 'https://s3/short.mp3'))
-    sandbox.doPost(recording('13', 'https://s3/long.mp3'))
-
-    expect(jobs.get(CAPTURE)!.duration_sec).toBe(13)
-    expect(jobs.get(CAPTURE)!.recording_url).toBe('https://s3/long.mp3')
-  })
-
-  it('does not copy the superseded recording to Drive a second time', () => {
-    const fetch = vi.fn(() => ({
-      getResponseCode: () => 200,
-      getBlob: () => ({ setName: () => 'blob' }),
-    }))
-    const { sandbox } = harness({ UrlFetchApp: { fetch } })
-
-    sandbox.doPost(recording('13', 'https://s3/long.mp3'))
-    sandbox.doPost(recording('9', 'https://s3/short.mp3'))
-
-    expect(fetch).toHaveBeenCalledTimes(1)
   })
 })
 

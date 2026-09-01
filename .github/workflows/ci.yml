@@ -110,9 +110,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      GAS_DEPLOY_ID: ${{ secrets.GAS_DEPLOY_ID }}
       GAS_EXEC_URL: ${{ secrets.GAS_EXEC_URL }}
-      WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
 
     steps:
       - uses: actions/checkout@v4
@@ -125,10 +123,6 @@ jobs:
         run: echo "$GAS_EXEC_URL" | npx wrangler@4 secret put GAS_EXEC_URL
         working-directory: apps/bh-systems
 
-      # Runs scripts/deploy.sh (not a bare `wrangler deploy`) so the checked-in
-      # DEPLOY_ID/SECRET placeholders in public/texml/*.xml get substituted
-      # with GAS_DEPLOY_ID/WEBHOOK_SECRET before every deploy, same as a local
-      # `npm run deploy`.
       - name: Deploy bh-systems Worker
         run: bash scripts/deploy.sh
         working-directory: apps/bh-systems
