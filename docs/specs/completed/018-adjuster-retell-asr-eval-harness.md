@@ -1,6 +1,6 @@
 # Adjuster Retell ASR Comparison Harness
 
-**Status:** Ready for implementation
+**Status:** Implemented — completed 2026-08-31
 **Owner:** Barton
 **Last updated:** 2026-08-31
 
