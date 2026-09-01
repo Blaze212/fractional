@@ -1,8 +1,10 @@
+import crypto from 'node:crypto'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadGs } from './loadGs'
 
 const SECRET = 'shared-secret'
 const CAPTURE = '410b941e-9c3a-11f1-9361-52d0a1d78284'
+const RETELL_API_KEY = 'retell-api-key-test'
 
 type Job = Record<string, unknown>
 
@@ -22,6 +24,7 @@ function harness(overrides: Record<string, unknown> = {}) {
       getConfig: (key: string) => {
         if (key === 'WEBHOOK_SECRET') return SECRET
         if (key === 'RECORDINGS_FOLDER_ID') return 'folder-1'
+        if (key === 'RETELL_API_KEY') return RETELL_API_KEY
         throw new Error('Missing script property: ' + key)
       },
       getConfigList: () => ['+18176762145'],
@@ -61,6 +64,8 @@ function harness(overrides: Record<string, unknown> = {}) {
         newBlob: (bytes: Buffer) => ({
           getDataAsString: () => Buffer.from(bytes).toString('utf-8'),
         }),
+        computeHmacSha256Signature: (value: string, key: string) =>
+          Array.from(crypto.createHmac('sha256', key).update(value).digest()),
       },
       ...overrides,
     },
@@ -670,6 +675,244 @@ describe('Dograh Pre-Call Data Fetch', () => {
 
     expect(lines[0]).toContain('Barnes')
     expect(lines[1]).toContain('Adams')
+  })
+})
+
+describe('Retell ingest', () => {
+  const CALL_ID = 'call_ef89bbc984713ff092a32719f09'
+
+  function retellSignature(rawBody: string, timestamp: number) {
+    const digest = crypto
+      .createHmac('sha256', RETELL_API_KEY)
+      .update(rawBody + timestamp)
+      .digest('hex')
+    return 'v=' + timestamp + ',d=' + digest
+  }
+
+  function retellPost(
+    eventType: string,
+    call: Record<string, unknown>,
+    options: { sig?: string; timestamp?: number } = {},
+  ) {
+    const rawBody = JSON.stringify({ event: eventType, call })
+    const timestamp = options.timestamp ?? Date.now()
+    const sig = options.sig !== undefined ? options.sig : retellSignature(rawBody, timestamp)
+    return {
+      parameter: { t: SECRET, event: 'retell', retell_sig: sig },
+      postData: { type: 'application/json', contents: rawBody },
+    }
+  }
+
+  function retellHarness(overrides: Record<string, unknown> = {}) {
+    return harness({
+      loadEnums: () => ({}),
+      validateLiveFields: () => ({}),
+      ...overrides,
+    })
+  }
+
+  function callEndedBody(overrides: Record<string, unknown> = {}) {
+    return {
+      call_id: CALL_ID,
+      start_timestamp: 1788215566692,
+      duration_ms: 118264,
+      transcript: 'Agent: Hi. User: The roof is 3-tab.',
+      transcript_object: [
+        { role: 'agent', content: 'Hi.', words: [{ word: 'Hi.', start: 0, end: 0.5 }] },
+      ],
+      recording_url: 'https://retell.example/recording.wav',
+      ...overrides,
+    }
+  }
+
+  function callAnalyzedBody(overrides: Record<string, unknown> = {}) {
+    return {
+      call_id: CALL_ID,
+      collected_dynamic_variables: { roof_covering_type: '3-tab' },
+      call_analysis: { call_summary: 'Roof is 3-tab.', user_sentiment: 'Neutral' },
+      ...overrides,
+    }
+  }
+
+  describe('signature verification', () => {
+    it('denies a request with no retell_sig at all', () => {
+      const { sandbox, jobs, logged } = retellHarness()
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody(), { sig: '' }))
+
+      expect(jobs.size).toBe(0)
+      const terminal = logged.filter((l) => l.startsWith('{')).map((l) => JSON.parse(l))[1]
+      expect(terminal.event).toBe('webhook.denied')
+      expect(terminal.reason).toBe('missing_retell_signature')
+    })
+
+    it('denies a malformed retell_sig that does not match v=...,d=...', () => {
+      const { sandbox, jobs, logged } = retellHarness()
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody(), { sig: 'not-a-signature' }))
+
+      expect(jobs.size).toBe(0)
+      const terminal = logged.filter((l) => l.startsWith('{')).map((l) => JSON.parse(l))[1]
+      expect(terminal.reason).toBe('malformed_retell_signature')
+    })
+
+    it('denies a signature whose digest does not match the recomputed HMAC', () => {
+      const { sandbox, jobs, logged } = retellHarness()
+
+      sandbox.doPost(
+        retellPost('call_ended', callEndedBody(), { sig: 'v=' + Date.now() + ',d=deadbeef' }),
+      )
+
+      expect(jobs.size).toBe(0)
+      const terminal = logged.filter((l) => l.startsWith('{')).map((l) => JSON.parse(l))[1]
+      expect(terminal.reason).toBe('bad_retell_signature')
+    })
+
+    it('denies a signature whose timestamp is older than the 5 minute freshness window', () => {
+      const { sandbox, jobs, logged } = retellHarness()
+      const staleTimestamp = Date.now() - 6 * 60 * 1000
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody(), { timestamp: staleTimestamp }))
+
+      expect(jobs.size).toBe(0)
+      const terminal = logged.filter((l) => l.startsWith('{')).map((l) => JSON.parse(l))[1]
+      expect(terminal.reason).toBe('stale_retell_signature')
+    })
+
+    it('accepts a correctly signed, fresh request', () => {
+      const { sandbox, jobs } = retellHarness()
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody()))
+
+      expect(jobs.has('retell-' + CALL_ID)).toBe(true)
+    })
+  })
+
+  describe('namespacing', () => {
+    it('keys the job as retell-<call_id>, distinct from a same-id dograh- row', () => {
+      const { sandbox, jobs } = retellHarness()
+      jobs.set('dograh-' + CALL_ID, { capture_id: 'dograh-' + CALL_ID, source: 'dograh' })
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody()))
+
+      expect(jobs.has('retell-' + CALL_ID)).toBe(true)
+      expect(jobs.get('dograh-' + CALL_ID)).toEqual({
+        capture_id: 'dograh-' + CALL_ID,
+        source: 'dograh',
+      })
+    })
+  })
+
+  describe('two-phase ingest ordering', () => {
+    it('call_ended then call_analyzed: ends pending with transcript, audio, and live fields', () => {
+      const { sandbox, jobs } = retellHarness()
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody()))
+      sandbox.doPost(retellPost('call_analyzed', callAnalyzedBody()))
+
+      const job = jobs.get('retell-' + CALL_ID)!
+      expect(job.status).toBe('pending')
+      expect(job.source).toBe('retell')
+      expect(job.transcript).toBe('Agent: Hi. User: The roof is 3-tab.')
+      expect(job.audio_drive_id).toBe('drive-1')
+      expect(job.live_fields).toBe(JSON.stringify({ roof_covering_type: '3-tab' }))
+      expect(job.call_analysis_data).toBe(
+        JSON.stringify({ call_summary: 'Roof is 3-tab.', user_sentiment: 'Neutral' }),
+      )
+    })
+
+    it('call_analyzed then call_ended (reverse order): same end state, no crash at either step', () => {
+      const { sandbox, jobs } = retellHarness()
+
+      expect(() => sandbox.doPost(retellPost('call_analyzed', callAnalyzedBody()))).not.toThrow()
+
+      const midway = jobs.get('retell-' + CALL_ID)!
+      expect(midway.status).toBe('awaiting_call_ended')
+      expect(midway.call_analysis_data).toBe(
+        JSON.stringify({ call_summary: 'Roof is 3-tab.', user_sentiment: 'Neutral' }),
+      )
+
+      expect(() => sandbox.doPost(retellPost('call_ended', callEndedBody()))).not.toThrow()
+
+      const job = jobs.get('retell-' + CALL_ID)!
+      expect(job.status).toBe('pending')
+      expect(job.transcript).toBe('Agent: Hi. User: The roof is 3-tab.')
+      expect(job.audio_drive_id).toBe('drive-1')
+    })
+
+    it('call_ended alone leaves the job awaiting_analysis', () => {
+      const { sandbox, jobs } = retellHarness()
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody()))
+
+      expect(jobs.get('retell-' + CALL_ID)!.status).toBe('awaiting_analysis')
+    })
+  })
+
+  describe('call artifacts', () => {
+    function folderHarness(overrides: Record<string, unknown> = {}) {
+      const artifacts: Array<{ name: string; content: string }> = []
+      const createFile = vi.fn(() => ({ getId: () => 'audio-file-1' }))
+      const callFolder = { getId: () => 'call-folder-1', createFile }
+
+      const built = retellHarness({
+        getOrCreateCallFolder: vi.fn(() => callFolder),
+        writeCallArtifact: (_folder: unknown, name: string, content: string) => {
+          artifacts.push({ name, content })
+          return 'artifact-' + name
+        },
+        UrlFetchApp: {
+          fetch: () => ({
+            getResponseCode: () => 200,
+            getBlob: () => ({ setName: () => 'blob' }),
+          }),
+        },
+        ...overrides,
+      })
+
+      return { ...built, artifacts }
+    }
+
+    it('writes the inline transcript and per-word transcript_object into the call folder', () => {
+      const { sandbox, artifacts } = folderHarness()
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody()))
+
+      expect(artifacts).toContainEqual({
+        name: 'transcript-retell.txt',
+        content: 'Agent: Hi. User: The roof is 3-tab.',
+      })
+      const wordsArtifact = artifacts.find((a) => a.name === 'transcript-retell-words.json')
+      expect(wordsArtifact).toBeDefined()
+      expect(JSON.parse(wordsArtifact!.content)).toEqual(callEndedBody().transcript_object)
+    })
+
+    it('does not write transcript-retell-words.json when transcript_object is absent', () => {
+      const { sandbox, artifacts } = folderHarness()
+
+      sandbox.doPost(retellPost('call_ended', callEndedBody({ transcript_object: undefined })))
+
+      expect(artifacts.some((a) => a.name === 'transcript-retell-words.json')).toBe(false)
+    })
+  })
+
+  it('denies (but 200s) an unhandled Retell lifecycle event like call_started', () => {
+    const { sandbox, jobs, logged } = retellHarness()
+
+    const response = sandbox.doPost(retellPost('call_started', { call_id: CALL_ID }))
+
+    expect(response.body).toBe('OK')
+    expect(jobs.size).toBe(0)
+    const lines = logged.filter((l) => l.startsWith('{')).map((l) => JSON.parse(l))
+    expect(lines[lines.length - 1].reason).toBe('retell_unhandled_event')
+  })
+
+  it('denies a payload missing call.call_id', () => {
+    const { sandbox, jobs } = retellHarness()
+
+    sandbox.doPost(retellPost('call_ended', { call_id: '' }))
+
+    expect(jobs.size).toBe(0)
   })
 })
 
