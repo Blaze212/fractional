@@ -653,6 +653,55 @@ describe('syncClaimsFromCalendar', () => {
     })
   })
 
+  it('refreshes the claim candidates cache once per tick', () => {
+    const good = fakeEvent({ id: 'ev-good', title: 'TALLEY - CLF-1 IBIS' })
+    const refreshCalls: number[] = []
+
+    const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+      getConfig: () => 'x',
+      getConfigList: () => [],
+      loadEnums: () => ({}),
+      buildExtractionSchema: () => ({}),
+      callOpenRouter: () => ({ fields: {} }),
+      withJobLock: (fn: () => unknown) => fn(),
+      upsertClaim: () => {},
+      ensureClaimsColumns: () => [],
+      describeError: (err: Error) => ({ error: String(err.message || err), stack: '' }),
+      CalendarApp: { getCalendarById: () => ({ getEvents: () => [good] }) },
+      logEvent: () => {},
+      refreshClaimCandidatesCache: () => refreshCalls.push(1),
+    })
+
+    sandbox.syncClaimsFromCalendar()
+
+    expect(refreshCalls).toHaveLength(1)
+  })
+
+  it('does not fail the tick or skip tick_end logging when the cache refresh itself fails', () => {
+    const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
+
+    const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+      getConfig: () => 'x',
+      getConfigList: () => [],
+      loadEnums: () => ({}),
+      buildExtractionSchema: () => ({}),
+      callOpenRouter: () => ({ fields: {} }),
+      withJobLock: (fn: () => unknown) => fn(),
+      upsertClaim: () => {},
+      ensureClaimsColumns: () => [],
+      describeError: (err: Error) => ({ error: String(err.message || err), stack: '' }),
+      CalendarApp: { getCalendarById: () => ({ getEvents: () => [] }) },
+      logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
+      refreshClaimCandidatesCache: () => {
+        throw new Error('CacheService quota exceeded')
+      },
+    })
+
+    expect(() => sandbox.syncClaimsFromCalendar()).not.toThrow()
+    expect(logged.some((l) => l.event === 'calendar_sync.cache_refresh_failed')).toBe(true)
+    expect(logged.some((l) => l.event === 'calendar_sync.tick_end')).toBe(true)
+  })
+
   it('logs tick_failed and rethrows when the calendar API itself fails', () => {
     const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
 

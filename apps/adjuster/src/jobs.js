@@ -120,6 +120,53 @@ function getClaims() {
   return getSheetRows(sheet).rows
 }
 
+// See spec 015. The inbound-call pre-connect hooks (webhook.js's
+// buildClaimSuggestionContext, used by both Dograh and Retell) go through
+// this cache instead of calling getClaims() directly, so a claim-suggestion
+// lookup skips the Sheet read on the common case and stays inside Retell's
+// webhook timeout budget. Deliberately NOT used by runner.js's post-call
+// matching — that pass determines the claim a job is permanently filed
+// under, so it stays on a live read.
+var CLAIM_CANDIDATES_CACHE_KEY = 'claim_candidates_v1'
+var CLAIM_CANDIDATES_CACHE_TTL_SECONDS = 21600 // CacheService's own max: 6h
+
+function refreshClaimCandidatesCache() {
+  var claims = getClaims()
+  try {
+    CacheService.getScriptCache().put(
+      CLAIM_CANDIDATES_CACHE_KEY,
+      JSON.stringify(claims),
+      CLAIM_CANDIDATES_CACHE_TTL_SECONDS,
+    )
+  } catch (err) {
+    // The live read above still succeeded -- a cache-write failure (e.g.
+    // CacheService quota/size limits) shouldn't turn a good result into a
+    // thrown error for the caller. Just skip caching this round.
+  }
+  return claims
+}
+
+// Read-through: a hit skips the Sheet read entirely. A miss (nothing has
+// synced in the last 6h — CacheService's own max TTL — or this is the first
+// call since a fresh deploy), a cached value that isn't the array shape we
+// wrote, or a corrupt cache entry all fall back to a live read and
+// repopulate the cache, so this is always correct, just slower on a miss
+// than getClaims() itself would be.
+function getCachedClaims() {
+  var cached = CacheService.getScriptCache().get(CLAIM_CANDIDATES_CACHE_KEY)
+  if (cached) {
+    try {
+      var parsed = JSON.parse(cached)
+      if (Array.isArray(parsed)) {
+        return parsed
+      }
+    } catch (err) {
+      // Fall through to a live read below.
+    }
+  }
+  return refreshClaimCandidatesCache()
+}
+
 // The Claims tab predates calendar sync and may not carry every column it
 // writes (appt_start, carrier, calendar_fields). writeRowFields throws on any
 // header it can't find, so calendarSync.js calls this once per tick rather
