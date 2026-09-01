@@ -697,6 +697,8 @@ describe('Retell ingest', () => {
       expect(lines[1].expected_digest).toMatch(/^[0-9a-f]{64}$/)
       expect(lines[1].key_length).toBe(RETELL_API_KEY.length)
       expect(lines[1].key_preview).toBe('rete...test')
+      expect(lines[1].raw_body).toBe(JSON.stringify({ event: 'call_ended', call: callEndedBody() }))
+      expect(lines[1].raw_body.length).toBe(lines[1].raw_body_length)
       expect(lines[2].reason).toBe('bad_retell_signature')
 
       // Executions doesn't surface doPost's own console.log output for

@@ -362,6 +362,11 @@ function verifyRetellSignature(rawSigParam, e) {
     raw_body_length: rawBody.length,
     key_length: apiKey.length,
     key_preview: previewSecret(apiKey),
+    // Full, untruncated raw body (capped at the same 45000-char Sheet-cell
+    // safety margin transcript writes already use) so it can be replayed
+    // through an independent local verifier — see scripts/verify-retell-
+    // signature.mjs. Temporary: remove once the mismatch is root-caused.
+    raw_body: rawBody.slice(0, 45000),
   })
 
   return { ok: false, reason: 'bad_retell_signature' }
