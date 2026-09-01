@@ -15,12 +15,7 @@ function harness(overrides: Record<string, unknown> = {}) {
   const lock = { held: 0, maxHeld: 0 }
 
   const sandbox = loadGs(
-    [
-      'apps/adjuster/src/log.js',
-      'apps/adjuster/src/util.js',
-      'apps/adjuster/src/webhook.js',
-      'apps/adjuster/src/guidedFlow.js',
-    ],
+    ['apps/adjuster/src/log.js', 'apps/adjuster/src/util.js', 'apps/adjuster/src/webhook.js'],
     {
       console: {
         log: (line: string) => logged.push(line),

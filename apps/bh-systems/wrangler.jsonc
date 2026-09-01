@@ -2,13 +2,14 @@
   // Static marketing site for bh-systems, plus a thin proxy at /texml/gas that
   // fronts the adjuster app's Apps Script deployment (see src/worker.js — Apps
   // Script's /exec endpoint always 302s to script.googleusercontent.com, which
-  // Telnyx's TeXML fetches don't follow). Deploy: `npx wrangler deploy` from
-  // this folder. Only ./public is served as static assets — the ui/ component
+  // a plain server-side fetch doesn't follow the way the caller needs). Retell
+  // routes through this proxy too (forwards X-Retell-Signature as a query
+  // param — see src/worker.js). Deploy: `npx wrangler deploy` from this
+  // folder. Only ./public is served as static assets — the ui/ component
   // library is never uploaded.
   //
   // GAS_EXEC_URL is a Worker secret (`wrangler secret put GAS_EXEC_URL`), not
-  // a var — it carries the live Apps Script deploy ID and stays out of git,
-  // same convention the checked-in TeXML files use for DEPLOY_ID/SECRET.
+  // a var — it carries the live Apps Script deploy ID and stays out of git.
   "name": "bh-systems",
   "compatibility_date": "2026-06-03",
   "main": "./src/worker.js",

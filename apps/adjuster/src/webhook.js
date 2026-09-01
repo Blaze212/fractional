@@ -167,36 +167,6 @@ function routeWebhook(event, params, e) {
   }
   if (event === 'action') return accepted(callSessionId, handleAction())
 
-  // Guided (section-by-section) flow — see guidedFlow.js. Not wired to any
-  // live Telnyx number; only reachable if something actually posts one of
-  // these event names, same as every other event here.
-  if (event === 'guided_start') return accepted(callSessionId, handleGuidedStart(callSessionId))
-  if (event === 'guided') return accepted(callSessionId, handleGuidedAction(callSessionId, params))
-  if (event === 'guided_recording') {
-    return accepted(callSessionId, handleGuidedRecordingStatus(callSessionId, params))
-  }
-  if (event === 'guided_transcription') {
-    return accepted(callSessionId, handleGuidedTranscription(callSessionId, params))
-  }
-
-  // AIGather doesn't call its own `action` URL — Telnyx delivers the result as
-  // a call.ai_gather.ended-shaped webhook to whatever URL is configured for
-  // the account (here, the same URL as the plain call-status callbacks), with
-  // no `event` param of our own to key off. Detect it by shape instead.
-  //
-  // Two different flows can produce this shape: guidedFlow.js's chained
-  // sections (guided_state.flow === 'guided', set by handleGuidedStart) and
-  // single-stage-aigather.xml's one-turn call, which never writes a
-  // guided_state at all. Route on which one this call session actually is —
-  // whichever handler runs, it's this event's only ever-reachable path, so
-  // getting the routing wrong silently drops the whole call's transcript.
-  if (looksLikeAIGatherEnded(params)) {
-    if (isGuidedFlowCall(callSessionId)) {
-      return accepted(callSessionId, handleGuidedAIGatherEnded(callSessionId, params))
-    }
-    return accepted(callSessionId, handleSingleAIGatherEnded(callSessionId, params))
-  }
-
   // Telnyx's post-call analysis event (CallStatus: "analyzed") — carries
   // Recordings once a phone number's "record the whole call" toggle is on.
   // Shape-detected the same way as AIGather-ended: no `event` param of our
@@ -308,62 +278,6 @@ function handleTranscription(callSessionId, params) {
       // Never leave the status blank. A blank status is picked up by neither the
       // runner nor promoteStaleAwaitingTranscript, so the job sits forever.
       status: job && job.audio_drive_id ? 'pending' : 'awaiting_recording',
-    })
-
-    return ContentService.createTextOutput('OK')
-  })
-}
-
-// True only for a call session guidedFlow.js's handleGuidedStart already
-// initialized (guided_state.flow === 'guided'). A single-stage-aigather.xml
-// call never writes a guided_state, so a job with none — or no job row at
-// all yet, since this event can be the very first thing that ever creates
-// one for a single-stage call — falls through to the single-stage handler.
-function isGuidedFlowCall(callSessionId) {
-  var job = getJobByCaptureId(callSessionId)
-  if (!job || !job.guided_state) return false
-  try {
-    return JSON.parse(job.guided_state).flow === 'guided'
-  } catch (err) {
-    return false
-  }
-}
-
-// single-stage-aigather.xml — see that file's header comment. One AIGather
-// verb covers the entire call, so call.ai_gather.ended is this flow's only
-// and final event: unlike handleGuidedAIGatherEnded() there is no next
-// section to advance to and no guided_state to persist. Finalizes the job
-// directly, the same shape handleRecording()/handleTranscription() write for
-// the single-shot Record flow, so matcher.js/prompt.js/runner.js need no
-// changes to consume it.
-function handleSingleAIGatherEnded(callSessionId, params) {
-  var conversationTranscript = stitchAIGatherMessages(params.Messages)
-  var durationSec = Number(firstParam(params, ['DurationSec'])) || 0
-
-  if (!conversationTranscript) {
-    logEvent('single_aigather.no_transcript', {
-      capture_id: callSessionId,
-      param_names: Object.keys(params).sort().join(','),
-    })
-  }
-
-  return withJobLock(function () {
-    var job = getJobByCaptureId(callSessionId)
-    // Appended, not overwritten — handleCallAnalyzed() below can land its own
-    // [CALL RECORDING] section into this same job's transcript, in either
-    // order, once a call's recording data arrives.
-    var transcript = appendTranscriptSection(
-      job,
-      '[AIGATHER CONVERSATION]\n' + conversationTranscript,
-    )
-
-    upsertJob(callSessionId, {
-      call_ended_at: new Date().toISOString(),
-      duration_sec: durationSec || '',
-      transcript: transcript.slice(0, 45000),
-      transcript_source: 'telnyx-aigather-single-stage',
-      transcript_chars: transcript.length,
-      status: 'pending',
     })
 
     return ContentService.createTextOutput('OK')
