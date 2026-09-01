@@ -214,12 +214,15 @@ function denied(reason, captureId, body) {
   }
 }
 
-// params.t is the shared secret — never log it. Values are truncated so a long
+// params.t is the shared secret and params.retell_sig is Retell's forwarded
+// HMAC signature — never log either. Values are truncated so a long
 // transcript cannot push the terminal outcome line out of a readable log entry.
+var SECRET_PARAM_KEYS = ['t', 'retell_sig']
+
 function redactParams(params) {
   var safe = {}
   Object.keys(params).forEach(function (key) {
-    if (key === 't') {
+    if (SECRET_PARAM_KEYS.indexOf(key) !== -1) {
       safe[key] = params[key] ? '[redacted]' : '[missing]'
       return
     }

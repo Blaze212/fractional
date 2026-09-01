@@ -167,6 +167,30 @@ describe('doPost logging contract', () => {
     expect(JSON.stringify(received)).not.toContain(SECRET)
     expect(received.param_names).toBe('CallSessionId,From,event,t')
   })
+
+  it('redacts retell_sig so the HMAC signature never lands in logs or the Raw sheet', () => {
+    const { sandbox, logged } = harness({
+      loadEnums: () => ({}),
+      validateLiveFields: () => ({}),
+    })
+
+    const rawBody = JSON.stringify({ event: 'call_ended', call: { call_id: 'call_redact_test' } })
+    const timestamp = Date.now()
+    const digest = crypto
+      .createHmac('sha256', RETELL_API_KEY)
+      .update(rawBody + timestamp)
+      .digest('hex')
+    const sig = 'v=' + timestamp + ',d=' + digest
+
+    sandbox.doPost({
+      parameter: { t: SECRET, event: 'retell', retell_sig: sig },
+      postData: { type: 'application/json', contents: rawBody },
+    })
+
+    const received = JSON.parse(logged.filter((l) => l.startsWith('{'))[0])
+    expect(received.params.retell_sig).toBe('[redacted]')
+    expect(JSON.stringify(received)).not.toContain(digest)
+  })
 })
 
 describe('transcript persistence', () => {
