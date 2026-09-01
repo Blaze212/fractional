@@ -284,6 +284,13 @@ through .") instead of flagging. Both are now
 
 ## Phase 2 — guided (section-by-section) call flow, exploratory, not live
 
+**Superseded (spec-019).** This flow was Telnyx-only and never went live;
+Telnyx is retired — see [ADR 008](../../../docs/adr/008-telnyx-retired.md).
+`guidedFlow.js`, `docs/telnyx-texml-interactive-ivr.md`,
+`template/interactive-call-script.txt`, and
+`apps/bh-systems/public/texml/guided-intake.xml` referenced below are all
+deleted. Left in place as history.
+
 An alternative to the single continuous-narration call in
 `field-notes.xml`/`webhook.js`: the adjuster gets asked one short
 question per Ibis section instead of one open-ended "record your
@@ -333,6 +340,14 @@ Before this goes live:
   Worth revisiting once this is closer to live.
 
 ## Phase 3 — single-stage AIGather, a third call flow, exploratory, not live
+
+**Superseded (spec-019).** This flow was also Telnyx-only and never went
+live — see [ADR 008](../../../docs/adr/008-telnyx-retired.md).
+`apps/adjuster/docs/guided-flow-debugging-handoff.md`,
+`apps/bh-systems/public/texml/single-stage-aigather.xml`,
+`handleSingleAIGatherEnded()`, and
+`tests/unit/adjuster/singleStageAIGather.test.ts` referenced below are all
+deleted. Left in place as history.
 
 `apps/adjuster/docs/guided-flow-debugging-handoff.md` root-caused why
 `<AIGather>` can't be one section in Phase 2's chain: it's a Call
@@ -459,11 +474,10 @@ damage to {{origin_damage_narrative}}."` `[DATE_LOSS]` stays a
   laminate") is a product class, not the roof's actual age — age is
   always asked for explicitly and separately.
 
-Not yet touched: `guidedFlow.js` (Phase 2, explicitly not wired live)
-and `apps/bh-systems/public/texml/single-stage-aigather.xml` (Phase 3)
-still reference the old `mortgage_company` field and don't reflect
-these wording changes — both are exploratory/non-Dograh call flows,
-out of scope for this pass.
+Not yet touched at the time: `guidedFlow.js` (Phase 2) and
+`apps/bh-systems/public/texml/single-stage-aigather.xml` (Phase 3), both
+exploratory/non-Dograh call flows out of scope for this pass. Both are now
+deleted (spec-019) rather than updated.
 
 ## Phase 5 — per-component status fields replace the variant-nested findings lines
 
