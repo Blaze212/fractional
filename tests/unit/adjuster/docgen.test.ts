@@ -176,6 +176,29 @@ describe('resolveTagsForDoc', () => {
     })
   })
 
+  // Spec 020 phase 6: the real production schema no longer has this gap —
+  // mitigation_status "none" renders its own sentence rather than triggering
+  // the Phase 2 backstop above.
+  it('renders the real "none" sentence plainly now that Phase 6 gave it one', () => {
+    const phase6Schema = {
+      mitigation_status: {
+        label: 'Mitigation status',
+        type: 'variant',
+        values: [
+          { key: 'none', text: 'No mitigation services were performed on this loss.' },
+          { key: 'present', text: '{{mitigation_narrative}}' },
+        ],
+      },
+    }
+    const validated = { mitigation_status: { valid: true, value: 'none', confidence: 'high' } }
+
+    const { resolved } = resolveTagsForDoc(validated, phase6Schema)
+
+    expect(resolved.mitigation_status).toMatchObject({
+      text: 'No mitigation services were performed on this loss.',
+    })
+  })
+
   it('never flags an optional field for a blank branch (no such case exists today, but the backstop must not overreach)', () => {
     const optionalTagSchema = {
       coverage_supporting_detail: {

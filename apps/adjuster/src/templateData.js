@@ -9,15 +9,17 @@ function loadGlossary() {
 }
 
 // One-time migration (2026-09-02): pushes the repo's template/enums.json
-// content onto the live ENUMS_FILE_ID Drive file after adding form: "clause"
-// to the four clause fields (spec 020 phase 3). Carries whichever of phases
-// 4, 5, and 6 land alongside it too — enums.json only has one sync function
-// at a time (see templateData.test.ts), so each phase that touches the
-// schema updates this same function's JSON body rather than adding another.
-// Run once from the editor, then delete this function — it is a
-// point-in-time snapshot, not something that stays in sync on its own. The
-// JSON below is a verbatim copy of template/enums.json;
-// tests/unit/adjuster/templateData.test.ts fails if the two ever drift.
+// content onto the live ENUMS_FILE_ID Drive file after spec 020's phases 3, 5,
+// and 6 — form: "clause" on the four clause fields, seven enum fields loosened
+// to suggestions, and mitigation_status's "none" branch gaining a canned
+// sentence in place of empty text (its MITIGATION: heading moved into
+// template.flattened.txt/the live Doc, see the acceptance criteria). enums.json
+// only carries one sync function at a time (see templateData.test.ts); this is
+// the one all three phases' schema edits landed in. Run once from the editor,
+// then delete this function — it is a point-in-time snapshot, not something
+// that stays in sync on its own. The JSON below is a verbatim copy of
+// template/enums.json; tests/unit/adjuster/templateData.test.ts fails if the
+// two ever drift.
 function syncEnumsFileFromRepo_20260902() {
   var json = `{
   "contacted_party_name": {
@@ -405,11 +407,15 @@ function syncEnumsFileFromRepo_20260902() {
     "section": "Mitigation",
     "required": true,
     "values": [
-      { "key": "none", "label": "No mitigation vendor involved", "text": "" },
+      {
+        "key": "none",
+        "label": "No mitigation vendor involved",
+        "text": "No mitigation services were performed on this loss."
+      },
       {
         "key": "present",
         "label": "Mitigation vendor involved",
-        "text": "MITIGATION:\\n{{mitigation_narrative}}"
+        "text": "{{mitigation_narrative}}"
       }
     ]
   },

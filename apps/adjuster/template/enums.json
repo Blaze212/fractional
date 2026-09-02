@@ -384,11 +384,15 @@
     "section": "Mitigation",
     "required": true,
     "values": [
-      { "key": "none", "label": "No mitigation vendor involved", "text": "" },
+      {
+        "key": "none",
+        "label": "No mitigation vendor involved",
+        "text": "No mitigation services were performed on this loss."
+      },
       {
         "key": "present",
         "label": "Mitigation vendor involved",
-        "text": "MITIGATION:\n{{mitigation_narrative}}"
+        "text": "{{mitigation_narrative}}"
       }
     ]
   },
