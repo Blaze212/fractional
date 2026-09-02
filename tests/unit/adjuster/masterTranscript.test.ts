@@ -3,9 +3,9 @@ import { loadGs } from './loadGs'
 
 const FILES = [
   'apps/adjuster/src/core/deps.js',
-  'apps/adjuster/src/transcription.js',
-  'apps/adjuster/src/prompt.js',
-  'apps/adjuster/src/llm/masterTranscript.js',
+  'apps/adjuster/src/core/transcription.js',
+  'apps/adjuster/src/core/prompt.js',
+  'apps/adjuster/src/core/masterTranscript.js',
 ]
 
 function harness(overrides: Record<string, unknown> = {}) {

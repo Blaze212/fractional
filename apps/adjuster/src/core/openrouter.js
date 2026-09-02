@@ -42,7 +42,7 @@ function extractFields(input) {
 }
 
 // schemaName and logLabel exist so the master-transcript merge (see
-// llm/masterTranscript.js) reuses this function's retry, model-fallback, and
+// core/masterTranscript.js) reuses this function's retry, model-fallback, and
 // dual-sink logging instead of duplicating them. Both default to what the
 // extraction path already sent, so that path is unchanged.
 //
@@ -214,7 +214,7 @@ function parseOpenRouterResponse(bodyText) {
     fields: parsed.fields || {},
     unplaced_notes: parsed.unplaced_notes || [],
     // The parsed body verbatim, for callers whose schema is not the extraction
-    // schema (see llm/masterTranscript.js).
+    // schema (see core/masterTranscript.js).
     content: parsed,
     model: body.model,
     usage: {

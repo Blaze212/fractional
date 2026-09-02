@@ -25,7 +25,7 @@ describe('unit test sandbox', () => {
   it('the real OpenRouter call path throws instead of dialling out', () => {
     const sandbox = loadGs([
       'apps/adjuster/src/core/deps.js',
-      'apps/adjuster/src/llm/openrouter.js',
+      'apps/adjuster/src/core/openrouter.js',
     ])
 
     expect(() =>

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { loadGs } from './loadGs'
 
-const FILES = ['apps/adjuster/src/core/deps.js', 'apps/adjuster/src/llm/openrouter.js']
+const FILES = ['apps/adjuster/src/core/deps.js', 'apps/adjuster/src/core/openrouter.js']
 
 const { buildExtractionSchema } = loadGs(FILES)
 
@@ -92,7 +92,7 @@ describe('buildExtractionSchema', () => {
 
 describe('provider routing', () => {
   it('requires endpoints that support the requested parameters', () => {
-    const src = readFileSync('apps/adjuster/src/llm/openrouter.js', 'utf-8')
+    const src = readFileSync('apps/adjuster/src/core/openrouter.js', 'utf-8')
 
     expect(src).toContain('require_parameters: true')
   })

@@ -71,7 +71,7 @@ them, blend two sources within a phrase, correct grammar, or fix a word it
 believes all three got wrong.
 
 A prompt instruction is not a guarantee, so `checkVerbatimCoverage()` in
-`apps/adjuster/src/llm/masterTranscript.js` checks it independently: the master
+`apps/adjuster/src/core/masterTranscript.js` checks it independently: the master
 is split into overlapping 8-word shingles and each must appear in at least one
 normalized source. At or above 0.98 the master is accepted; between 0.90 and 0.98
 it is accepted and flagged; below 0.90 it is rejected and extraction falls back

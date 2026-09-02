@@ -33,7 +33,7 @@ function harness(response: unknown) {
     },
   }
 
-  const sandbox = loadGs('apps/adjuster/src/llmMatcher.js', {
+  const sandbox = loadGs('apps/adjuster/src/core/llmMatcher.js', {
     buildExtractionSchema: () => ({}),
     callOpenRouter: (config: Record<string, unknown>) => {
       calls.push(config)

@@ -108,7 +108,7 @@ function response(status: number, body: string) {
   return { getResponseCode: () => status, getContentText: () => body }
 }
 
-const SOURCES = 'apps/adjuster/src/transcription.js'
+const SOURCES = ['apps/adjuster/src/core/transcription.js', 'apps/adjuster/src/transcription.js']
 
 const CORE_CONFIG = { apiKey: 'x', model: 'x', fallbacks: [], adjusterName: 'Brandon' }
 
@@ -124,7 +124,7 @@ function harness(overrides: Record<string, unknown> = {}) {
   const filesById: Record<string, ReturnType<typeof fakeFile>> = {}
   const foldersById: Record<string, Folder> = { 'root-1': root }
 
-  const sandbox = loadGs([SOURCES], {
+  const sandbox = loadGs(SOURCES, {
     logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
     describeError: (err: Error) => ({ error: String(err.message ?? err), stack: '' }),
     getConfig: (key: string) => {
