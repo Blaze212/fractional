@@ -27,6 +27,11 @@ function validateFields(fields, transcript, tagSchema) {
       return
     }
 
+    if (!propertyShapeOk(tag, field.value)) {
+      result[tag] = needsInput(label, field.source_span)
+      return
+    }
+
     if (field.confidence === 'low') {
       // The span passed spanExistsInTranscript above, so this is real (if
       // garbled) transcript text, not a hallucination — worth surfacing to
@@ -109,6 +114,28 @@ function validateLiveFields(rawFields, tagSchema, source) {
   return result
 }
 
+// bedroom_count and bathroom_count were closed 1-6 enums until a half bath and a
+// 7-bedroom house proved the list too narrow. Dropping it also dropped the
+// set-membership check that was quietly doing a second job: keeping "four",
+// "4 bd", or "2,150 sq ft" out of a filed report. A prompt can ask for digits
+// (all three of them now do) but cannot guarantee them, so the guarantee lives
+// here instead — a value that is not a clean number routes to NEEDS INPUT, the
+// same outcome the enum check used to produce, rather than printing "with four
+// bedrooms bedrooms".
+var PROPERTY_VALUE_SHAPES = {
+  bedroom_count: /^\d{1,2}$/,
+  bathroom_count: /^\d{1,2}(\.\d)?$/,
+  // Both "2150" and "2,150" are ordinary ways to write it; "2150 sq ft" is not.
+  square_footage: /^(\d{1,3}(,\d{3})+|\d+)$/,
+  year_built: /^\d{4}$/,
+}
+
+function propertyShapeOk(tag, value) {
+  var shape = PROPERTY_VALUE_SHAPES[tag]
+  if (!shape) return true
+  return shape.test(String(value).trim())
+}
+
 // The transcript-corroboration rule in validateFields is right for narrative
 // and behavioral fields — an adjuster's own account of what he saw and did, in
 // his own words, where an ungrounded value is a real hallucination risk. It is
@@ -143,6 +170,7 @@ function applyCalendarFallback(validated, calendarFields, tagSchema) {
     if (!value) return
 
     if (schema.type === 'enum' && (schema.values || []).indexOf(value) === -1) return
+    if (!propertyShapeOk(tag, value)) return
 
     validated[tag] = {
       valid: true,
@@ -195,6 +223,7 @@ function applyClaimPropertyFallback(validated, claim, tagSchema) {
     if (!value) return
 
     if (schema.type === 'enum' && (schema.values || []).indexOf(value) === -1) return
+    if (!propertyShapeOk(tag, value)) return
 
     validated[tag] = {
       valid: true,

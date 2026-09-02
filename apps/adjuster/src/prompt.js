@@ -119,6 +119,10 @@ var FIELD_GUIDANCE = {
     'What was actually damaged as a result of the cause described in origin_narrative, written as the clause that completes ", resulting in damage to ___." — e.g. "the kitchen ceiling, the adjoining dining room flooring, and the insured\'s personal property". Start mid-sentence: no leading capital, no trailing period. The specific items, rooms, or areas affected. Only facts the adjuster stated; do not restate the cause or the date here, only the resulting damage.',
   dwelling_stories:
     'The number of stories as the adjuster actually said it — e.g. "1 story", "2 story", "3 story" are the common cases, but use whatever he says (e.g. "a story and a half", "split level") rather than forcing it into one of those three.',
+  bedroom_count:
+    'Digits only, no words and no unit ("4", never "four" or "4 bedrooms"). These were a closed 1-6 enum until a 7-bedroom house had nowhere to go; the list is gone but the digits-only shape it enforced still holds.',
+  bathroom_count:
+    'Digits only, no words and no unit, with a half bath written as a decimal ("2.5", never "two and a half" or "2.5 baths").',
   roof_age_years:
     'A number of years as digits (e.g. "12"), not an install year. The adjuster\'s own hedged estimate ("I\'d guess about twelve years") is still his estimate — extract it with high confidence; use low confidence only when you had to compute the age yourself (e.g. from an install year).',
   mitigation_narrative:

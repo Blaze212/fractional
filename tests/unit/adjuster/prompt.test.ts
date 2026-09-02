@@ -207,6 +207,20 @@ describe('field-specific guidance', () => {
     expect(user).toMatch(/"unknown" over guessing between covered and excluded/i)
   })
 
+  it('keeps the digits-only constraint the dropped 1-6 enum used to carry for the counts', () => {
+    const spec = {
+      bedroom_count: { label: 'Bedroom count', type: 'string' },
+      bathroom_count: { label: 'Bathroom count', type: 'string' },
+    }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('bedroom_count:')
+    expect(user).toContain('bathroom_count:')
+    expect(user).toMatch(/never "four"/i)
+    expect(user).toMatch(/half bath written as a decimal/i)
+  })
+
   it('tells present_at_inspection to resolve a bare role to a name stated elsewhere in the call', () => {
     const spec = {
       present_at_inspection: { label: 'Present at inspection', type: 'string' },

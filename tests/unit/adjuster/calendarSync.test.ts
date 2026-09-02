@@ -723,3 +723,27 @@ describe('syncClaimsFromCalendar', () => {
     expect(logged.some((l) => l.event === 'calendar_sync.tick_failed')).toBe(true)
   })
 })
+
+// Both of these prompts used to lean on bedroom_count/bathroom_count being closed
+// 1-6 enums for their "digits, not words" constraint — the calendar one scoped its
+// only normalization rule to "For enum fields". The enums are gone, so each prompt
+// has to state the constraint itself.
+describe('property numbers are asked for as digits', () => {
+  const { CALENDAR_EXTRACTION_SYSTEM_PROMPT, PROPERTY_LOOKUP_SYSTEM_PROMPT } = loadGs(
+    'apps/adjuster/src/calendarSync.js',
+  )
+
+  it('tells the calendar extractor that counts and measurements are digits only', () => {
+    expect(CALENDAR_EXTRACTION_SYSTEM_PROMPT).toMatch(/digits\s*only/i)
+    expect(CALENDAR_EXTRACTION_SYSTEM_PROMPT).toMatch(/not "four"/i)
+  })
+
+  it('tells the property lookup the same, since its values now reach a report', () => {
+    expect(PROPERTY_LOOKUP_SYSTEM_PROMPT).toMatch(/digits\s*only/i)
+    expect(PROPERTY_LOOKUP_SYSTEM_PROMPT).toMatch(/not "4 bd"/i)
+  })
+
+  it('still requires the lookup to name the page every value came from', () => {
+    expect(PROPERTY_LOOKUP_SYSTEM_PROMPT).toMatch(/source_url must be the exact URL/i)
+  })
+})

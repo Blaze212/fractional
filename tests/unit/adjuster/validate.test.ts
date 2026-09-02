@@ -511,3 +511,103 @@ describe('applyClaimPropertyFallback', () => {
     expect(result.year_built).toEqual(needsInput('Year built'))
   })
 })
+
+// bedroom_count/bathroom_count lost their closed 1-6 enum so a half bath and a
+// 7-bedroom house would stop being silently dropped. The set-membership check
+// that went with it was also the only thing keeping "four" or "4 bd" out of a
+// filed report, so a numeric shape gate replaces it on all three fill paths.
+describe('property value shape gate', () => {
+  const countSchema = {
+    bedroom_count: { label: 'Bedroom count', type: 'string' },
+    bathroom_count: { label: 'Bathroom count', type: 'string' },
+    square_footage: { label: 'Interior square footage', type: 'string' },
+    year_built: { label: 'Year built', type: 'string' },
+    dwelling_stories: { label: 'Dwelling stories', type: 'string' },
+  }
+
+  const spoken =
+    'It has four bedrooms and two and a half baths, about 2,150 square feet, built in 1998, and it is a story and a half.'
+
+  function field(value: string, span: string) {
+    return { value, source_span: span, confidence: 'high' }
+  }
+
+  it('accepts the numbers the loosened schema exists to allow', () => {
+    const result = validateFields(
+      {
+        bedroom_count: field('7', 'four bedrooms'),
+        bathroom_count: field('2.5', 'two and a half baths'),
+        square_footage: field('2,150', 'about 2,150 square feet'),
+        year_built: field('1998', 'built in 1998'),
+      },
+      spoken,
+      countSchema,
+    )
+
+    expect(result.bedroom_count.valid).toBe(true)
+    expect(result.bathroom_count.value).toBe('2.5')
+    expect(result.square_footage.value).toBe('2,150')
+    expect(result.year_built.valid).toBe(true)
+  })
+
+  it('routes a spelled-out count to needs input rather than printing it as a number', () => {
+    const result = validateFields(
+      { bedroom_count: field('four', 'four bedrooms') },
+      spoken,
+      countSchema,
+    )
+
+    expect(result.bedroom_count.valid).toBe(false)
+    expect(result.bedroom_count.source_span).toBe('four bedrooms')
+  })
+
+  it('rejects a value carrying its unit along with it', () => {
+    const result = validateFields(
+      {
+        bedroom_count: field('4 bd', 'four bedrooms'),
+        square_footage: field('2150 sq ft', 'about 2,150 square feet'),
+      },
+      spoken,
+      countSchema,
+    )
+
+    expect(result.bedroom_count.valid).toBe(false)
+    expect(result.square_footage.valid).toBe(false)
+  })
+
+  it('rejects an install year that is not a year at all', () => {
+    const result = validateFields({ year_built: field('98', 'built in 1998') }, spoken, countSchema)
+
+    expect(result.year_built.valid).toBe(false)
+  })
+
+  it('leaves a deliberately free-text property field alone', () => {
+    const result = validateFields(
+      { dwelling_stories: field('a story and a half', 'it is a story and a half') },
+      spoken,
+      countSchema,
+    )
+
+    expect(result.dwelling_stories.value).toBe('a story and a half')
+  })
+
+  it('gates the calendar fallback too, where the enum check used to sit', () => {
+    const validated = { bedroom_count: { valid: false, empty: false, label: 'Bedroom count' } }
+
+    const result = applyCalendarFallback(validated, { bedroom_count: 'four' }, countSchema)
+
+    expect(result.bedroom_count.valid).toBe(false)
+  })
+
+  it('gates the claim-row fallback, so an unverified lookup cannot print a unit', () => {
+    const validated = { bathroom_count: { valid: false, empty: false, label: 'Bathroom count' } }
+
+    const result = applyClaimPropertyFallback(
+      validated,
+      { property_bathrooms: '2.5 baths' },
+      countSchema,
+    )
+
+    expect(result.bathroom_count.valid).toBe(false)
+  })
+})

@@ -94,7 +94,10 @@ var CALENDAR_EXTRACTION_SYSTEM_PROMPT = [
   "allowed values, character for character — normalize the entry's wording to",
   'the closest matching allowed value only when the entry clearly supports it',
   '(e.g. "four" normalizes to "4"); if nothing reasonably maps to any allowed',
-  'value, return the field empty instead of forcing a bad fit.',
+  'value, return the field empty instead of forcing a bad fit. Counts and',
+  'measurements (bedrooms, bathrooms, square footage, year built) are digits',
+  'only, with no words and no unit attached — "4", not "four" or "4 bd";',
+  '"2.5", not "two and a half"; "2150", not "2150 sq ft".',
 ].join(' ')
 
 // Kept deliberately separate from CALENDAR_PROPERTY_TAG_NAMES/
@@ -115,7 +118,10 @@ var PROPERTY_LOOKUP_SYSTEM_PROMPT = [
   'find a page that explicitly states a field, leave that field as an empty',
   'string. Respond with ONLY a JSON object, no other text, in this exact',
   'shape: {"year_built":"","bedrooms":"","bathrooms":"","square_footage":"",',
-  '"source_url":""}. source_url must be the exact URL of the single page the',
+  '"source_url":""}. Every value but source_url is digits only, with no words',
+  'and no unit attached — "4", not "4 bd"; "2.5", not "2.5 baths"; "2150", not',
+  '"2,150 sq ft"; "1998", not "built 1998".',
+  'source_url must be the exact URL of the single page the',
   'other fields came from. If source_url is empty, every other field must',
   'also be empty — never report a fact without the page it came from.',
 ].join(' ')
