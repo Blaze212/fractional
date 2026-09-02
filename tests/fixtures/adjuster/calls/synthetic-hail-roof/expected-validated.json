@@ -1,0 +1,72 @@
+{
+  "contacted_party_name": {
+    "valid": true,
+    "label": "Contacted party",
+    "value": "Renata Okonkwo",
+    "source_span": "I met with Renata Okonkwo, the insured",
+    "confidence": "high"
+  },
+  "present_at_inspection": {
+    "valid": true,
+    "label": "Present at inspection",
+    "value": "Renata Okonkwo and her contractor Devin Hollis",
+    "source_span": "she was present the whole time along with her contractor Devin Hollis",
+    "confidence": "high"
+  },
+  "mortgage_status": {
+    "valid": true,
+    "label": "Mortgage status",
+    "value": "has_mortgage",
+    "source_span": "there is a mortgage on the property through Cascade Trust Bank",
+    "confidence": "high"
+  },
+  "origin_narrative": {
+    "valid": true,
+    "label": "Cause of loss",
+    "value": "the hail storm that came through on the fourteenth of June",
+    "source_span": "the hail storm that came through on the fourteenth of June",
+    "confidence": "high"
+  },
+  "roof_covering_type": {
+    "valid": true,
+    "label": "Roof covering",
+    "value": "architectural asphalt shingle",
+    "source_span": "The roof is architectural asphalt shingle",
+    "confidence": "high"
+  },
+  "coverage_determination": {
+    "valid": true,
+    "label": "Coverage determination",
+    "value": "covered",
+    "source_span": "so this is storm related and covered",
+    "confidence": "high"
+  },
+  "coverage_cause_narrative": {
+    "valid": true,
+    "label": "Coverage cause clause",
+    "value": "storm related",
+    "source_span": "this is storm related",
+    "confidence": "high"
+  },
+  "coverage_supporting_detail": {
+    "valid": true,
+    "label": "Coverage supporting detail",
+    "value": "The policy was in force on the date of loss.",
+    "source_span": "The policy was in force on the date of loss",
+    "confidence": "high"
+  },
+  "year_built": {
+    "valid": true,
+    "label": "Year built",
+    "value": "1994",
+    "source_span": "",
+    "confidence": "claim"
+  },
+  "bedroom_count": {
+    "valid": true,
+    "label": "Bedrooms",
+    "value": "4",
+    "source_span": "",
+    "confidence": "calendar"
+  }
+}
