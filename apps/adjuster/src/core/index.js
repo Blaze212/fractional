@@ -23,29 +23,57 @@
 
 var ADJUSTER_CORE_CONTRACT_VERSION = '1'
 
-// The stated contract, as one object. Every entry is a plain function defined
-// under core/, so this is a naming convenience rather than a layer — an adapter
-// may call core.extract(...) or coreExtract(...) and get the same function.
+// The stated contract, as one object. Every entry forwards to a plain function
+// defined under core/, so this is a naming convenience rather than a layer — an
+// adapter may call core.extract(...) or coreExtract(...) and get the same
+// behaviour.
 //
-// Safe as a top-level initialiser despite Apps Script running those in file
-// order: function declarations hoist across the whole concatenated script, so
-// each name below is already bound whichever file order clasp happens to push.
+// Each entry is a wrapper rather than a direct reference on purpose. Apps
+// Script runs top-level `var` initialisers in file order, and while function
+// declarations do hoist across the concatenated script, a direct reference here
+// would make this file the one place in the project where that has to be true.
+// A wrapper does not dereference its target until it is called, so this
+// initialiser is a plain object literal and the move cannot reorder an
+// initialisation dependency — the property docs/adr/009's "Deploy impact"
+// section relies on.
 var core = {
   // Given audio, produce the source transcripts.
-  transcribe: coreTranscribe,
+  transcribe: function (input) {
+    return coreTranscribe(input)
+  },
 
   // The pipeline proper, in one call.
-  run: coreRun,
+  run: function (input) {
+    return coreRun(input)
+  },
 
   // The steps coreRun composes. An adapter that has to split the pipeline
   // across executions calls these directly.
-  match: coreResolveMatch,
-  needsLlmMatch: coreNeedsLlmClaimMatch,
-  resolveLlmMatch: coreResolveLlmMatch,
-  merge: coreMergeSources,
-  buildExtractionHints: coreBuildExtractionHints,
-  parseCalendarFields: coreParseCalendarFields,
-  extract: coreExtract,
-  validate: coreValidate,
-  buildKeyterms: buildKeyterms,
+  match: function (input) {
+    return coreResolveMatch(input)
+  },
+  needsLlmMatch: function (match) {
+    return coreNeedsLlmClaimMatch(match)
+  },
+  resolveLlmMatch: function (input) {
+    return coreResolveLlmMatch(input)
+  },
+  merge: function (input) {
+    return coreMergeSources(input)
+  },
+  buildExtractionHints: function (input) {
+    return coreBuildExtractionHints(input)
+  },
+  parseCalendarFields: function (claim, deps) {
+    return coreParseCalendarFields(claim, deps)
+  },
+  extract: function (input) {
+    return coreExtract(input)
+  },
+  validate: function (input) {
+    return coreValidate(input)
+  },
+  buildKeyterms: function (claim, glossary, adjusterName) {
+    return buildKeyterms(claim, glossary, adjusterName)
+  },
 }

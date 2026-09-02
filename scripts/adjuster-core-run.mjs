@@ -54,10 +54,10 @@ import vm from 'node:vm'
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const CORE_DIR = resolve(REPO_ROOT, 'apps/adjuster/src/core')
 
-// index.js last: each file is evaluated as its own script here, so the `core`
-// object's initialiser only sees functions from files already loaded. Apps
-// Script concatenates every file into one script and hoists across all of
-// them, which is why this ordering matters here and not in production.
+// index.js last by convention rather than necessity: core/index.js's entries
+// are wrappers, so they resolve at call time and this list could be in any
+// order. Kept as the natural reading order — dependencies first, the contract
+// object last.
 const CORE_FILES = [
   'deps.js',
   'matcher.js',

@@ -11,10 +11,10 @@ import { loadGs } from './loadGs'
 // for PropertiesService, enums.json, or log.js, it would fail here as a
 // ReferenceError rather than passing on a stub someone remembered to write.
 
-// index.js last: loadGs runs each file as its own vm script, so the `core`
-// object's initialiser only sees functions from files already loaded. Apps
-// Script concatenates every file into one script and hoists across all of them,
-// which is why this ordering constraint exists here and not in production.
+// index.js last by convention rather than necessity: core/index.js's entries
+// are wrappers, so they resolve at call time and this list could be in any
+// order. Kept as the natural reading order — dependencies first, the contract
+// object last.
 const CORE_FILES = [
   'apps/adjuster/src/core/deps.js',
   'apps/adjuster/src/core/matcher.js',
