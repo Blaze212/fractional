@@ -30,8 +30,7 @@ function generateDoc(job, claim, validated, tagSchema, unplacedNotes, options) {
   })
 
   styleRoomLabels(body, collectRoomLabels(resolved))
-  highlightNeedsInput(body)
-  highlightMediumConfidence(body)
+  highlightMarkers(body)
   appendUnplacedNotes(body, unplacedNotes)
   doc.saveAndClose()
 
@@ -56,7 +55,7 @@ function generateDoc(job, claim, validated, tagSchema, unplacedNotes, options) {
 // comment), "low" (and anything else invalid) renders as a [NEEDS INPUT]
 // placeholder, "medium" renders the real value unhighlighted with its heard
 // citation flagged yellow for a quick human check (see markForReview,
-// highlightMediumConfidence). A low-confidence field that
+// highlightMarkers). A low-confidence field that
 // still carries a source_span (see validate.js's needsInput) had real,
 // verified transcript text behind it — just enough that the model wasn't sure
 // how to render it — so that snippet rides along on the placeholder as a
@@ -70,7 +69,8 @@ function resolveTagsForDoc(validated, tagSchema) {
     var isVariant = schema.type === 'variant'
 
     if (!field || !field.valid) {
-      var heard = field && field.source_span ? ' — heard: "' + field.source_span + '"' : ''
+      var heard =
+        field && field.source_span ? ' — heard: "' + sanitizeSpan(field.source_span) + '"' : ''
       resolved[tag] = { isVariant: isVariant, text: '[NEEDS INPUT: ' + schema.label + heard + ']' }
       return
     }
@@ -90,6 +90,7 @@ function resolveTagsForDoc(validated, tagSchema) {
         isVariant: true,
         text: option ? option.text : '[NEEDS INPUT: ' + schema.label + ']',
         needsReview: needsReview && !!option,
+        label: schema.label,
       }
       return
     }
@@ -99,36 +100,44 @@ function resolveTagsForDoc(validated, tagSchema) {
       text: String(field.value),
       needsReview: needsReview,
       sourceSpan: field.source_span,
+      label: schema.label,
     }
   })
 
   return resolved
 }
 
-// Sentinel characters wrapped around the heard citation on medium-confidence
-// text so it (and only it) can be found and highlighted after insertion, then
-// stripped — mirrors how [NEEDS INPUT: ...] is a plain-text marker
-// highlightNeedsInput finds and styles, except here the wrapped text is the
-// heard citation and the markers themselves must not survive into the final
-// doc. The real sentence stays unhighlighted — it is the value we actually
-// want kept in the report — only the trailing heard citation is flagged
-// yellow, so it reads as a note to check rather than something that belongs
-// in the final text. When there is no heard citation to isolate (e.g. a
-// variant option's canned text), fall back to flagging the whole value so
-// medium confidence still gets a visible flag.
-var REVIEW_MARK_START = ''
-var REVIEW_MARK_END = ''
+// Medium confidence gets a visible, plain-text marker rather than a sentinel
+// character wrapped around the citation — Google Docs sanitizes ASCII control
+// characters out of body text on insert, so a sentinel-based marker never
+// survives replaceText and the highlight silently finds nothing. A bracketed
+// marker is found and highlighted the same way [NEEDS INPUT: ...] already is
+// (see highlightMarkers), and it stays in the document as a note to Brandon,
+// identical in kind to [NEEDS INPUT] — he deletes it as he reviews. When there
+// is no source_span to cite (a medium-confidence variant, whose canned text
+// has no span of its own), fall back to a review marker naming the field
+// instead of wrapping the whole expanded value — wrapping the whole variant
+// text would paint an entire expanded section, including nested tags filled
+// in by pass 2 (e.g. the full room-by-room interior narrative), yellow.
+function markForReview(text, sourceSpan, label) {
+  if (sourceSpan) return text + ' [heard: "' + sanitizeSpan(sourceSpan) + '"]'
+  return text + ' [review: ' + label + ' — medium confidence, no transcript citation]'
+}
 
-function markForReview(text, sourceSpan) {
-  var heard = sourceSpan ? ' [heard: "' + sourceSpan + '"]' : ''
-  if (!heard) return REVIEW_MARK_START + text + REVIEW_MARK_END
-  return text + REVIEW_MARK_START + heard + REVIEW_MARK_END
+// Strips [ and ] from a transcript-derived span before it rides into a
+// bracketed marker — an unbalanced bracket in a transcribed span breaks the
+// [^\]]* match highlightMarkers relies on and silently kills the highlight
+// for that field — then collapses whitespace and caps the length so a long
+// span doesn't dominate the sentence it's attached to.
+function sanitizeSpan(span) {
+  var cleaned = String(span).replace(/[[\]]/g, '').replace(/\s+/g, ' ').trim()
+  return cleaned.length > 200 ? cleaned.slice(0, 200) + '…' : cleaned
 }
 
 function replaceTag(body, tag, resolvedTag) {
   var pattern = '\\{\\{' + tag + '\\}\\}'
   var value = resolvedTag.needsReview
-    ? markForReview(resolvedTag.text, resolvedTag.sourceSpan)
+    ? markForReview(resolvedTag.text, resolvedTag.sourceSpan, resolvedTag.label)
     : resolvedTag.text
   var safeValue = String(value).replace(/\$/g, '$$$$')
   body.replaceText(pattern, safeValue)
@@ -173,8 +182,8 @@ function buildDraftName(job, claim) {
 // its own line ending in a colon, then that room's findings beneath it. Both
 // arrive as a single multi-line string in one paragraph, so the room names have
 // to be found and styled after insertion — the same after-the-fact pass
-// highlightNeedsInput and highlightMediumConfidence already do, rather than
-// anything the {{tag}} replacement itself could carry.
+// highlightMarkers already does, rather than anything the {{tag}} replacement
+// itself could carry.
 var ROOM_GROUPED_TAGS = ['interior_damage_narrative', 'other_structures_narrative']
 
 function collectRoomLabels(resolved) {
@@ -233,36 +242,22 @@ function escapeForFindText(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function highlightNeedsInput(body) {
-  var found = body.findText('\\[NEEDS INPUT:[^\\]]*\\]')
+// One pass over every plain-text marker kind: a needs-input placeholder, a
+// heard citation trailing a medium-confidence value, and a no-citation review
+// flag on a medium-confidence variant. All three are notes to Brandon and stay
+// in the document text — he deletes them as he reviews — so this only paints
+// the highlight, unlike the old sentinel-wrapped markers it replaces, which
+// had to be stripped back out after being found.
+function highlightMarkers(body) {
+  var pattern = '\\[(NEEDS INPUT|heard|review):[^\\]]*\\]'
+  var found = body.findText(pattern)
 
   while (found) {
     var range = found.getElement()
     var start = found.getStartOffset()
     var end = found.getEndOffsetInclusive()
     range.asText().setBackgroundColor(start, end, '#FFFF00')
-    found = body.findText('\\[NEEDS INPUT:[^\\]]*\\]', found)
-  }
-}
-
-// Medium-confidence values are inserted already wrapped in REVIEW_MARK_START/
-// END (see markForReview). Unlike [NEEDS INPUT: ...], the marker characters
-// are not meant to survive into the final doc — only the highlight is.
-function highlightMediumConfidence(body) {
-  var pattern = REVIEW_MARK_START + '[^' + REVIEW_MARK_END + ']*' + REVIEW_MARK_END
-  var found = body.findText(pattern)
-
-  while (found) {
-    var range = found.getElement()
-    var text = range.asText()
-    var start = found.getStartOffset()
-    var end = found.getEndOffsetInclusive()
-    text.setBackgroundColor(start, end, '#FFFF00')
-    // Delete the trailing marker before the leading one so the earlier
-    // index isn't shifted out from under the second deleteText call.
-    text.deleteText(end, end)
-    text.deleteText(start, start)
-    found = body.findText(pattern)
+    found = body.findText(pattern, found)
   }
 }
 

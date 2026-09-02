@@ -4,6 +4,7 @@ import { loadGs } from './loadGs'
 const {
   resolveTagsForDoc,
   markForReview,
+  replaceTag,
   roomLabelsIn,
   collectRoomLabels,
   styleRoomLabels,
@@ -89,7 +90,30 @@ describe('resolveTagsForDoc', () => {
       isVariant: true,
       text: 'There is no mortgage on the property.',
       needsReview: true,
+      label: 'Mortgage status',
     })
+  })
+
+  it('appends a [review: ...] marker to a medium-confidence variant instead of wrapping the whole branch text', () => {
+    const validated = {
+      mortgage_status: {
+        valid: true,
+        value: 'no_mortgage',
+        confidence: 'medium',
+        source_span: 'no mortgage on this one',
+      },
+    }
+
+    const resolved = resolveTagsForDoc(validated, tagSchema)
+    const body = { replaceText: (_pattern: string, value: string) => (body.result = value) } as {
+      replaceText: (pattern: string, value: string) => void
+      result?: string
+    }
+    replaceTag(body, 'mortgage_status', resolved.mortgage_status)
+
+    expect(body.result).toBe(
+      'There is no mortgage on the property. [review: Mortgage status — medium confidence, no transcript citation]',
+    )
   })
 
   it('never flags a variant for review when its value did not match any option key', () => {
@@ -115,28 +139,136 @@ describe('resolveTagsForDoc', () => {
 })
 
 describe('markForReview', () => {
-  const START = '\x02'
-  const END = '\x03'
-
-  it('isolates only the heard citation in the review markers, leaving the real sentence unmarked', () => {
+  it('appends a plain-text heard citation after the real sentence, leaving the sentence itself unmarked', () => {
     const marked = markForReview(
       'The front slope has minor granule loss.',
       'front slope has some wear',
+      'Front slope status',
     )
 
     expect(marked).toBe(
-      'The front slope has minor granule loss.' +
-        START +
-        ' [heard: "front slope has some wear"]' +
-        END,
+      'The front slope has minor granule loss. [heard: "front slope has some wear"]',
     )
-    expect(marked.indexOf(START)).toBeGreaterThan(marked.indexOf('granule loss.'))
   })
 
-  it('falls back to marking the whole value when there is no heard citation to isolate', () => {
-    const marked = markForReview('There is no mortgage on the property.', undefined)
+  it('falls back to a review marker naming the field when there is no heard citation to isolate', () => {
+    const marked = markForReview(
+      'There is no mortgage on the property.',
+      undefined,
+      'Mortgage status',
+    )
 
-    expect(marked).toBe(START + 'There is no mortgage on the property.' + END)
+    expect(marked).toBe(
+      'There is no mortgage on the property. [review: Mortgage status — medium confidence, no transcript citation]',
+    )
+  })
+
+  it('strips an unbalanced bracket out of the span so the highlight regex still matches', () => {
+    const marked = markForReview('6/12', 'the pitch is [about] six twelve', 'Roof pitch')
+
+    expect(marked).toBe('6/12 [heard: "the pitch is about six twelve"]')
+  })
+
+  it('truncates a long span with an ellipsis rather than dominating the sentence', () => {
+    const longSpan = 'a '.repeat(150).trim()
+    const marked = markForReview('value', longSpan, 'Label')
+
+    const citation = marked.slice('value ['.length)
+    expect(citation.length).toBeLessThan(longSpan.length)
+    expect(marked).toContain('…')
+  })
+})
+
+// A minimal DocumentApp body double: enough of findText/asText/setBackgroundColor
+// to prove highlightMarkers actually paints every marker kind yellow, since the
+// pure-string tests above cannot see the highlighting step at all.
+describe('highlightMarkers (DocumentApp body double)', () => {
+  const { highlightMarkers } = loadGs('apps/adjuster/src/docgen.js')
+
+  function fakeBody(text: string) {
+    const highlighted: Array<{ start: number; end: number }> = []
+    const pattern = /\[(NEEDS INPUT|heard|review):[^\]]*\]/g
+    const matches = Array.from(text.matchAll(pattern))
+    let cursor = 0
+
+    const element = {
+      asText: () => ({
+        setBackgroundColor: (start: number, end: number) => highlighted.push({ start, end }),
+      }),
+    }
+
+    return {
+      highlighted,
+      findText: () => {
+        if (cursor >= matches.length) return null
+        const match = matches[cursor]
+        cursor += 1
+        return {
+          getElement: () => element,
+          getStartOffset: () => match.index,
+          getEndOffsetInclusive: () => match.index! + match[0].length - 1,
+        }
+      },
+    }
+  }
+
+  it('paints a heard citation and a NEEDS INPUT placeholder yellow, leaving the real sentence outside the range', () => {
+    const text = 'The roof pitch is 6/12 [heard: "six twelve"]. [NEEDS INPUT: Roof covering type]'
+    const body = fakeBody(text)
+
+    highlightMarkers(body)
+
+    expect(body.highlighted).toHaveLength(2)
+    const [heard, needsInput] = body.highlighted
+    expect(text.slice(heard.start, heard.end + 1)).toBe('[heard: "six twelve"]')
+    expect(text.slice(needsInput.start, needsInput.end + 1)).toBe(
+      '[NEEDS INPUT: Roof covering type]',
+    )
+  })
+
+  it('paints a needs-input placeholder that itself carries a heard hint, whole', () => {
+    const text = '[NEEDS INPUT: Mitigation details — heard: "ay bee cee restoration"]'
+    const body = fakeBody(text)
+
+    highlightMarkers(body)
+
+    expect(body.highlighted).toEqual([{ start: 0, end: text.length - 1 }])
+  })
+
+  it('paints a review marker on a medium-confidence variant with no citation', () => {
+    const text =
+      'There is no mortgage on the property. [review: Mortgage status — medium confidence, no transcript citation]'
+    const body = fakeBody(text)
+
+    highlightMarkers(body)
+
+    expect(body.highlighted).toHaveLength(1)
+  })
+
+  it('still matches a heard citation whose span survived sanitizeSpan (no stray brackets)', () => {
+    const text = 'value [heard: "the pitch is about six twelve"]'
+    const body = fakeBody(text)
+
+    highlightMarkers(body)
+
+    expect(body.highlighted).toHaveLength(1)
+  })
+})
+
+describe('no control characters reach the document', () => {
+  it('markForReview never emits a character below \\x20 other than newline', () => {
+    const outputs = [
+      markForReview('value', 'a span', 'Label'),
+      markForReview('value', undefined, 'Label'),
+      markForReview('value', 'a span with a ] bracket', 'Label'),
+    ]
+
+    outputs.forEach((text) => {
+      for (const ch of text) {
+        const code = ch.codePointAt(0)!
+        if (code < 0x20) expect(ch).toBe('\n')
+      }
+    })
   })
 })
 
