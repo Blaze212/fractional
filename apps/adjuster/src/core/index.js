@@ -22,3 +22,30 @@
 // module system. There is no bundler and no import statement anywhere here.
 
 var ADJUSTER_CORE_CONTRACT_VERSION = '1'
+
+// The stated contract, as one object. Every entry is a plain function defined
+// under core/, so this is a naming convenience rather than a layer — an adapter
+// may call core.extract(...) or coreExtract(...) and get the same function.
+//
+// Safe as a top-level initialiser despite Apps Script running those in file
+// order: function declarations hoist across the whole concatenated script, so
+// each name below is already bound whichever file order clasp happens to push.
+var core = {
+  // Given audio, produce the source transcripts.
+  transcribe: coreTranscribe,
+
+  // The pipeline proper, in one call.
+  run: coreRun,
+
+  // The steps coreRun composes. An adapter that has to split the pipeline
+  // across executions calls these directly.
+  match: coreResolveMatch,
+  needsLlmMatch: coreNeedsLlmClaimMatch,
+  resolveLlmMatch: coreResolveLlmMatch,
+  merge: coreMergeSources,
+  buildExtractionHints: coreBuildExtractionHints,
+  parseCalendarFields: coreParseCalendarFields,
+  extract: coreExtract,
+  validate: coreValidate,
+  buildKeyterms: buildKeyterms,
+}

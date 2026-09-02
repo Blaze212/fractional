@@ -29,84 +29,92 @@ function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
   const transcriptionCalls: Array<{ job: Job; claim: Job | null }> = []
   const artifactWrites: Array<{ job: Job; extraction: Record<string, any> }> = []
 
-  const sandbox = loadGs('apps/adjuster/src/runner.js', {
-    logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
-    describeError: (err: Error) => ({ error: String(err.message ?? err), stack: 'stack' }),
-    getConfig: () => 'x',
-    getOptionalConfig: (_key: string, fallback: string) => fallback,
-    getConfigList: () => [],
-    // Defined in coreDeps.js, the Apps Script adapter for core's injected
-    // dependencies (spec 021 phase 3.2). Stubbed rather than loaded so this
-    // sandbox still exposes no network-capable global of any kind.
-    buildCoreDeps: () => coreDeps,
-    buildOpenRouterConfig: () => CORE_CONFIG,
-    buildExtractionConfig: () => CORE_CONFIG,
-    LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
-    SpreadsheetApp: { flush: () => {} },
+  const sandbox = loadGs(
+    [
+      'apps/adjuster/src/core/deps.js',
+      'apps/adjuster/src/core/pipeline.js',
+      'apps/adjuster/src/runner.js',
+    ],
+    {
+      logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
+      describeError: (err: Error) => ({ error: String(err.message ?? err), stack: 'stack' }),
+      getConfig: () => 'x',
+      getOptionalConfig: (_key: string, fallback: string) => fallback,
+      getConfigList: () => [],
+      // Defined in coreDeps.js, the Apps Script adapter for core's injected
+      // dependencies (spec 021 phase 3.2). Stubbed rather than loaded so this
+      // sandbox still exposes no network-capable global of any kind.
+      buildCoreDeps: () => coreDeps,
+      buildOpenRouterConfig: () => CORE_CONFIG,
+      buildExtractionConfig: () => CORE_CONFIG,
+      LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
+      SpreadsheetApp: { flush: () => {} },
 
-    reclaimStuckJobs: () => {},
-    ensureJobsColumns: () => [],
-    JOBS_TRANSCRIPTION_COLUMNS: ['call_folder_id'],
+      reclaimStuckJobs: () => {},
+      ensureJobsColumns: () => [],
+      JOBS_TRANSCRIPTION_COLUMNS: ['call_folder_id'],
 
-    getOldestJobByStatus: (status: string) => {
-      const matching = [...jobs.values()]
-        .filter((job) => job.status === status)
-        .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
-      return { sheet: 'sheet', headers: ['capture_id'], job: matching[0] ?? null }
-    },
-    getOldestPendingJob: () => sandbox.getOldestJobByStatus('pending'),
-    getJobByCaptureId: (id: string) => jobs.get(id) ?? null,
-    upsertJob: (id: string, fields: Job) => {
-      jobs.set(id, { ...(jobs.get(id) ?? {}), ...fields })
-    },
-    writeRowFields: (_sheet: unknown, _headers: unknown, _rowIndex: number, fields: Job) => {
-      // Only the lease path reaches here; the leased job is whichever one the
-      // dispatcher just picked, so record it against every pending/transcribed
-      // candidate rather than resolving a row index the fake sheet has no idea
-      // about.
-      leases.push({ capture_id: '', fields })
-    },
+      getOldestJobByStatus: (status: string) => {
+        const matching = [...jobs.values()]
+          .filter((job) => job.status === status)
+          .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
+        return { sheet: 'sheet', headers: ['capture_id'], job: matching[0] ?? null }
+      },
+      getOldestPendingJob: () => sandbox.getOldestJobByStatus('pending'),
+      getJobByCaptureId: (id: string) => jobs.get(id) ?? null,
+      upsertJob: (id: string, fields: Job) => {
+        jobs.set(id, { ...(jobs.get(id) ?? {}), ...fields })
+      },
+      writeRowFields: (_sheet: unknown, _headers: unknown, _rowIndex: number, fields: Job) => {
+        // Only the lease path reaches here; the leased job is whichever one the
+        // dispatcher just picked, so record it against every pending/transcribed
+        // candidate rather than resolving a row index the fake sheet has no idea
+        // about.
+        leases.push({ capture_id: '', fields })
+      },
 
-    getClaims: () => [{ claim_id: 'claim-1', insured_last_name: 'Henderson' }],
-    matchClaim: () => ({ claim_id: 'claim-1', match_method: 'exact', match_confidence: 'high' }),
-    matchClaimWithLlm: () => ({ claim_id: '', match_method: 'none', match_confidence: 'low' }),
-    loadEnums: () => TAG_SCHEMA,
-    loadGlossary: () => [],
+      getClaims: () => [{ claim_id: 'claim-1', insured_last_name: 'Henderson' }],
+      matchClaim: () => ({ claim_id: 'claim-1', match_method: 'exact', match_confidence: 'high' }),
+      matchClaimWithLlm: () => ({ claim_id: '', match_method: 'none', match_confidence: 'low' }),
+      loadEnums: () => TAG_SCHEMA,
+      loadGlossary: () => [],
 
-    runTranscriptionPass: vi.fn((job: Job, claim: Job | null) => {
-      transcriptionCalls.push({ job, claim })
-      return { extraction_input: 'dograh' }
-    }),
-    resolveExtractionTranscript: (job: Job) => ({
-      source: job.extraction_input || 'dograh',
-      transcript: job.extraction_input === 'master' ? 'master text' : String(job.transcript ?? ''),
-      haystack:
-        job.extraction_input === 'master' ? 'master haystack' : String(job.transcript ?? ''),
-    }),
+      runTranscriptionPass: vi.fn((job: Job, claim: Job | null) => {
+        transcriptionCalls.push({ job, claim })
+        return { extraction_input: 'dograh' }
+      }),
+      resolveExtractionTranscript: (job: Job) => ({
+        source: job.extraction_input || 'dograh',
+        transcript:
+          job.extraction_input === 'master' ? 'master text' : String(job.transcript ?? ''),
+        haystack:
+          job.extraction_input === 'master' ? 'master haystack' : String(job.transcript ?? ''),
+      }),
 
-    extractFields: vi.fn((input: Record<string, any>) => {
-      extractCalls.push(input)
-      return { fields: {}, unplaced_notes: [], model: 'test-model' }
-    }),
-    validateFields: (_fields: unknown, transcript: string) => {
-      validateCalls.push({ transcript })
-      return { contacted_party_name: { valid: true } }
+      extractFields: vi.fn((input: Record<string, any>) => {
+        extractCalls.push(input)
+        return { fields: {}, unplaced_notes: [], model: 'test-model' }
+      }),
+      validateFields: (_fields: unknown, transcript: string) => {
+        validateCalls.push({ transcript })
+        return { contacted_party_name: { valid: true } }
+      },
+      applyCalendarFallback: (validated: unknown) => validated,
+      applyClaimPropertyFallback: (validated: unknown) => validated,
+      dropCoverageRestatement: (validated: unknown) => ({ validated, dropped: null }),
+      collectOffSuggestionFields: () => [],
+      generateDoc: () => ({ status: 'done', docUrl: 'https://doc', needsInputCount: 0 }),
+      notifyJobFailed: () => {},
+      // Defined in replay.js, which this sandbox does not load. Stubbed rather
+      // than ignored: the pipeline persisting extraction.json is what makes a
+      // later free replay possible, so it is asserted below.
+      writeExtractionArtifact: (job: Job, _claim: Job | null, _input: unknown, extraction: any) => {
+        artifactWrites.push({ job, extraction })
+        return 'artifact-id'
+      },
+      ...overrides,
     },
-    applyCalendarFallback: (validated: unknown) => validated,
-    applyClaimPropertyFallback: (validated: unknown) => validated,
-    dropCoverageRestatement: (validated: unknown) => ({ validated, dropped: null }),
-    collectOffSuggestionFields: () => [],
-    generateDoc: () => ({ status: 'done', docUrl: 'https://doc', needsInputCount: 0 }),
-    notifyJobFailed: () => {},
-    // Defined in replay.js, which this sandbox does not load. Stubbed rather
-    // than ignored: the pipeline persisting extraction.json is what makes a
-    // later free replay possible, so it is asserted below.
-    writeExtractionArtifact: (job: Job, _claim: Job | null, _input: unknown, extraction: any) => {
-      artifactWrites.push({ job, extraction })
-      return 'artifact-id'
-    },
-    ...overrides,
-  })
+  )
 
   return {
     sandbox,

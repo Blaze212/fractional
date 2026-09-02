@@ -45,77 +45,85 @@ function harness(job: Job, overrides: Record<string, unknown> = {}) {
     throw new Error(`${name} must never be reached from a replay`)
   }
 
-  const sandbox = loadGs(['apps/adjuster/src/runner.js', 'apps/adjuster/src/replay.js'], {
-    logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
-    describeError: (err: Error) => ({ error: String(err.message ?? err), stack: 'stack' }),
-    getConfig: () => 'x',
-    getOptionalConfig: (_key: string, fallback: string) => fallback,
-    getConfigList: () => [],
-    // coreDeps.js's builders (spec 021 phase 3.2). buildCoreDeps' fetch is a
-    // forbidden(): a replay's whole point is that it spends nothing, so a
-    // vendor call reached from here has to be a loud failure.
-    buildExtractionConfig: () => ({
-      apiKey: 'x',
-      model: 'x',
-      fallbacks: [],
-      adjusterName: 'Brandon',
-    }),
-    buildCoreDeps: () => ({
-      fetch: forbidden('deps.fetch'),
-      logger: {
-        logEvent: (event: string, fields: Record<string, unknown>) =>
-          logged.push({ event, fields }),
-        logServerOnly: () => {},
+  const sandbox = loadGs(
+    [
+      'apps/adjuster/src/core/deps.js',
+      'apps/adjuster/src/core/pipeline.js',
+      'apps/adjuster/src/runner.js',
+      'apps/adjuster/src/replay.js',
+    ],
+    {
+      logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
+      describeError: (err: Error) => ({ error: String(err.message ?? err), stack: 'stack' }),
+      getConfig: () => 'x',
+      getOptionalConfig: (_key: string, fallback: string) => fallback,
+      getConfigList: () => [],
+      // coreDeps.js's builders (spec 021 phase 3.2). buildCoreDeps' fetch is a
+      // forbidden(): a replay's whole point is that it spends nothing, so a
+      // vendor call reached from here has to be a loud failure.
+      buildExtractionConfig: () => ({
+        apiKey: 'x',
+        model: 'x',
+        fallbacks: [],
+        adjusterName: 'Brandon',
+      }),
+      buildCoreDeps: () => ({
+        fetch: forbidden('deps.fetch'),
+        logger: {
+          logEvent: (event: string, fields: Record<string, unknown>) =>
+            logged.push({ event, fields }),
+          logServerOnly: () => {},
+        },
+      }),
+
+      getJobByCaptureId: (id: string) => jobs.get(id) ?? null,
+      upsertJob: (id: string, fields: Job) => {
+        upserts.push({ id, fields })
+        jobs.set(id, { ...(jobs.get(id) ?? {}), ...fields })
       },
-    }),
+      getClaims: () => [{ claim_id: 'claim-1', insured_last_name: 'Henderson' }],
+      loadEnums: () => TAG_SCHEMA,
+      loadGlossary: () => [],
 
-    getJobByCaptureId: (id: string) => jobs.get(id) ?? null,
-    upsertJob: (id: string, fields: Job) => {
-      upserts.push({ id, fields })
-      jobs.set(id, { ...(jobs.get(id) ?? {}), ...fields })
-    },
-    getClaims: () => [{ claim_id: 'claim-1', insured_last_name: 'Henderson' }],
-    loadEnums: () => TAG_SCHEMA,
-    loadGlossary: () => [],
-
-    getExistingCallFolder: () => folder,
-    readCallArtifact: (fileId: string) => folderFiles.get(fileId) ?? '',
-    writeCallArtifact: (_folder: unknown, name: string, content: string) => {
-      written.push({ name, content })
-      return `${name}-id`
-    },
-    resolveExtractionTranscript: () => ({
-      source: 'master',
-      transcript: 'master text',
-      haystack: 'master haystack',
-    }),
-
-    extractFields: vi.fn(forbidden('extractFields')),
-    runTranscriptionPass: forbidden('runTranscriptionPass'),
-    UrlFetchApp: { fetch: forbidden('UrlFetchApp.fetch') },
-
-    validateFields: (fields: Record<string, any>, haystack: string) => ({
-      contacted_party_name: { valid: true, haystack, value: fields.contacted_party_name?.value },
-    }),
-    applyCalendarFallback: (validated: unknown) => validated,
-    applyClaimPropertyFallback: (validated: unknown) => validated,
-    dropCoverageRestatement: (validated: unknown) => ({ validated, dropped: null }),
-    collectOffSuggestionFields: () => [],
-    generateDoc: vi.fn(
-      (
-        docJob: Job,
-        claim: Job | null,
-        validated: Record<string, any>,
-        tagSchema: unknown,
-        unplacedNotes: string[],
-        options: Record<string, unknown> | undefined,
-      ) => {
-        generated.push({ docJob, claim, validated, tagSchema, unplacedNotes, options })
-        return { status: 'done', docUrl: 'https://doc', needsInputCount: 0 }
+      getExistingCallFolder: () => folder,
+      readCallArtifact: (fileId: string) => folderFiles.get(fileId) ?? '',
+      writeCallArtifact: (_folder: unknown, name: string, content: string) => {
+        written.push({ name, content })
+        return `${name}-id`
       },
-    ),
-    ...overrides,
-  })
+      resolveExtractionTranscript: () => ({
+        source: 'master',
+        transcript: 'master text',
+        haystack: 'master haystack',
+      }),
+
+      extractFields: vi.fn(forbidden('extractFields')),
+      runTranscriptionPass: forbidden('runTranscriptionPass'),
+      UrlFetchApp: { fetch: forbidden('UrlFetchApp.fetch') },
+
+      validateFields: (fields: Record<string, any>, haystack: string) => ({
+        contacted_party_name: { valid: true, haystack, value: fields.contacted_party_name?.value },
+      }),
+      applyCalendarFallback: (validated: unknown) => validated,
+      applyClaimPropertyFallback: (validated: unknown) => validated,
+      dropCoverageRestatement: (validated: unknown) => ({ validated, dropped: null }),
+      collectOffSuggestionFields: () => [],
+      generateDoc: vi.fn(
+        (
+          docJob: Job,
+          claim: Job | null,
+          validated: Record<string, any>,
+          tagSchema: unknown,
+          unplacedNotes: string[],
+          options: Record<string, unknown> | undefined,
+        ) => {
+          generated.push({ docJob, claim, validated, tagSchema, unplacedNotes, options })
+          return { status: 'done', docUrl: 'https://doc', needsInputCount: 0 }
+        },
+      ),
+      ...overrides,
+    },
+  )
 
   return { sandbox, jobs, logged, written, generated, upserts, folderFiles }
 }
