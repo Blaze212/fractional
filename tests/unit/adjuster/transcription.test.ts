@@ -110,6 +110,8 @@ function response(status: number, body: string) {
 
 const SOURCES = 'apps/adjuster/src/transcription.js'
 
+const CORE_CONFIG = { apiKey: 'x', model: 'x', fallbacks: [], adjusterName: 'Brandon' }
+
 function harness(overrides: Record<string, unknown> = {}) {
   const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
   const properties: Record<string, string> = (overrides.properties as Record<string, string>) ?? {
@@ -132,6 +134,22 @@ function harness(overrides: Record<string, unknown> = {}) {
     getOptionalConfig: (key: string, fallback: string) =>
       properties[key] === undefined ? fallback : properties[key],
     getConfigList: () => [],
+    // coreDeps.js's builders (spec 021 phase 3.2). buildCoreDeps' logger is
+    // wired to the same `logged` array the adapter's logEvent stub writes to,
+    // so an assertion does not have to care which side of the boundary emitted
+    // a line.
+    buildMergeConfig: () => CORE_CONFIG,
+    buildCoreDeps: () => ({
+      fetch: () => {
+        throw new Error('transcription must not reach the network in a unit test')
+      },
+      logger: {
+        logEvent: (event: string, fields: Record<string, unknown>) =>
+          logged.push({ event, fields }),
+        logServerOnly: () => {},
+      },
+      sleep: () => {},
+    }),
     DriveApp: {
       getFolderById: (id: string) => {
         if (!foldersById[id]) throw new Error('No folder ' + id)

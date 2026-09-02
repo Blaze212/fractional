@@ -995,15 +995,18 @@ function mergeIfPossible(job, claim, glossary, sources, available, precedence) {
   }
 
   try {
+    var config = buildMergeConfig()
+
     return buildGatedMasterTranscript({
-      apiKey: getConfig('OPENROUTER_API_KEY'),
-      model: getOptionalConfig('MASTER_TRANSCRIPT_MODEL', getConfig('OPENROUTER_MODEL')),
-      fallbacks: getConfigList('OPENROUTER_FALLBACKS', []),
+      apiKey: config.apiKey,
+      model: config.model,
+      fallbacks: config.fallbacks,
+      deps: buildCoreDeps(),
       captureId: job.capture_id,
       sources: sources,
       claim: claim,
       glossary: glossary,
-      adjusterName: getOptionalConfig('ADJUSTER_NAME', 'Brandon'),
+      adjusterName: config.adjusterName,
       precedence: order,
     })
   } catch (err) {

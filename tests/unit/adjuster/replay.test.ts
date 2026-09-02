@@ -51,6 +51,23 @@ function harness(job: Job, overrides: Record<string, unknown> = {}) {
     getConfig: () => 'x',
     getOptionalConfig: (_key: string, fallback: string) => fallback,
     getConfigList: () => [],
+    // coreDeps.js's builders (spec 021 phase 3.2). buildCoreDeps' fetch is a
+    // forbidden(): a replay's whole point is that it spends nothing, so a
+    // vendor call reached from here has to be a loud failure.
+    buildExtractionConfig: () => ({
+      apiKey: 'x',
+      model: 'x',
+      fallbacks: [],
+      adjusterName: 'Brandon',
+    }),
+    buildCoreDeps: () => ({
+      fetch: forbidden('deps.fetch'),
+      logger: {
+        logEvent: (event: string, fields: Record<string, unknown>) =>
+          logged.push({ event, fields }),
+        logServerOnly: () => {},
+      },
+    }),
 
     getJobByCaptureId: (id: string) => jobs.get(id) ?? null,
     upsertJob: (id: string, fields: Job) => {

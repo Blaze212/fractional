@@ -151,7 +151,13 @@ function resolveClaimMatch(job, claims) {
 
   if (match.match_method === 'none' || match.match_method === 'ambiguous') {
     try {
-      var llmMatch = matchClaimWithLlm(job.call_started_at, job.transcript, claims)
+      var llmMatch = matchClaimWithLlm(
+        job.call_started_at,
+        job.transcript,
+        claims,
+        buildOpenRouterConfig(),
+        buildCoreDeps(),
+      )
       logEvent('runner.llm_match_attempted', {
         capture_id: job.capture_id,
         deterministic_method: match.match_method,
@@ -267,10 +273,13 @@ function buildExtractionHints(job, claim) {
 // call folder on the way out so the rendering half can be replayed for free
 // afterwards — see replay.js for why that artifact exists.
 function runFieldExtraction(job, claim, tagSchema, input, hints) {
+  var config = buildExtractionConfig()
+
   var extraction = extractFields({
-    apiKey: getConfig('OPENROUTER_API_KEY'),
-    model: getConfig('OPENROUTER_MODEL'),
-    fallbacks: getConfigList('OPENROUTER_FALLBACKS', []),
+    apiKey: config.apiKey,
+    model: config.model,
+    fallbacks: config.fallbacks,
+    deps: buildCoreDeps(),
     captureId: job.capture_id,
     transcript: input.transcript,
     transcriptSource: input.source,
@@ -279,7 +288,7 @@ function runFieldExtraction(job, claim, tagSchema, input, hints) {
     glossary: loadGlossary(),
     phraseBank: [],
     liveExtraction: hints.liveExtraction,
-    adjusterName: getOptionalConfig('ADJUSTER_NAME', 'Brandon'),
+    adjusterName: config.adjusterName,
   })
 
   logEvent('runner.extracted', {

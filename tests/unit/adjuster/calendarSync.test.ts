@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { loadGs } from './loadGs'
 
+// coreDeps.js's builders, stubbed rather than loaded (spec 021 phase 3.2):
+// calendarSync's two OpenRouter calls take their config and HTTP client as
+// arguments now, and this sandbox still exposes no network-capable global.
+const CORE_CONFIG = { apiKey: 'x', model: 'x', fallbacks: [] }
+const CORE_DEPS = {
+  fetch: () => {
+    throw new Error('calendar sync must not reach the network in a unit test')
+  },
+  logger: { logEvent: () => {}, logServerOnly: () => {} },
+}
+
 type FakeEvent = {
   id: string
   title: string
@@ -46,6 +57,8 @@ function harness(
   const webSearchCalls: Array<{ messages: Array<{ role: string; content: string }> }> = []
 
   const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+    buildCoreDeps: () => CORE_DEPS,
+    buildOpenRouterConfig: () => CORE_CONFIG,
     getConfig: (key: string) => {
       if (key === 'CALENDAR_ID') return 'calendar-1'
       if (key === 'OPENROUTER_API_KEY') return 'key'
@@ -536,6 +549,8 @@ describe('installCalendarSync', () => {
     const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
 
     const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+      buildCoreDeps: () => CORE_DEPS,
+      buildOpenRouterConfig: () => CORE_CONFIG,
       logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
       PropertiesService: {
         getScriptProperties: () => ({
@@ -606,6 +621,8 @@ describe('syncClaimsFromCalendar', () => {
     const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
 
     const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+      buildCoreDeps: () => CORE_DEPS,
+      buildOpenRouterConfig: () => CORE_CONFIG,
       getConfig: (key: string) => (key === 'CALENDAR_ID' ? 'missing-cal' : 'x'),
       CalendarApp: { getCalendarById: () => null },
       logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
@@ -626,6 +643,8 @@ describe('syncClaimsFromCalendar', () => {
     const claims = new Map<string, Record<string, unknown>>()
 
     const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+      buildCoreDeps: () => CORE_DEPS,
+      buildOpenRouterConfig: () => CORE_CONFIG,
       getConfig: () => 'x',
       getConfigList: () => [],
       loadEnums: () => ({}),
@@ -658,6 +677,8 @@ describe('syncClaimsFromCalendar', () => {
     const refreshCalls: number[] = []
 
     const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+      buildCoreDeps: () => CORE_DEPS,
+      buildOpenRouterConfig: () => CORE_CONFIG,
       getConfig: () => 'x',
       getConfigList: () => [],
       loadEnums: () => ({}),
@@ -681,6 +702,8 @@ describe('syncClaimsFromCalendar', () => {
     const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
 
     const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+      buildCoreDeps: () => CORE_DEPS,
+      buildOpenRouterConfig: () => CORE_CONFIG,
       getConfig: () => 'x',
       getConfigList: () => [],
       loadEnums: () => ({}),
@@ -706,6 +729,8 @@ describe('syncClaimsFromCalendar', () => {
     const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
 
     const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+      buildCoreDeps: () => CORE_DEPS,
+      buildOpenRouterConfig: () => CORE_CONFIG,
       getConfig: () => 'calendar-1',
       describeError: (err: Error) => ({ error: String(err.message || err), stack: '' }),
       ensureClaimsColumns: () => [],

@@ -375,10 +375,13 @@ function extractCalendarFields(title, location, description) {
     formatTagList(tagSchema),
   ].join('\n')
 
+  var config = buildOpenRouterConfig()
+
   var response = callOpenRouter({
-    apiKey: getConfig('OPENROUTER_API_KEY'),
-    model: getConfig('OPENROUTER_MODEL'),
-    fallbacks: getConfigList('OPENROUTER_FALLBACKS', []),
+    apiKey: config.apiKey,
+    model: config.model,
+    fallbacks: config.fallbacks,
+    deps: buildCoreDeps(),
     messages: [
       { role: 'system', content: CALENDAR_EXTRACTION_SYSTEM_PROMPT },
       { role: 'user', content: content },
@@ -451,6 +454,7 @@ function lookupPropertyDetails(fullAddressText) {
   var response = callOpenRouterWebSearch({
     apiKey: getConfig('OPENROUTER_API_KEY'),
     model: getConfig('OPENAI_WEB_SEARCH_MODEL'),
+    deps: buildCoreDeps(),
     messages: [
       { role: 'system', content: PROPERTY_LOOKUP_SYSTEM_PROMPT },
       { role: 'user', content: 'Property address: ' + fullAddressText },

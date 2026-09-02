@@ -3,6 +3,8 @@ import { loadGs } from './loadGs'
 
 type Job = Record<string, any>
 
+const CORE_CONFIG = { apiKey: 'x', model: 'x', fallbacks: [], adjusterName: 'Brandon' }
+
 const TAG_SCHEMA = {
   contacted_party_name: { label: 'Contacted party', type: 'string', required: true },
 }
@@ -13,6 +15,15 @@ function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
 
   const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
   const leases: Array<{ capture_id: string; fields: Record<string, unknown> }> = []
+  const coreDeps = {
+    fetch: () => {
+      throw new Error('the runner must not reach the network in a unit test')
+    },
+    logger: {
+      logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
+      logServerOnly: () => {},
+    },
+  }
   const extractCalls: Record<string, any>[] = []
   const validateCalls: Array<{ transcript: string }> = []
   const transcriptionCalls: Array<{ job: Job; claim: Job | null }> = []
@@ -24,6 +35,12 @@ function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
     getConfig: () => 'x',
     getOptionalConfig: (_key: string, fallback: string) => fallback,
     getConfigList: () => [],
+    // Defined in coreDeps.js, the Apps Script adapter for core's injected
+    // dependencies (spec 021 phase 3.2). Stubbed rather than loaded so this
+    // sandbox still exposes no network-capable global of any kind.
+    buildCoreDeps: () => coreDeps,
+    buildOpenRouterConfig: () => CORE_CONFIG,
+    buildExtractionConfig: () => CORE_CONFIG,
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
     SpreadsheetApp: { flush: () => {} },
 
@@ -93,6 +110,7 @@ function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
 
   return {
     sandbox,
+    coreDeps,
     jobs,
     logged,
     leases,

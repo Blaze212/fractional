@@ -12,6 +12,7 @@ function extractFields(input) {
   var apiKey = input.apiKey
   var model = input.model
   var fallbacks = input.fallbacks || []
+  var deps = input.deps
   var prompt = buildPrompt({
     transcript: input.transcript,
     claim: input.claim,
@@ -27,6 +28,7 @@ function extractFields(input) {
     apiKey: apiKey,
     model: model,
     fallbacks: fallbacks,
+    deps: deps,
     captureId: input.captureId,
     transcript: input.transcript,
     messages: [
@@ -43,7 +45,12 @@ function extractFields(input) {
 // llm/masterTranscript.js) reuses this function's retry, model-fallback, and
 // dual-sink logging instead of duplicating them. Both default to what the
 // extraction path already sent, so that path is unchanged.
+//
+// config.deps carries the injected HTTP client, logger, and sleep — see
+// core/deps.js. Retry and model fallback stay here because they are policy;
+// only the single round trip is injected.
 function callOpenRouter(config) {
+  var deps = config.deps
   var models = [config.model].concat(config.fallbacks || [])
   var logLabel = config.logLabel || 'openrouter'
   var payload = {
@@ -64,21 +71,21 @@ function callOpenRouter(config) {
     provider: { require_parameters: true },
   }
 
-  var options = {
+  var request = {
+    url: OPENROUTER_URL,
     method: 'post',
     contentType: 'application/json',
     headers: { Authorization: 'Bearer ' + config.apiKey },
     payload: JSON.stringify(payload),
-    muteHttpExceptions: true,
   }
 
-  var lastResponse = null
+  var lastStatus = 0
 
   for (var attempt = 0; attempt <= OPENROUTER_RETRY_BACKOFF_MS.length; attempt++) {
-    var response = UrlFetchApp.fetch(OPENROUTER_URL, options)
-    var status = response.getResponseCode()
-    var bodyText = response.getContentText()
-    lastResponse = response
+    var response = coreFetch(deps, request)
+    var status = response.status
+    var bodyText = response.body
+    lastStatus = status
 
     // Full request/response pair for this attempt, together, so a bad extraction
     // (e.g. the model working off a stale schema) can be diagnosed from one log
@@ -87,7 +94,7 @@ function callOpenRouter(config) {
     // the real server log (Apps Script Executions / Cloud Logging) — it does not
     // go to the Raw sheet, which isn't built to hold payloads this size.
     var transcriptText = String(config.transcript || '')
-    logServerOnly(logLabel + '.response', {
+    coreLogServerOnly(deps, logLabel + '.response', {
       capture_id: config.captureId || '',
       attempt: attempt + 1,
       status: status,
@@ -98,7 +105,7 @@ function callOpenRouter(config) {
 
     // Lighter, Sheet-visible trail — a fact that this attempt happened, not its
     // full payload. The Raw sheet is for scanning, not for holding the response.
-    logEvent(logLabel + '.response_summary', {
+    coreLogEvent(deps, logLabel + '.response_summary', {
       capture_id: config.captureId || '',
       attempt: attempt + 1,
       status: status,
@@ -112,14 +119,14 @@ function callOpenRouter(config) {
     var retryable = status === 429 || status >= 500
     var hasBudget = attempt < OPENROUTER_RETRY_BACKOFF_MS.length
     if (retryable && hasBudget) {
-      Utilities.sleep(OPENROUTER_RETRY_BACKOFF_MS[attempt])
+      coreSleep(deps, OPENROUTER_RETRY_BACKOFF_MS[attempt])
       continue
     }
 
     throw new Error('OpenRouter request failed: ' + status + ' ' + bodyText)
   }
 
-  throw new Error('OpenRouter request failed after retries: ' + lastResponse.getResponseCode())
+  throw new Error('OpenRouter request failed after retries: ' + lastStatus)
 }
 
 // Separate from callOpenRouter above: the `:online` suffix routes the request
@@ -131,34 +138,35 @@ function callOpenRouter(config) {
 // enforcing it — parsing is the caller's job (see parsePropertyLookupResponse
 // in calendarSync.js).
 function callOpenRouterWebSearch(config) {
+  var deps = config.deps
   var payload = {
     model: config.model + ':online',
     messages: config.messages,
   }
 
-  var options = {
+  var request = {
+    url: OPENROUTER_URL,
     method: 'post',
     contentType: 'application/json',
     headers: { Authorization: 'Bearer ' + config.apiKey },
     payload: JSON.stringify(payload),
-    muteHttpExceptions: true,
   }
 
-  var lastResponse = null
+  var lastStatus = 0
 
   for (var attempt = 0; attempt <= OPENROUTER_RETRY_BACKOFF_MS.length; attempt++) {
-    var response = UrlFetchApp.fetch(OPENROUTER_URL, options)
-    var status = response.getResponseCode()
-    var bodyText = response.getContentText()
-    lastResponse = response
+    var response = coreFetch(deps, request)
+    var status = response.status
+    var bodyText = response.body
+    lastStatus = status
 
-    logServerOnly('openrouter_web_search.response', {
+    coreLogServerOnly(deps, 'openrouter_web_search.response', {
       attempt: attempt + 1,
       status: status,
       model_requested: payload.model,
       response_body: bodyText.slice(0, SERVER_LOG_TRUNCATE_CHARS),
     })
-    logEvent('openrouter_web_search.response_summary', {
+    coreLogEvent(deps, 'openrouter_web_search.response_summary', {
       attempt: attempt + 1,
       status: status,
       model_requested: payload.model,
@@ -177,16 +185,14 @@ function callOpenRouterWebSearch(config) {
     var retryable = status === 429 || status >= 500
     var hasBudget = attempt < OPENROUTER_RETRY_BACKOFF_MS.length
     if (retryable && hasBudget) {
-      Utilities.sleep(OPENROUTER_RETRY_BACKOFF_MS[attempt])
+      coreSleep(deps, OPENROUTER_RETRY_BACKOFF_MS[attempt])
       continue
     }
 
     throw new Error('OpenRouter web search request failed: ' + status + ' ' + bodyText)
   }
 
-  throw new Error(
-    'OpenRouter web search request failed after retries: ' + lastResponse.getResponseCode(),
-  )
+  throw new Error('OpenRouter web search request failed after retries: ' + lastStatus)
 }
 
 function parseOpenRouterResponse(bodyText) {
