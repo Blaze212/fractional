@@ -75,6 +75,7 @@ function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
       return { contacted_party_name: { valid: true } }
     },
     applyCalendarFallback: (validated: unknown) => validated,
+    applyClaimPropertyFallback: (validated: unknown) => validated,
     generateDoc: () => ({ status: 'done', docUrl: 'https://doc', needsInputCount: 0 }),
     notifyJobFailed: () => {},
     ...overrides,

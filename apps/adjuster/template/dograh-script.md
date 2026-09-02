@@ -53,8 +53,15 @@
 
    Variables to track:
    - Coverage cause clause (e.g. "storm related", "related to a burst plumbing line due to freezing")
-   - Coverage determination (e.g. "Is this covered?")
+   - Coverage determination (e.g. "Is this covered?") — covered, excluded, or undetermined
    - Coverage supporting detail (optional, e.g. confirming heat was maintained for a freeze claim)
+
+   NOTE: "not sure yet" is a real answer here, not a gap. If the adjuster says
+   coverage is questionable, undetermined, or pending a policy review or carrier
+   decision, record that as the determination and move on — the report renders
+   "coverage is questionable at this time" and flags it for him to resolve
+   before filing. Do not press him for a covered/excluded answer he has not
+   reached, and follow up only for the reason it is in question.
 
 5. ** Risk Information:**
    - Gather details about the dwelling's structure, siding, and occupancy status. Ask over a couple questions.
@@ -83,7 +90,14 @@
    - Is the roof composition shingle roofing? If yes, get the shingle type/rating (e.g. "20 year 3-tab", "30 year laminate"), condition, and pitch. If not, ask: "Please provide more details" — a full freeform description of material, age, condition, layers, pitch, and per-slope findings.
    - What is the actual age of the roof, in years? Always ask this explicitly and separately — a shingle's type/rating (e.g. "20 year", "30 year laminate") is a product class, not the roof's age. Never record the rating as the age.
    - What was the condition of the exterior during the inspection?
-   - Were there any interior damages noted?
+   - Were there any interior damages noted? If yes, walk the rooms one at a
+     time: for each room he names, get that room's own damage and the repair
+     he will estimate for it before moving to the next. Keep asking "any other
+     rooms?" until he says that is all. The report prints one block per room,
+     so a single lumped-together answer has to be split back apart by hand.
+   - Were there any damages to other structures on the property — a detached
+     garage, shed, pool, patio, fence? If yes, take them one structure at a
+     time the same way the rooms were taken.
 
    Variables to track:
    - Roof status
@@ -95,7 +109,10 @@
    - Roof findings, non-shingle material (full narrative — material, age, condition, layers, pitch, per-slope findings, conclusion)
    - Exterior status
    - Exterior damage findings (per elevation, including undamaged elevations (front, right, back, left))
-   - Interior damage findings
+   - Interior status
+   - Interior damage findings (per room)
+   - Other structures status
+   - Other structures damage findings (per structure)
 
 7. **Personal Property and Mitigation**
    - Determine the status of personal property and any mitigation actions taken.
@@ -206,7 +223,10 @@ Move to End Call only when the caller is done, there is nothing else to discuss,
     "roof_narrative_freeform": { "label": "Roof findings, non-shingle material (full narrative — material, age, condition, layers, pitch, per-slope findings, conclusion)" },
     "exterior_status": { "label": "Exterior status" },
     "exterior_narrative": { "label": "Exterior damage findings (per elevation, including undamaged elevations)" },
-    "interior_damage_narrative": { "label": "Interior damage findings" },
+    "interior_status": { "label": "Interior status" },
+    "interior_damage_narrative": { "label": "Interior damage findings, grouped by room" },
+    "other_structures_status": { "label": "Other structures status" },
+    "other_structures_narrative": { "label": "Other structures damage findings, grouped by structure" },
     "personal_property_status": { "label": "Personal property status" },
     "personal_property_narrative": { "label": "Personal property damage findings" },
     "mitigation_status": { "label": "Mitigation status" },

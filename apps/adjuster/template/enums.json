@@ -62,6 +62,11 @@
         "key": "excluded",
         "label": "Excluded / coverage does not apply",
         "text": "which is excluded under the insured's policy. {{coverage_supporting_detail}} Therefore, coverage does not appear to be applicable to this loss."
+      },
+      {
+        "key": "unknown",
+        "label": "Undetermined \u2014 coverage questionable",
+        "text": "and coverage is questionable at this time. {{coverage_supporting_detail}} [NEEDS INPUT: Confirm the coverage determination before filing.]"
       }
     ]
   },
@@ -124,17 +129,15 @@
   },
   "bedroom_count": {
     "label": "Bedroom count",
-    "type": "enum",
+    "type": "string",
     "section": "Risk",
-    "required": true,
-    "values": ["1", "2", "3", "4", "5", "6"]
+    "required": true
   },
   "bathroom_count": {
     "label": "Bathroom count",
-    "type": "enum",
+    "type": "string",
     "section": "Risk",
-    "required": true,
-    "values": ["1", "2", "3", "4", "5", "6"]
+    "required": true
   },
   "occupancy_status": {
     "label": "Occupancy",
@@ -297,11 +300,55 @@
     "section": "Exterior",
     "required": true
   },
+  "interior_status": {
+    "label": "Interior status",
+    "type": "variant",
+    "section": "Interior",
+    "required": true,
+    "values": [
+      {
+        "key": "not_affected",
+        "label": "Not affected",
+        "text": "The dwelling interior was not affected during this loss."
+      },
+      {
+        "key": "affected",
+        "label": "Affected",
+        "text": "My inspection documented damages within the following areas:\n\n{{interior_damage_narrative}}"
+      }
+    ]
+  },
   "interior_damage_narrative": {
-    "label": "Interior damage findings",
+    "label": "Interior damage findings, grouped by room",
     "type": "narrative",
     "section": "Interior",
-    "required": false
+    "required": true,
+    "requiredWhen": { "field": "interior_status", "equals": "affected" }
+  },
+  "other_structures_status": {
+    "label": "Other structures status",
+    "type": "variant",
+    "section": "Other Structures",
+    "required": true,
+    "values": [
+      {
+        "key": "none",
+        "label": "No damage",
+        "text": "Inspection found no storm related damages to any of the insured's other structures."
+      },
+      {
+        "key": "affected",
+        "label": "Damaged",
+        "text": "My inspection documented damages to the following other structures:\n\n{{other_structures_narrative}}"
+      }
+    ]
+  },
+  "other_structures_narrative": {
+    "label": "Other structures damage findings, grouped by structure",
+    "type": "narrative",
+    "section": "Other Structures",
+    "required": true,
+    "requiredWhen": { "field": "other_structures_status", "equals": "affected" }
   },
   "personal_property_status": {
     "label": "Personal property status",

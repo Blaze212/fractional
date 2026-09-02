@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { loadGs } from './loadGs'
 
-const { validateFields, applyCalendarFallback, validateLiveFields } = loadGs(
-  'apps/adjuster/src/validate.js',
-)
+const { validateFields, applyCalendarFallback, applyClaimPropertyFallback, validateLiveFields } =
+  loadGs('apps/adjuster/src/validate.js')
 
 const transcript =
   'The roof covering is architectural shingle and the pitch is six twelve. There is not a mortgage on the property.'
@@ -402,5 +401,113 @@ describe('validateLiveFields', () => {
     const result = validateLiveFields({}, tagSchema, 'retell')
 
     expect(result.mortgage_company).toEqual({ valid: true, empty: true, label: 'Mortgage company' })
+  })
+})
+
+// The public-records lookup calendar sync runs per claim writes property_* columns
+// onto the Claims row (see calendarSync.js). Before this they were written and never
+// read, so bed/bath/square footage/year built rendered NEEDS INPUT on every claim
+// whose invite description did not spell them out — which is most of them.
+describe('applyClaimPropertyFallback', () => {
+  const propertySchema = {
+    bedroom_count: { label: 'Bedroom count', type: 'string' },
+    bathroom_count: { label: 'Bathroom count', type: 'string' },
+    square_footage: { label: 'Interior square footage', type: 'string' },
+    year_built: { label: 'Year built', type: 'string' },
+    // Deliberately outside CLAIM_PROPERTY_FALLBACK_TAGS: a narrative is never
+    // filled from a claim row, however tempting a matching column looks.
+    interior_damage_narrative: { label: 'Interior damage findings', type: 'string' },
+  }
+
+  const claim = {
+    claim_id: 'evt-1',
+    property_year_built: '1998',
+    property_bedrooms: '4',
+    property_bathrooms: '2.5',
+    property_square_footage: '2150',
+    interior_damage_narrative: 'should never be used',
+  }
+
+  function needsInput(label: string) {
+    return { valid: false, empty: false, label }
+  }
+
+  it('fills every property fact the transcript and calendar both left needing input', () => {
+    const validated = {
+      year_built: needsInput('Year built'),
+      bedroom_count: needsInput('Bedroom count'),
+      bathroom_count: needsInput('Bathroom count'),
+      square_footage: needsInput('Interior square footage'),
+    }
+
+    const result = applyClaimPropertyFallback(validated, claim, propertySchema)
+
+    expect(result.year_built).toEqual({
+      valid: true,
+      label: 'Year built',
+      value: '1998',
+      source_span: '',
+      confidence: 'claim',
+    })
+    expect(result.bedroom_count.value).toBe('4')
+    expect(result.square_footage.value).toBe('2150')
+  })
+
+  it('keeps a half bath the old closed enum would have thrown away', () => {
+    const validated = { bathroom_count: needsInput('Bathroom count') }
+
+    const result = applyClaimPropertyFallback(validated, claim, propertySchema)
+
+    expect(result.bathroom_count.value).toBe('2.5')
+  })
+
+  it('stringifies a numeric sheet cell rather than passing a number downstream', () => {
+    const validated = { year_built: needsInput('Year built') }
+
+    const result = applyClaimPropertyFallback(
+      validated,
+      { property_year_built: 1978 },
+      propertySchema,
+    )
+
+    expect(result.year_built.value).toBe('1978')
+  })
+
+  it('never overwrites a value the transcript or the calendar already supplied', () => {
+    const validated = {
+      year_built: { valid: true, label: 'Year built', value: '1945', confidence: 'calendar' },
+    }
+
+    const result = applyClaimPropertyFallback(validated, claim, propertySchema)
+
+    expect(result.year_built.value).toBe('1945')
+  })
+
+  it('leaves a field needing input when the claim row has no value for it', () => {
+    const validated = { square_footage: needsInput('Interior square footage') }
+
+    const result = applyClaimPropertyFallback(
+      validated,
+      { property_square_footage: '' },
+      propertySchema,
+    )
+
+    expect(result.square_footage).toEqual(needsInput('Interior square footage'))
+  })
+
+  it('never fills a narrative field from the claim row', () => {
+    const validated = { interior_damage_narrative: needsInput('Interior damage findings') }
+
+    const result = applyClaimPropertyFallback(validated, claim, propertySchema)
+
+    expect(result.interior_damage_narrative).toEqual(needsInput('Interior damage findings'))
+  })
+
+  it('is a no-op on an unmatched job with no claim at all', () => {
+    const validated = { year_built: needsInput('Year built') }
+
+    const result = applyClaimPropertyFallback(validated, null, propertySchema)
+
+    expect(result.year_built).toEqual(needsInput('Year built'))
   })
 })
