@@ -1,6 +1,6 @@
 # Adjuster Portable Core
 
-**Status:** Ready for review
+**Status:** Implemented — PR https://github.com/Blaze212/fractional/pull/49
 **Owner:** Barton
 **Last updated:** 2026-09-02
 **Linear:** [Brandon Adjuster](https://linear.app/skoodar/project/brandon-adjuster-c5f117dd2c3d) → milestone _Phase 3: Portable core_ (BH-55, BH-56, BH-57, BH-58, BH-59 and their sub-issues)
@@ -284,19 +284,19 @@ injected-dependency shape, and the `core.transcribe` / `core.run` contract (BH-1
 
 ## Acceptance Criteria
 
-- [ ] `apps/adjuster/src/core/` exists and contains `matcher.js`, `llmMatcher.js`, `validate.js`, `prompt.js`, `masterTranscript.js`, `openrouter.js`, and the pure half of `transcription.js`
-- [ ] Guard test fails the suite if any `core/` file references an Apps Script global
-- [ ] Guard test fails the suite if any `core/` file calls a cross-file symbol outside `core/` and the declared allowlist
-- [ ] `core.run` and `core.transcribe` take `deps.fetch` and `deps.logger`; neither reads `PropertiesService` nor loads `enums.json` or `glossary.json`
-- [ ] `tagSchema` and `glossary` are arguments at every core call site
-- [ ] No extraction, validation, matching, or merge logic remains in `runner.js`, `docgen.js`, `jobs.js`, `calendarSync.js`, or `webhook.js`
-- [ ] `scripts/adjuster-core-run.mjs` runs the full core on a recording and transcript from disk and prints the validated field map
-- [ ] Five to ten anonymized fixtures under `tests/fixtures/adjuster/`, each with expected validated output
-- [ ] Default `pnpm test` runs the corpus against recorded responses and makes zero network calls
-- [ ] A separate opt-in CI job runs the corpus live and prints a field-by-field diff
-- [ ] Phase 0 contract tests (BH-87) still pass unchanged
-- [ ] A scripted A/B call produces the same draft as before the refactor, field for field
-- [ ] ADR filed at `docs/adr/009-adjuster-portable-core-contract.md`
-- [ ] `pnpm typecheck`, `pnpm test`, `pnpm format`, `pnpm lint` pass
-- [ ] No hardcoded secrets; all keys stay in Script Properties on the adapter side
-- [ ] First deploy after the move verified: no stale duplicate files in the Apps Script project
+- [x] `apps/adjuster/src/core/` exists and contains `matcher.js`, `llmMatcher.js`, `validate.js`, `prompt.js`, `masterTranscript.js`, `openrouter.js`, and the pure half of `transcription.js`
+- [x] Guard test fails the suite if any `core/` file references an Apps Script global
+- [x] Guard test fails the suite if any `core/` file calls a cross-file symbol outside `core/` and the declared allowlist
+- [x] `core.run` and `core.transcribe` take `deps.fetch` and `deps.logger`; neither reads `PropertiesService` nor loads `enums.json` or `glossary.json`
+- [x] `tagSchema` and `glossary` are arguments at every core call site
+- [x] No extraction, validation, matching, or merge logic remains in `runner.js`, `docgen.js`, `jobs.js`, `calendarSync.js`, or `webhook.js`
+- [x] `scripts/adjuster-core-run.mjs` runs the full core on a recording and transcript from disk and prints the validated field map
+- [ ] **Deferred** — Five to ten anonymized fixtures under `tests/fixtures/adjuster/`, each with expected validated output. Blocked on Open Question 2, which needs source recordings and a decision on who anonymizes them. The harness, directory structure, replay runner, and live job are all built; two clearly-labelled synthetic fixtures stand in so the suite is genuinely exercised (see `tests/fixtures/adjuster/README.md`). Adding real ones is additive.
+- [x] Default `pnpm test` runs the corpus against recorded responses and makes zero network calls
+- [x] A separate opt-in CI job runs the corpus live and prints a field-by-field diff
+- [x] Phase 0 contract tests (BH-87) still pass unchanged — `webhook.test.ts`, 52 tests, file untouched
+- [ ] **Deferred** — A scripted A/B call produces the same draft as before the refactor, field for field. Needs a live call through the real pipeline and cannot run from CI; the 755-test suite and the replayed corpus stand in until then.
+- [x] ADR filed at `docs/adr/009-adjuster-portable-core-contract.md`
+- [x] `pnpm typecheck`, `pnpm test`, `pnpm format`, `pnpm lint` pass — 46 files, 755 tests
+- [x] No hardcoded secrets; all keys stay in Script Properties on the adapter side
+- [ ] **Deferred to post-merge** — First deploy after the move verified: no stale duplicate files in the Apps Script project. Only checkable once CI has run `clasp push -f` against main.
