@@ -341,13 +341,59 @@ function verifyRetellSignature(rawSigParam, e) {
   var rawBody = (e && e.postData && e.postData.contents) || ''
   var expected = computeRetellSignature(rawBody, timestamp)
 
-  return constantTimeEquals(digest, expected)
-    ? { ok: true }
-    : { ok: false, reason: 'bad_retell_signature' }
+  if (constantTimeEquals(digest, expected)) return { ok: true }
+
+  // Diagnostic only — a digest is a one-way HMAC output, not the secret
+  // itself, so logging both sides here is safe. Lets us tell a wrong/stale
+  // RETELL_API_KEY (digests differ) apart from a raw-body transport issue
+  // (raw_body_length would be the tell) without ever seeing the key.
+  // key_preview/key_length are 4+4 characters and a count, not enough to
+  // reconstruct the key, but enough to visually confirm at runtime whether
+  // getConfig('RETELL_API_KEY') is really returning what was pasted into
+  // Script Properties.
+  // logEvent (not logServerOnly) so this lands in the Raw sheet — Executions
+  // doesn't show doPost's own console.log output for externally-triggered
+  // web app calls.
+  var apiKey = getConfig('RETELL_API_KEY')
+  logEvent('retell.signature_mismatch', {
+    expected_digest: expected,
+    received_digest: digest,
+    timestamp: timestamp,
+    raw_body_length: rawBody.length,
+    key_length: apiKey.length,
+    key_preview: previewSecret(apiKey),
+    // Full, untruncated raw body (capped at the same 45000-char Sheet-cell
+    // safety margin transcript writes already use) so it can be replayed
+    // through an independent local verifier — see scripts/verify-retell-
+    // signature.mjs. Temporary: remove once the mismatch is root-caused.
+    raw_body: rawBody.slice(0, 45000),
+  })
+
+  return { ok: false, reason: 'bad_retell_signature' }
 }
 
+// Never returns enough of the value to reconstruct it — just enough for a
+// human to visually cross-check against a dashboard.
+function previewSecret(value) {
+  if (value.length <= 8) return '(too short to preview safely)'
+  return value.slice(0, 4) + '...' + value.slice(-4)
+}
+
+// The 2-arg computeHmacSha256Signature(value, key) overload's byte encoding
+// is undocumented by Google (confirmed against the Utilities reference) —
+// unlike Retell's own SDK, which explicitly UTF-8 encodes both the message
+// and the key (TextEncoder().encode()) before hashing. Passing Charset.UTF_8
+// explicitly is the only way to guarantee this matches: any non-ASCII
+// character in a real call payload (an em dash or curly quote in an
+// LLM-written call_summary, an accented name) would silently hash to a
+// completely different digest under whatever the implicit default turns
+// out to be, while every ASCII-only test string would keep passing.
 function computeRetellSignature(rawBody, timestamp) {
-  var bytes = Utilities.computeHmacSha256Signature(rawBody + timestamp, getConfig('RETELL_API_KEY'))
+  var bytes = Utilities.computeHmacSha256Signature(
+    rawBody + timestamp,
+    getConfig('RETELL_API_KEY'),
+    Utilities.Charset.UTF_8,
+  )
   return bytesToHex(bytes)
 }
 

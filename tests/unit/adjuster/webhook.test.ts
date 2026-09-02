@@ -65,7 +65,8 @@ function harness(overrides: Record<string, unknown> = {}) {
           getDataAsString: () => Buffer.from(bytes).toString('utf-8'),
         }),
         computeHmacSha256Signature: (value: string, key: string) =>
-          Array.from(crypto.createHmac('sha256', key).update(value).digest()),
+          Array.from(crypto.createHmac('sha256', key).update(value, 'utf-8').digest()),
+        Charset: { UTF_8: 'UTF-8' },
       },
       ...overrides,
     },
@@ -680,15 +681,32 @@ describe('Retell ingest', () => {
     })
 
     it('denies a signature whose digest does not match the recomputed HMAC', () => {
-      const { sandbox, jobs, logged } = retellHarness()
+      const { sandbox, jobs, logged, raw } = retellHarness()
 
       sandbox.doPost(
         retellPost('call_ended', callEndedBody(), { sig: 'v=' + Date.now() + ',d=deadbeef' }),
       )
 
       expect(jobs.size).toBe(0)
-      const terminal = logged.filter((l) => l.startsWith('{')).map((l) => JSON.parse(l))[1]
-      expect(terminal.reason).toBe('bad_retell_signature')
+      const lines = logged.filter((l) => l.startsWith('{')).map((l) => JSON.parse(l))
+      expect(lines.map((l) => l.event)).toEqual([
+        'webhook.received',
+        'retell.signature_mismatch',
+        'webhook.denied',
+      ])
+      expect(lines[1].received_digest).toBe('deadbeef')
+      expect(lines[1].expected_digest).toMatch(/^[0-9a-f]{64}$/)
+      expect(lines[1].key_length).toBe(RETELL_API_KEY.length)
+      expect(lines[1].key_preview).toBe('rete...test')
+      expect(lines[1].raw_body).toBe(JSON.stringify({ event: 'call_ended', call: callEndedBody() }))
+      expect(lines[1].raw_body.length).toBe(lines[1].raw_body_length)
+      expect(lines[2].reason).toBe('bad_retell_signature')
+
+      // Executions doesn't surface doPost's own console.log output for
+      // externally-triggered web app calls — the Raw sheet is the only
+      // place this is actually visible, so it has to go through logEvent,
+      // not logServerOnly.
+      expect(raw.some((r) => r.event === 'retell.signature_mismatch')).toBe(true)
     })
 
     it('denies a signature whose timestamp is older than the 5 minute freshness window', () => {
@@ -706,6 +724,26 @@ describe('Retell ingest', () => {
       const { sandbox, jobs } = retellHarness()
 
       sandbox.doPost(retellPost('call_ended', callEndedBody()))
+
+      expect(jobs.has('retell-' + CALL_ID)).toBe(true)
+    })
+
+    // Utilities.computeHmacSha256Signature(value, key)'s 2-arg overload has
+    // an undocumented byte encoding on the real Apps Script runtime — an
+    // ASCII-only body can pass this test either way, since ASCII is encoded
+    // identically under every common charset. Explicitly requesting
+    // Utilities.Charset.UTF_8 (verified via the third-argument call below)
+    // is what actually matters on the real runtime; this only proves the
+    // JS-side concatenation/hashing logic itself handles non-ASCII content
+    // correctly, not that the platform quirk is fixed — that needs a real
+    // Apps Script test call.
+    it('accepts a correctly signed request whose body contains non-ASCII characters', () => {
+      const { sandbox, jobs } = retellHarness()
+      const body = callEndedBody({
+        transcript: 'Agent: Hi — the insured is Renée Dupônt. User: "3-tab" shingles.',
+      })
+
+      sandbox.doPost(retellPost('call_ended', body))
 
       expect(jobs.has('retell-' + CALL_ID)).toBe(true)
     })
