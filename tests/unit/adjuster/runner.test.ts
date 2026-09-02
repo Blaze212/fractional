@@ -77,6 +77,8 @@ function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
     },
     applyCalendarFallback: (validated: unknown) => validated,
     applyClaimPropertyFallback: (validated: unknown) => validated,
+    dropCoverageRestatement: (validated: unknown) => ({ validated, dropped: null }),
+    collectOffSuggestionFields: () => [],
     generateDoc: () => ({ status: 'done', docUrl: 'https://doc', needsInputCount: 0 }),
     notifyJobFailed: () => {},
     // Defined in replay.js, which this sandbox does not load. Stubbed rather
@@ -336,6 +338,31 @@ describe('stage B', () => {
     sandbox.processOldestPendingJob()
 
     expect(extractCalls[0].liveExtraction).toEqual({ contacted_party_name: 'Henderson' })
+  })
+
+  it('logs and threads a dropped coverage detail into the notes generateDoc receives', () => {
+    const generateDocCalls: unknown[][] = []
+    const { sandbox, logged } = harness(
+      [dograhJob({ status: 'transcribed', claim_id: 'claim-1' })],
+      {
+        dropCoverageRestatement: (validated: unknown) => ({
+          validated,
+          dropped: 'Coverage supporting detail, as extracted: "which is covered under the policy."',
+        }),
+        generateDoc: (...args: unknown[]) => {
+          generateDocCalls.push(args)
+          return { status: 'done', docUrl: 'https://doc', needsInputCount: 0 }
+        },
+      },
+    )
+
+    sandbox.processOldestPendingJob()
+
+    expect(events(logged)).toContain('docgen.coverage_detail_dropped')
+    const unplacedNotesArg = generateDocCalls[0][4] as string[]
+    expect(unplacedNotesArg).toContain(
+      'Coverage supporting detail, as extracted: "which is covered under the policy."',
+    )
   })
 
   it('fails the job when docgen leaves tags unreplaced', () => {

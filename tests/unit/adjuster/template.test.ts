@@ -69,7 +69,7 @@ describe('adjuster template / enums parity', () => {
     })
   })
 
-  it('gives every variant option a key, label, and text (text may be an intentionally empty string, e.g. mitigation_status "none", to drop a whole section)', () => {
+  it('gives every variant option a key, label, and text', () => {
     Object.entries(enums).forEach(([tag, schema]) => {
       if (schema.type !== 'variant') return
       ;(schema.values as VariantOption[]).forEach((option) => {
@@ -87,6 +87,26 @@ describe('adjuster template / enums parity', () => {
       expect(schema.section, `${tag} missing section`).toBeTruthy()
       expect(typeof schema.required, `${tag} missing explicit required flag`).toBe('boolean')
     })
+  })
+})
+
+// Phase 2: a variant branch with empty (or whitespace-only) text is a section
+// that silently disappears — no heading, no sentence, no [NEEDS INPUT] flag —
+// which is exactly the class of bug this spec fixes. mitigation_status "none"
+// is the one known violation, fixed by Phase 6's canned "No mitigation
+// services were performed on this loss." sentence; until that phase lands,
+// resolveTagsForDoc's runtime backstop (see docgen.js) still keeps it from
+// rendering as an invisible gap.
+describe('schema lint: no variant option renders blank', () => {
+  it('gives every variant option non-empty, non-whitespace-only text', () => {
+    const violations: string[] = []
+    Object.entries(enums).forEach(([tag, schema]) => {
+      if (schema.type !== 'variant') return
+      ;(schema.values as VariantOption[]).forEach((option) => {
+        if (!option.text.trim()) violations.push(`${tag}.${option.key}`)
+      })
+    })
+    expect(violations).toEqual([])
   })
 })
 
@@ -240,5 +260,33 @@ describe('property counts are not closed enums', () => {
       expect(enums[tag].type).not.toBe('enum')
       expect(enums[tag].values).toBeUndefined()
     })
+  })
+})
+
+// Spec 020 phase 6: the MITIGATION: heading lived inside the variant's
+// "present" branch text, and the "none" branch was "" — so "no mitigation
+// vendor" rendered no heading, no sentence, and no flag, an invisible gap the
+// adjuster had no way to notice. The heading moves to the template body
+// (matching every other section) and "none" gets a real sentence.
+describe('spec 020 phase 6: mitigation always renders a section', () => {
+  const options = enums.mitigation_status.values as VariantOption[]
+
+  it('puts the MITIGATION: heading in the flattened template, not in either branch', () => {
+    expect(templateText).toContain('MITIGATION:\n{{mitigation_status}}')
+    options.forEach((option) => {
+      expect(option.text, `${option.key} branch should not carry its own heading`).not.toContain(
+        'MITIGATION:',
+      )
+    })
+  })
+
+  it('gives the "none" branch a real sentence instead of empty text', () => {
+    const none = options.find((o) => o.key === 'none')
+    expect(none?.text).toBe('No mitigation services were performed on this loss.')
+  })
+
+  it('keeps the "present" branch to just the narrative tag, now that the heading lives in the template', () => {
+    const present = options.find((o) => o.key === 'present')
+    expect(present?.text).toBe('{{mitigation_narrative}}')
   })
 })

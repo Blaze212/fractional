@@ -16,7 +16,12 @@ function generateDoc(job, claim, validated, tagSchema, unplacedNotes, options) {
 
   insertHeaderBlock(body, job, claim, needsInputCount)
 
-  var resolved = resolveTagsForDoc(validated, tagSchema)
+  var tagResolution = resolveTagsForDoc(validated, tagSchema, claim)
+  var resolved = tagResolution.resolved
+  // A rejected clause (see normalizeClause) is not discarded — it rides along
+  // here so the adjuster still gets what was actually said, under "Not placed",
+  // instead of losing it behind a bare [NEEDS INPUT] flag.
+  var allUnplacedNotes = (unplacedNotes || []).concat(tagResolution.salvaged)
 
   // Pass 1: variant tags expand to stored paragraph text, which may itself contain
   // other {{tags}} (e.g. coverage_determination's text references {{loss_cause}}).
@@ -29,10 +34,10 @@ function generateDoc(job, claim, validated, tagSchema, unplacedNotes, options) {
     if (!resolved[tag].isVariant) replaceTag(body, tag, resolved[tag])
   })
 
+  tidyRendering(body)
   styleRoomLabels(body, collectRoomLabels(resolved))
-  highlightNeedsInput(body)
-  highlightMediumConfidence(body)
-  appendUnplacedNotes(body, unplacedNotes)
+  highlightMarkers(body)
+  appendUnplacedNotes(body, allUnplacedNotes)
   doc.saveAndClose()
 
   var leftoverTags = findLeftoverTags(DocumentApp.openById(copy.getId()).getBody().getText())
@@ -56,13 +61,14 @@ function generateDoc(job, claim, validated, tagSchema, unplacedNotes, options) {
 // comment), "low" (and anything else invalid) renders as a [NEEDS INPUT]
 // placeholder, "medium" renders the real value unhighlighted with its heard
 // citation flagged yellow for a quick human check (see markForReview,
-// highlightMediumConfidence). A low-confidence field that
+// highlightMarkers). A low-confidence field that
 // still carries a source_span (see validate.js's needsInput) had real,
 // verified transcript text behind it — just enough that the model wasn't sure
 // how to render it — so that snippet rides along on the placeholder as a
 // "heard" hint instead of leaving the adjuster to start from zero.
-function resolveTagsForDoc(validated, tagSchema) {
+function resolveTagsForDoc(validated, tagSchema, claim) {
   var resolved = {}
+  var salvaged = []
 
   Object.keys(tagSchema).forEach(function (tag) {
     var schema = tagSchema[tag]
@@ -70,7 +76,8 @@ function resolveTagsForDoc(validated, tagSchema) {
     var isVariant = schema.type === 'variant'
 
     if (!field || !field.valid) {
-      var heard = field && field.source_span ? ' — heard: "' + field.source_span + '"' : ''
+      var heard =
+        field && field.source_span ? ' — heard: "' + sanitizeSpan(field.source_span) + '"' : ''
       resolved[tag] = { isVariant: isVariant, text: '[NEEDS INPUT: ' + schema.label + heard + ']' }
       return
     }
@@ -81,54 +88,167 @@ function resolveTagsForDoc(validated, tagSchema) {
     }
 
     var needsReview = field.confidence === 'medium'
+    var entry
 
     if (isVariant) {
       var option = (schema.values || []).filter(function (o) {
         return o.key === field.value
       })[0]
-      resolved[tag] = {
+      entry = {
         isVariant: true,
         text: option ? option.text : '[NEEDS INPUT: ' + schema.label + ']',
         needsReview: needsReview && !!option,
+        label: schema.label,
       }
-      return
+    } else if (schema.form === 'clause') {
+      var normalized = normalizeClause(field.value, claim)
+      if (clauseNeedsReject(normalized)) {
+        var clauseHeard = field.source_span
+          ? ' — heard: "' + sanitizeSpan(field.source_span) + '"'
+          : ''
+        entry = {
+          isVariant: false,
+          text: '[NEEDS INPUT: ' + schema.label + clauseHeard + ']',
+        }
+        salvaged.push(schema.label + ', as extracted: "' + field.value + '"')
+      } else {
+        entry = {
+          isVariant: false,
+          text: normalized,
+          needsReview: needsReview,
+          sourceSpan: field.source_span,
+          label: schema.label,
+        }
+      }
+    } else {
+      entry = {
+        isVariant: false,
+        text: String(field.value),
+        needsReview: needsReview,
+        sourceSpan: field.source_span,
+        label: schema.label,
+      }
     }
 
-    resolved[tag] = {
-      isVariant: false,
-      text: String(field.value),
-      needsReview: needsReview,
-      sourceSpan: field.source_span,
+    // A field that validated cleanly (not omitted, per the field.empty check
+    // above) is a required field by construction — see validate.js's
+    // isRequired — so it is always meant to carry visible content. A variant
+    // branch with empty canned text (mitigation_status: "none" before Phase 6)
+    // is the known way that content can still come out blank; this is the
+    // runtime backstop for that case and any other still-missed by the
+    // schema-lint test in template.test.ts. Optional fields never reach here
+    // with nothing to show — a genuinely blank optional value took the
+    // field.empty branch above instead.
+    if (schema.required !== false && !String(entry.text).trim()) {
+      entry.text = '[NEEDS INPUT: ' + schema.label + ']'
+      entry.needsReview = false
     }
+
+    resolved[tag] = entry
   })
 
-  return resolved
+  return { resolved: resolved, salvaged: salvaged }
 }
 
-// Sentinel characters wrapped around the heard citation on medium-confidence
-// text so it (and only it) can be found and highlighted after insertion, then
-// stripped — mirrors how [NEEDS INPUT: ...] is a plain-text marker
-// highlightNeedsInput finds and styles, except here the wrapped text is the
-// heard citation and the markers themselves must not survive into the final
-// doc. The real sentence stays unhighlighted — it is the value we actually
-// want kept in the report — only the trailing heard citation is flagged
-// yellow, so it reads as a note to check rather than something that belongs
-// in the final text. When there is no heard citation to isolate (e.g. a
-// variant option's canned text), fall back to flagging the whole value so
-// medium confidence still gets a visible flag.
-var REVIEW_MARK_START = ''
-var REVIEW_MARK_END = ''
+// origin_narrative, origin_damage_narrative, coverage_cause_narrative, and
+// subrogation_reason are all mid-sentence clauses dropped into a fixed
+// template sentence (schema.form === 'clause', see enums.json) — the
+// contract was prompt-only before this and nothing checked it, so a
+// full-sentence answer printed as "Damage occurred due to A severe storm
+// damaged the roof. on [DATE_LOSS], ...". This normalizes the common case
+// (a stray leading capital, a stock restated prefix, a trailing period) and
+// leaves the reject decision — the case a clause genuinely can't be
+// salvaged into a fragment — to clauseNeedsReject.
+var CLAUSE_STOCK_PREFIX_PATTERN =
+  /^(damage occurred due to|due to|resulting in damage to|the damages? (?:was|were) caused by)\s*/i
 
-function markForReview(text, sourceSpan) {
-  var heard = sourceSpan ? ' [heard: "' + sourceSpan + '"]' : ''
-  if (!heard) return REVIEW_MARK_START + text + REVIEW_MARK_END
-  return text + REVIEW_MARK_START + heard + REVIEW_MARK_END
+function normalizeClause(value, claim) {
+  var text = String(value || '').trim()
+  text = text.replace(/\.$/, '').trim()
+  text = text.replace(CLAUSE_STOCK_PREFIX_PATTERN, '').trim()
+
+  if (text && !clauseKeepsLeadingCapital(text, claim)) {
+    text = text.charAt(0).toLowerCase() + text.slice(1)
+  }
+
+  return text
+}
+
+// The first word stays capitalized when it's an acronym-shaped all-caps word
+// (e.g. "HVAC") or when it's a proper noun the matched claim row itself
+// names — the insured's last name, the carrier, a contact name — since
+// lowercasing a real name reads as a typo, not a style choice.
+function clauseKeepsLeadingCapital(text, claim) {
+  var firstWord = (text.match(/^\S+/) || [''])[0]
+  if (firstWord.length > 1 && /^[A-Z]+$/.test(firstWord)) return true
+  return claimNamesWord(claim, firstWord)
+}
+
+function claimNamesWord(claim, word) {
+  if (!claim || !word) return false
+  var target = word.replace(/[^A-Za-z]/g, '').toLowerCase()
+  if (!target) return false
+
+  return Object.keys(claim).some(function (key) {
+    var value = claim[key]
+    if (typeof value !== 'string') return false
+    return value.split(/\s+/).some(function (token) {
+      return token.replace(/[^A-Za-z]/g, '').toLowerCase() === target
+    })
+  })
+}
+
+// A clause that still contains a sentence boundary (the adjuster answered
+// with a full sentence, or two) or an explicit date (a merge field already
+// prints the date; a date inside the clause would print twice) can't be
+// safely dropped into the middle of the template's fixed sentence — reject it
+// rather than print something that reads as broken or duplicated.
+var CLAUSE_SENTENCE_BOUNDARY_PATTERN = /[.!?]\s+[A-Z]/
+var CLAUSE_TRAILING_PUNCTUATION_PATTERN = /[!?]$/
+var CLAUSE_DATE_PATTERN = /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/
+var CLAUSE_MONTH_PATTERN =
+  /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i
+
+function clauseNeedsReject(text) {
+  return (
+    CLAUSE_SENTENCE_BOUNDARY_PATTERN.test(text) ||
+    CLAUSE_TRAILING_PUNCTUATION_PATTERN.test(text) ||
+    CLAUSE_DATE_PATTERN.test(text) ||
+    CLAUSE_MONTH_PATTERN.test(text)
+  )
+}
+
+// Medium confidence gets a visible, plain-text marker rather than a sentinel
+// character wrapped around the citation — Google Docs sanitizes ASCII control
+// characters out of body text on insert, so a sentinel-based marker never
+// survives replaceText and the highlight silently finds nothing. A bracketed
+// marker is found and highlighted the same way [NEEDS INPUT: ...] already is
+// (see highlightMarkers), and it stays in the document as a note to Brandon,
+// identical in kind to [NEEDS INPUT] — he deletes it as he reviews. When there
+// is no source_span to cite (a medium-confidence variant, whose canned text
+// has no span of its own), fall back to a review marker naming the field
+// instead of wrapping the whole expanded value — wrapping the whole variant
+// text would paint an entire expanded section, including nested tags filled
+// in by pass 2 (e.g. the full room-by-room interior narrative), yellow.
+function markForReview(text, sourceSpan, label) {
+  if (sourceSpan) return text + ' [heard: "' + sanitizeSpan(sourceSpan) + '"]'
+  return text + ' [review: ' + label + ' — medium confidence, no transcript citation]'
+}
+
+// Strips [ and ] from a transcript-derived span before it rides into a
+// bracketed marker — an unbalanced bracket in a transcribed span breaks the
+// [^\]]* match highlightMarkers relies on and silently kills the highlight
+// for that field — then collapses whitespace and caps the length so a long
+// span doesn't dominate the sentence it's attached to.
+function sanitizeSpan(span) {
+  var cleaned = String(span).replace(/[[\]]/g, '').replace(/\s+/g, ' ').trim()
+  return cleaned.length > 200 ? cleaned.slice(0, 200) + '…' : cleaned
 }
 
 function replaceTag(body, tag, resolvedTag) {
   var pattern = '\\{\\{' + tag + '\\}\\}'
   var value = resolvedTag.needsReview
-    ? markForReview(resolvedTag.text, resolvedTag.sourceSpan)
+    ? markForReview(resolvedTag.text, resolvedTag.sourceSpan, resolvedTag.label)
     : resolvedTag.text
   var safeValue = String(value).replace(/\$/g, '$$$$')
   body.replaceText(pattern, safeValue)
@@ -173,8 +293,8 @@ function buildDraftName(job, claim) {
 // its own line ending in a colon, then that room's findings beneath it. Both
 // arrive as a single multi-line string in one paragraph, so the room names have
 // to be found and styled after insertion — the same after-the-fact pass
-// highlightNeedsInput and highlightMediumConfidence already do, rather than
-// anything the {{tag}} replacement itself could carry.
+// highlightMarkers already does, rather than anything the {{tag}} replacement
+// itself could carry.
 var ROOM_GROUPED_TAGS = ['interior_damage_narrative', 'other_structures_narrative']
 
 function collectRoomLabels(resolved) {
@@ -233,36 +353,36 @@ function escapeForFindText(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function highlightNeedsInput(body) {
-  var found = body.findText('\\[NEEDS INPUT:[^\\]]*\\]')
+// Cleans up the residue an omitted optional field leaves behind mid-sentence —
+// the only always-visible optional field today is coverage_supporting_detail,
+// which sits inside all three coverage branches and leaves a double space when
+// left out. Runs after both replacement passes (it operates on final rendered
+// text) and before styleRoomLabels/highlightMarkers, since collapsing spaces
+// shifts character offsets those later passes locate text by.
+function tidyRendering(body) {
+  body.replaceText('[ ]{2,}', ' ')
+  body.replaceText(' \\.', '.')
+  body.replaceText(' \\,', ',')
+  body.replaceText(',[ ]*,', ',')
+  body.replaceText('[ ]+\\n', '\n')
+}
+
+// One pass over every plain-text marker kind: a needs-input placeholder, a
+// heard citation trailing a medium-confidence value, and a no-citation review
+// flag on a medium-confidence variant. All three are notes to Brandon and stay
+// in the document text — he deletes them as he reviews — so this only paints
+// the highlight, unlike the old sentinel-wrapped markers it replaces, which
+// had to be stripped back out after being found.
+function highlightMarkers(body) {
+  var pattern = '\\[(NEEDS INPUT|heard|review):[^\\]]*\\]'
+  var found = body.findText(pattern)
 
   while (found) {
     var range = found.getElement()
     var start = found.getStartOffset()
     var end = found.getEndOffsetInclusive()
     range.asText().setBackgroundColor(start, end, '#FFFF00')
-    found = body.findText('\\[NEEDS INPUT:[^\\]]*\\]', found)
-  }
-}
-
-// Medium-confidence values are inserted already wrapped in REVIEW_MARK_START/
-// END (see markForReview). Unlike [NEEDS INPUT: ...], the marker characters
-// are not meant to survive into the final doc — only the highlight is.
-function highlightMediumConfidence(body) {
-  var pattern = REVIEW_MARK_START + '[^' + REVIEW_MARK_END + ']*' + REVIEW_MARK_END
-  var found = body.findText(pattern)
-
-  while (found) {
-    var range = found.getElement()
-    var text = range.asText()
-    var start = found.getStartOffset()
-    var end = found.getEndOffsetInclusive()
-    text.setBackgroundColor(start, end, '#FFFF00')
-    // Delete the trailing marker before the leading one so the earlier
-    // index isn't shifted out from under the second deleteText call.
-    text.deleteText(end, end)
-    text.deleteText(start, start)
-    found = body.findText(pattern)
+    found = body.findText(pattern, found)
   }
 }
 

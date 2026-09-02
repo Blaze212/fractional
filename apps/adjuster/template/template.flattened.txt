@@ -41,6 +41,7 @@ OTHER STRUCTURES:
 PERSONAL PROPERTY:
 {{personal_property_status}}
 
+MITIGATION:
 {{mitigation_status}}
 
 OVERHEAD & PROFIT:

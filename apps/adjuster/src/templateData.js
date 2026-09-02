@@ -8,16 +8,19 @@ function loadGlossary() {
   return JSON.parse(file.getBlob().getDataAsString())
 }
 
-// One-time migration (2026-09-01): pushes the repo's template/enums.json
-// content onto the live ENUMS_FILE_ID Drive file after adding the
-// coverage_determination "unknown" branch, the interior_status /
-// other_structures_status variants with their room-grouped narratives, and
-// loosening bedroom_count/bathroom_count off closed enums. Run once from the
-// editor, then delete this function — it is a point-in-time snapshot, not
-// something that stays in sync on its own. The JSON below is a verbatim copy
-// of template/enums.json; tests/unit/adjuster/templateData.test.ts fails if
-// the two ever drift.
-function syncEnumsFileFromRepo_20260901() {
+// One-time migration (2026-09-02): pushes the repo's template/enums.json
+// content onto the live ENUMS_FILE_ID Drive file after spec 020's phases 3, 5,
+// and 6 — form: "clause" on the four clause fields, seven enum fields loosened
+// to suggestions, and mitigation_status's "none" branch gaining a canned
+// sentence in place of empty text (its MITIGATION: heading moved into
+// template.flattened.txt/the live Doc, see the acceptance criteria). enums.json
+// only carries one sync function at a time (see templateData.test.ts); this is
+// the one all three phases' schema edits landed in. Run once from the editor,
+// then delete this function — it is a point-in-time snapshot, not something
+// that stays in sync on its own. The JSON below is a verbatim copy of
+// template/enums.json; tests/unit/adjuster/templateData.test.ts fails if the
+// two ever drift.
+function syncEnumsFileFromRepo_20260902() {
   var json = `{
   "contacted_party_name": {
     "label": "Contacted party",
@@ -52,18 +55,21 @@ function syncEnumsFileFromRepo_20260901() {
   "origin_narrative": {
     "label": "Cause of loss",
     "type": "narrative",
+    "form": "clause",
     "section": "Origin",
     "required": true
   },
   "origin_damage_narrative": {
     "label": "Resulting damage (what was damaged)",
     "type": "narrative",
+    "form": "clause",
     "section": "Origin",
     "required": true
   },
   "coverage_cause_narrative": {
     "label": "Coverage cause clause (e.g. \\"storm related\\", \\"related to a burst plumbing line due to freezing\\")",
     "type": "narrative",
+    "form": "clause",
     "section": "Coverage",
     "required": true
   },
@@ -98,10 +104,10 @@ function syncEnumsFileFromRepo_20260901() {
   },
   "dwelling_type": {
     "label": "Dwelling type",
-    "type": "enum",
+    "type": "string",
     "section": "Risk",
     "required": true,
-    "values": ["single family", "duplex", "multi family"]
+    "suggestions": ["single family", "duplex", "multi family"]
   },
   "dwelling_stories": {
     "label": "Dwelling stories",
@@ -117,17 +123,17 @@ function syncEnumsFileFromRepo_20260901() {
   },
   "foundation_type": {
     "label": "Foundation type",
-    "type": "enum",
+    "type": "string",
     "section": "Risk",
     "required": true,
-    "values": ["crawlspace", "basement", "slab"]
+    "suggestions": ["crawlspace", "basement", "slab"]
   },
   "siding_type": {
     "label": "Siding type",
-    "type": "enum",
+    "type": "string",
     "section": "Risk",
     "required": true,
-    "values": [
+    "suggestions": [
       "vinyl siding",
       "stucco siding",
       "a brick veneer",
@@ -161,10 +167,10 @@ function syncEnumsFileFromRepo_20260901() {
   },
   "occupancy_status": {
     "label": "Occupancy",
-    "type": "enum",
+    "type": "string",
     "section": "Risk",
     "required": true,
-    "values": ["the insured", "a tenant", "tenants"]
+    "suggestions": ["the insured", "a tenant", "tenants"]
   },
   "roof_status": {
     "label": "Roof status",
@@ -191,11 +197,11 @@ function syncEnumsFileFromRepo_20260901() {
   },
   "roof_covering_type": {
     "label": "Roof covering type (shingle)",
-    "type": "enum",
+    "type": "string",
     "section": "Roof",
     "required": true,
     "requiredWhen": { "field": "roof_status", "equals": "shingle" },
-    "values": [
+    "suggestions": [
       "20 year 3 tab shingles",
       "25 year 3 tab shingles",
       "30 year laminate shingles",
@@ -207,11 +213,11 @@ function syncEnumsFileFromRepo_20260901() {
   },
   "roof_condition": {
     "label": "Shingle condition",
-    "type": "enum",
+    "type": "string",
     "section": "Roof",
     "required": true,
     "requiredWhen": { "field": "roof_status", "equals": "shingle" },
-    "values": ["average", "below average"]
+    "suggestions": ["average", "below average"]
   },
   "roof_age_years": {
     "label": "Roof age (years)",
@@ -222,11 +228,11 @@ function syncEnumsFileFromRepo_20260901() {
   },
   "roof_pitch": {
     "label": "Roof pitch",
-    "type": "enum",
+    "type": "string",
     "section": "Roof",
     "required": true,
     "requiredWhen": { "field": "roof_status", "equals": "shingle" },
-    "values": [
+    "suggestions": [
       "1/12",
       "2/12",
       "3/12",
@@ -401,11 +407,15 @@ function syncEnumsFileFromRepo_20260901() {
     "section": "Mitigation",
     "required": true,
     "values": [
-      { "key": "none", "label": "No mitigation vendor involved", "text": "" },
+      {
+        "key": "none",
+        "label": "No mitigation vendor involved",
+        "text": "No mitigation services were performed on this loss."
+      },
       {
         "key": "present",
         "label": "Mitigation vendor involved",
-        "text": "MITIGATION:\\n{{mitigation_narrative}}"
+        "text": "{{mitigation_narrative}}"
       }
     ]
   },
@@ -425,6 +435,7 @@ function syncEnumsFileFromRepo_20260901() {
   "subrogation_reason": {
     "label": "Subrogation reason clause (e.g. \\"weather related\\", \\"related to a 10 year old plumbing supply line that was not recently repaired\\")",
     "type": "narrative",
+    "form": "clause",
     "section": "Salvage & Subrogation",
     "required": true
   },
@@ -453,7 +464,8 @@ function syncEnumsFileFromRepo_20260901() {
     "required": true,
     "requiredWhen": { "field": "coinsurance_status", "equals": "applies" }
   }
-}`
+}
+`
   var file = DriveApp.getFileById(getConfig('ENUMS_FILE_ID'))
   file.setContent(json)
   logEvent('enums.synced_from_repo', { bytes: json.length, file_id: file.getId() })

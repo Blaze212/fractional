@@ -17,11 +17,6 @@ function validateFields(fields, transcript, tagSchema) {
       return
     }
 
-    if (schema.type === 'enum' && (schema.values || []).indexOf(field.value) === -1) {
-      result[tag] = needsInput(label)
-      return
-    }
-
     if (schema.type === 'variant' && !variantKeyExists(schema.values, field.value)) {
       result[tag] = needsInput(label)
       return
@@ -53,11 +48,14 @@ function validateFields(fields, transcript, tagSchema) {
 // hand back a final value per field, extracted live during the call by the
 // platform's own LLM — there is no verbatim span into a transcript the way
 // validateFields() checks OpenRouter's output against job.transcript, so that
-// guardrail can't run here. Enum/variant fields have a closed set of allowed
-// values, so membership in that set is itself a meaningful check; narrative
-// and free-text fields have no such check available, so they always route to
-// manual review regardless of what the platform returned, same shape as an
-// unfilled field.
+// guardrail can't run here. A variant field has a closed set of allowed keys,
+// so membership in that set is itself a meaningful check; a field carrying a
+// `suggestions` list is the same closed-form low-risk property fact an enum
+// used to be (see Architecture decision "suggestions, not enum") and is
+// trusted the same way, off-list value or not. Every other narrative and
+// free-text field has no such check available, so it always routes to manual
+// review regardless of what the platform returned, same shape as an unfilled
+// field.
 //
 // `source` ('dograh' or 'retell') is stamped onto every valid field's
 // confidence tier, so a valid field from either platform reads the same way
@@ -82,17 +80,13 @@ function validateLiveFields(rawFields, tagSchema, source) {
       return
     }
 
-    if (schema.type === 'enum' && (schema.values || []).indexOf(field.value) === -1) {
-      result[tag] = needsInput(label)
-      return
-    }
-
     if (schema.type === 'variant' && !variantKeyExists(schema.values, field.value)) {
       result[tag] = needsInput(label)
       return
     }
 
-    if (schema.type !== 'enum' && schema.type !== 'variant') {
+    var isTrusted = schema.type === 'variant' || Array.isArray(schema.suggestions)
+    if (!isTrusted) {
       result[tag] = needsInput(label)
       return
     }
@@ -141,8 +135,6 @@ function applyCalendarFallback(validated, calendarFields, tagSchema) {
 
     var value = (calendarFields || {})[tag]
     if (!value) return
-
-    if (schema.type === 'enum' && (schema.values || []).indexOf(value) === -1) return
 
     validated[tag] = {
       valid: true,
@@ -194,8 +186,6 @@ function applyClaimPropertyFallback(validated, claim, tagSchema) {
     var value = String(raw).trim()
     if (!value) return
 
-    if (schema.type === 'enum' && (schema.values || []).indexOf(value) === -1) return
-
     validated[tag] = {
       valid: true,
       label: schema.label || tag,
@@ -206,6 +196,145 @@ function applyClaimPropertyFallback(validated, claim, tagSchema) {
   })
 
   return validated
+}
+
+// A field carrying a `suggestions` list is advisory, not enforced (see the
+// Architecture decision "suggestions, not enum") — an off-list value still
+// validates and renders, same as any other string field. This is the signal
+// that makes that worth watching: every off-list value is worth surfacing so
+// the list can be grown from what adjusters actually say, rather than staying
+// a fixed set nobody revisits. Runs as one pass over an already-validated
+// result — after validateFields/validateLiveFields and both fallbacks — so
+// every entry path is covered from a single place instead of reimplementing
+// the check four times.
+function collectOffSuggestionFields(validated, tagSchema) {
+  var offSuggestion = []
+
+  Object.keys(tagSchema || {}).forEach(function (tag) {
+    var schema = tagSchema[tag]
+    if (!Array.isArray(schema.suggestions)) return
+
+    var field = (validated || {})[tag]
+    if (!field || !field.valid || field.empty) return
+
+    if (schema.suggestions.indexOf(field.value) === -1) {
+      offSuggestion.push({ tag: tag, value: field.value, source: field.confidence })
+    }
+  })
+
+  return offSuggestion
+}
+
+// coverage_supporting_detail is meant to add one fact independent of the cause
+// or the determination (heat maintained through a freeze, a lapsed policy) —
+// but the model sometimes fills it with a restatement of one or both instead,
+// which is how a filed coverage paragraph ends up saying the same thing three
+// times: cause, "which is covered under the insured's policy", then the
+// "supporting" detail repeating either or both. Two detectors below catch that;
+// a genuinely independent detail passes through untouched.
+//
+// When coverage_determination is "unknown", the supporting detail is legitimately
+// the reason coverage is in question and may use coverage vocabulary itself (e.g.
+// "The policy was in a lapsed status on the date of loss") — only the cause-overlap
+// detector applies on that branch, since restating an undetermined coverage call
+// isn't the same failure as restating a settled one.
+var COVERAGE_DETERMINATION_RESTATEMENT_PATTERNS = [
+  /\b(?:is|are|was|were)\s+(?:covered|excluded)\b/i,
+  /\bcoverage\s+(?:applies|does not apply|is applicable)\b/i,
+  /\bthe claim is (?:covered|denied|excluded)\b/i,
+  /\bno coverage concerns\b/i,
+]
+
+var COVERAGE_OVERLAP_STOPWORDS = [
+  'a',
+  'an',
+  'the',
+  'and',
+  'or',
+  'but',
+  'is',
+  'are',
+  'was',
+  'were',
+  'be',
+  'been',
+  'being',
+  'to',
+  'of',
+  'in',
+  'on',
+  'at',
+  'for',
+  'with',
+  'by',
+  'this',
+  'that',
+  'these',
+  'those',
+  'it',
+  'its',
+  'as',
+  'from',
+  'due',
+]
+
+function coverageContentTokens(text) {
+  return String(text || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(function (token) {
+      return token && COVERAGE_OVERLAP_STOPWORDS.indexOf(token) === -1
+    })
+}
+
+// Drop when 60%+ of the cause's own content tokens (stopwords aside) also
+// appear in the detail — a genuinely independent fact shares little
+// vocabulary with the cause clause it sits beside.
+function coverageDetailRestatesCause(detail, cause) {
+  var causeTokens = coverageContentTokens(cause)
+  if (causeTokens.length === 0) return false
+
+  var detailTokens = coverageContentTokens(detail)
+  var overlap = causeTokens.filter(function (token) {
+    return detailTokens.indexOf(token) !== -1
+  })
+
+  return overlap.length / causeTokens.length >= 0.6
+}
+
+function coverageDetailRestatesDetermination(detail) {
+  return COVERAGE_DETERMINATION_RESTATEMENT_PATTERNS.some(function (pattern) {
+    return pattern.test(detail)
+  })
+}
+
+function dropCoverageRestatement(validated) {
+  var detailField = (validated || {}).coverage_supporting_detail
+  if (!detailField || !detailField.valid || detailField.empty) {
+    return { validated: validated, dropped: null }
+  }
+
+  var detail = String(detailField.value || '')
+  var determinationField = (validated || {}).coverage_determination
+  var determinationValue =
+    determinationField && determinationField.valid && !determinationField.empty
+      ? determinationField.value
+      : ''
+  var causeField = (validated || {}).coverage_cause_narrative
+  var causeValue = causeField && causeField.valid && !causeField.empty ? causeField.value : ''
+
+  var restatesCause = coverageDetailRestatesCause(detail, causeValue)
+  var restatesDetermination =
+    determinationValue !== 'unknown' && coverageDetailRestatesDetermination(detail)
+
+  if (!restatesCause && !restatesDetermination) {
+    return { validated: validated, dropped: null }
+  }
+
+  var label = detailField.label
+  validated.coverage_supporting_detail = omitted(label)
+
+  return { validated: validated, dropped: label + ', as extracted: "' + detail + '"' }
 }
 
 // A field can declare requiredWhen: { field, equals } to only be required when a

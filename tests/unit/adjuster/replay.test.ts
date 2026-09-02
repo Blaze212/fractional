@@ -82,6 +82,8 @@ function harness(job: Job, overrides: Record<string, unknown> = {}) {
     }),
     applyCalendarFallback: (validated: unknown) => validated,
     applyClaimPropertyFallback: (validated: unknown) => validated,
+    dropCoverageRestatement: (validated: unknown) => ({ validated, dropped: null }),
+    collectOffSuggestionFields: () => [],
     generateDoc: vi.fn(
       (
         docJob: Job,

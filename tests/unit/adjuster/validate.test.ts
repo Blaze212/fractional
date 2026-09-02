@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { loadGs } from './loadGs'
 
-const { validateFields, applyCalendarFallback, applyClaimPropertyFallback, validateLiveFields } =
-  loadGs('apps/adjuster/src/validate.js')
+const {
+  validateFields,
+  applyCalendarFallback,
+  applyClaimPropertyFallback,
+  validateLiveFields,
+  dropCoverageRestatement,
+  collectOffSuggestionFields,
+} = loadGs('apps/adjuster/src/validate.js')
 
 const transcript =
   'The roof covering is architectural shingle and the pitch is six twelve. There is not a mortgage on the property.'
@@ -10,8 +16,14 @@ const transcript =
 const tagSchema = {
   roof_covering_type: {
     label: 'Roof covering type',
-    type: 'enum',
-    values: ['3-tab asphalt shingle', 'architectural shingle', 'metal', 'tile', 'modified bitumen'],
+    type: 'string',
+    suggestions: [
+      '3-tab asphalt shingle',
+      'architectural shingle',
+      'metal',
+      'tile',
+      'modified bitumen',
+    ],
   },
   roof_pitch: { label: 'Roof pitch', type: 'string' },
   mortgage_company: { label: 'Mortgage company', type: 'string', required: false },
@@ -72,7 +84,7 @@ describe('validateFields', () => {
     })
   })
 
-  it('rejects a value that is not a member of the enum list', () => {
+  it('accepts an off-list value for a suggestions field — suggestions are advisory, not enforced', () => {
     const fields = {
       roof_covering_type: {
         value: 'wood shake',
@@ -83,11 +95,7 @@ describe('validateFields', () => {
 
     const result = validateFields(fields, transcript, tagSchema)
 
-    expect(result.roof_covering_type).toEqual({
-      valid: false,
-      empty: false,
-      label: 'Roof covering type',
-    })
+    expect(result.roof_covering_type).toMatchObject({ valid: true, value: 'wood shake' })
   })
 
   it('rejects a field with low confidence even when the span matches', () => {
@@ -231,7 +239,11 @@ describe('requiredWhen', () => {
 
 describe('applyCalendarFallback', () => {
   const propertySchema = {
-    bedroom_count: { label: 'Bedroom count', type: 'enum', values: ['1', '2', '3', '4', '5', '6'] },
+    bedroom_count: {
+      label: 'Bedroom count',
+      type: 'string',
+      suggestions: ['1', '2', '3', '4', '5', '6'],
+    },
     square_footage: { label: 'Interior square footage', type: 'string' },
     year_built: { label: 'Year built', type: 'string' },
     // Deliberately not in CALENDAR_FALLBACK_TAGS — a narrative field must never
@@ -274,15 +286,15 @@ describe('applyCalendarFallback', () => {
     expect(result.square_footage.confidence).toBe('high')
   })
 
-  it("rejects a calendar value outside an enum field's allowed set", () => {
+  it('fills an off-list calendar value for a suggestions field — suggestions are advisory, not enforced', () => {
     const validated = { bedroom_count: needsInput('Bedroom count') }
 
     const result = applyCalendarFallback(validated, { bedroom_count: 'a lot' }, propertySchema)
 
-    expect(result.bedroom_count).toEqual(needsInput('Bedroom count'))
+    expect(result.bedroom_count).toMatchObject({ valid: true, value: 'a lot' })
   })
 
-  it('accepts a calendar value that is a valid enum member', () => {
+  it('accepts a calendar value that is a listed suggestion', () => {
     const validated = { bedroom_count: needsInput('Bedroom count') }
 
     const result = applyCalendarFallback(validated, { bedroom_count: '4' }, propertySchema)
@@ -349,14 +361,10 @@ describe('validateLiveFields', () => {
     })
   })
 
-  it('rejects a value that is not a member of the enum list, regardless of source', () => {
+  it('trusts an off-list value for a suggestions field, regardless of source', () => {
     const result = validateLiveFields({ roof_covering_type: 'wood shake' }, tagSchema, 'retell')
 
-    expect(result.roof_covering_type).toEqual({
-      valid: false,
-      empty: false,
-      label: 'Roof covering type',
-    })
+    expect(result.roof_covering_type).toMatchObject({ valid: true, value: 'wood shake' })
   })
 
   it('accepts a variant field whose value matches one of the option keys', () => {
@@ -509,5 +517,192 @@ describe('applyClaimPropertyFallback', () => {
     const result = applyClaimPropertyFallback(validated, null, propertySchema)
 
     expect(result.year_built).toEqual(needsInput('Year built'))
+  })
+})
+
+// The observed bug: cause + "which is covered under the insured's policy" +
+// coverage_supporting_detail restating one or both + branch tail said the same
+// thing three times. dropCoverageRestatement is the post-pass that catches a
+// restated supporting detail after coverage_determination and
+// coverage_cause_narrative have both settled.
+describe('dropCoverageRestatement', () => {
+  function validField(value: string, label = 'x') {
+    return { valid: true, label, value, source_span: '', confidence: 'high' }
+  }
+
+  it('is a no-op when coverage_supporting_detail was never filled', () => {
+    const validated = {
+      coverage_supporting_detail: { valid: true, empty: true, label: 'Coverage supporting detail' },
+    }
+
+    const result = dropCoverageRestatement(validated)
+
+    expect(result.dropped).toBeNull()
+    expect(result.validated.coverage_supporting_detail).toEqual(
+      validated.coverage_supporting_detail,
+    )
+  })
+
+  it('drops a detail that restates the determination ("which is covered")', () => {
+    const validated = {
+      coverage_supporting_detail: validField(
+        'The claim is covered because the damage is storm related.',
+        'Coverage supporting detail',
+      ),
+      coverage_determination: validField('covered'),
+      coverage_cause_narrative: validField('storm related'),
+    }
+
+    const result = dropCoverageRestatement(validated)
+
+    expect(result.dropped).toBe(
+      'Coverage supporting detail, as extracted: "The claim is covered because the damage is storm related."',
+    )
+    expect(result.validated.coverage_supporting_detail).toEqual({
+      valid: true,
+      empty: true,
+      label: 'Coverage supporting detail',
+    })
+  })
+
+  it('drops a detail that restates the cause by content-token overlap', () => {
+    const validated = {
+      coverage_supporting_detail: validField(
+        'Because it is a storm that caused the lightning strike, the claim is covered.',
+        'Coverage supporting detail',
+      ),
+      coverage_determination: validField('covered'),
+      coverage_cause_narrative: validField('storm related'),
+    }
+
+    const result = dropCoverageRestatement(validated)
+
+    expect(result.dropped).toContain('Coverage supporting detail, as extracted:')
+  })
+
+  it('drops a detail restating "no coverage concerns" even without the word "covered"', () => {
+    const validated = {
+      coverage_supporting_detail: validField(
+        'There are no coverage concerns with this claim.',
+        'Coverage supporting detail',
+      ),
+      coverage_determination: validField('covered'),
+      coverage_cause_narrative: validField('storm related'),
+    }
+
+    const result = dropCoverageRestatement(validated)
+
+    expect(result.dropped).not.toBeNull()
+  })
+
+  it('keeps an independent supporting detail untouched', () => {
+    const validated = {
+      coverage_supporting_detail: validField(
+        'Heat was maintained in the home throughout the freeze event.',
+        'Coverage supporting detail',
+      ),
+      coverage_determination: validField('covered'),
+      coverage_cause_narrative: validField('related to a burst plumbing line due to freezing'),
+    }
+
+    const result = dropCoverageRestatement(validated)
+
+    expect(result.dropped).toBeNull()
+    expect(result.validated.coverage_supporting_detail.value).toBe(
+      'Heat was maintained in the home throughout the freeze event.',
+    )
+  })
+
+  it('allows coverage vocabulary in the detail when the determination is unknown', () => {
+    const validated = {
+      coverage_supporting_detail: validField(
+        'The policy was in a lapsed status on the date of loss and is being reviewed by the carrier.',
+        'Coverage supporting detail',
+      ),
+      coverage_determination: validField('unknown'),
+      coverage_cause_narrative: validField('storm related'),
+    }
+
+    const result = dropCoverageRestatement(validated)
+
+    expect(result.dropped).toBeNull()
+  })
+
+  it('still applies the cause-overlap detector on the unknown branch', () => {
+    const validated = {
+      coverage_supporting_detail: validField(
+        'storm related storm related storm related',
+        'Coverage supporting detail',
+      ),
+      coverage_determination: validField('unknown'),
+      coverage_cause_narrative: validField('storm related'),
+    }
+
+    const result = dropCoverageRestatement(validated)
+
+    expect(result.dropped).not.toBeNull()
+  })
+})
+
+// The vocabulary signal for the seven suggestions fields: an off-list value
+// still renders (see the "suggestions, not enum" Architecture decision), but
+// is worth surfacing so the list can grow from what adjusters actually say.
+describe('collectOffSuggestionFields', () => {
+  const suggestionsSchema = {
+    roof_covering_type: {
+      label: 'Roof covering type',
+      type: 'string',
+      suggestions: ['architectural shingle', 'metal'],
+    },
+    origin_narrative: { label: 'Cause of loss', type: 'narrative', form: 'clause' },
+  }
+
+  it('flags a field whose validated value is not in its suggestions list', () => {
+    const validated = {
+      roof_covering_type: {
+        valid: true,
+        label: 'Roof covering type',
+        value: 'wood shake',
+        confidence: 'high',
+      },
+    }
+
+    const result = collectOffSuggestionFields(validated, suggestionsSchema)
+
+    expect(result).toEqual([{ tag: 'roof_covering_type', value: 'wood shake', source: 'high' }])
+  })
+
+  it('does not flag a value that is in the suggestions list', () => {
+    const validated = {
+      roof_covering_type: {
+        valid: true,
+        label: 'Roof covering type',
+        value: 'architectural shingle',
+        confidence: 'high',
+      },
+    }
+
+    expect(collectOffSuggestionFields(validated, suggestionsSchema)).toEqual([])
+  })
+
+  it('never flags a field with no suggestions list, however unusual its value', () => {
+    const validated = {
+      origin_narrative: {
+        valid: true,
+        label: 'Cause of loss',
+        value: 'a wind driven rain event',
+        confidence: 'high',
+      },
+    }
+
+    expect(collectOffSuggestionFields(validated, suggestionsSchema)).toEqual([])
+  })
+
+  it('skips an invalid or validly-omitted field rather than flagging it', () => {
+    const validated = {
+      roof_covering_type: { valid: false, empty: false, label: 'Roof covering type' },
+    }
+
+    expect(collectOffSuggestionFields(validated, suggestionsSchema)).toEqual([])
   })
 })

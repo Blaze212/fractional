@@ -304,6 +304,9 @@ function runFieldExtraction(job, claim, tagSchema, input, hints) {
 // the transcript is unlikely to state from the scheduler's invite note, then
 // applyClaimPropertyFallback fills the same facts from the public-records lookup
 // on the Claims row. Calendar first, so a hand-typed invite value always wins.
+// dropCoverageRestatement runs last, once coverage_determination and
+// coverage_cause_narrative have both settled, since it checks the supporting
+// detail against them.
 function renderDraftFromExtraction(options) {
   var job = options.job
   var tagSchema = options.tagSchema
@@ -311,6 +314,29 @@ function renderDraftFromExtraction(options) {
   var validated = validateFields(options.fields, options.haystack, tagSchema)
   validated = applyCalendarFallback(validated, options.calendarFields, tagSchema)
   validated = applyClaimPropertyFallback(validated, options.claim, tagSchema)
+
+  var coverageDrop = dropCoverageRestatement(validated)
+  validated = coverageDrop.validated
+  var unplacedNotes = options.unplacedNotes || []
+  if (coverageDrop.dropped) {
+    unplacedNotes = unplacedNotes.concat(coverageDrop.dropped)
+    logEvent('docgen.coverage_detail_dropped', {
+      capture_id: job.capture_id,
+      dropped: coverageDrop.dropped,
+    })
+  }
+
+  // Vocabulary signal for the seven suggestions fields (see validate.js's
+  // Architecture-decision comment): an off-list value still validates and
+  // renders, this only makes it visible for periodic review.
+  collectOffSuggestionFields(validated, tagSchema).forEach(function (entry) {
+    logEvent('extraction.off_suggestion', {
+      capture_id: job.capture_id,
+      tag: entry.tag,
+      value: entry.value,
+      source: entry.source,
+    })
+  })
 
   logEvent('runner.validated', {
     capture_id: job.capture_id,
@@ -329,7 +355,7 @@ function renderDraftFromExtraction(options) {
     options.claim,
     validated,
     tagSchema,
-    options.unplacedNotes || [],
+    unplacedNotes,
     options.docOptions,
   )
 }

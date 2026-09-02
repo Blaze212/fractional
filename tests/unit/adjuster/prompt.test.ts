@@ -8,8 +8,8 @@ const { buildPrompt, formatFieldGuidance, formatLiveExtraction } = loadGs(
 const templateSpec = {
   roof_covering_type: {
     label: 'Roof covering type',
-    type: 'enum',
-    values: ['3-tab asphalt shingle', 'architectural shingle'],
+    type: 'string',
+    suggestions: ['3-tab asphalt shingle', 'architectural shingle'],
   },
   roof_pitch: { label: 'Roof pitch', type: 'string' },
 }
@@ -22,7 +22,7 @@ describe('buildPrompt', () => {
     expect(system).toMatch(/exact/i)
   })
 
-  it('lists every tag with its label and enum values', () => {
+  it('lists every tag with its label and suggestion values', () => {
     const { user } = buildPrompt({ transcript: 'anything', templateSpec })
 
     expect(user).toContain('roof_covering_type')
@@ -79,11 +79,37 @@ describe('buildPrompt', () => {
     expect(user).toContain(transcript)
   })
 
-  it('instructs enum fields to send extra descriptive detail to unplaced_notes', () => {
+  it('instructs suggestion fields to send extra descriptive detail to unplaced_notes', () => {
     const { system } = buildPrompt({ transcript: 'anything', templateSpec })
 
     expect(system).toMatch(/unplaced_notes/)
-    expect(system).toMatch(/closest matching allowed value/i)
+    expect(system).toMatch(/closest suggestion captures/i)
+  })
+
+  // Phase 5: enum is retired for a "suggestions" list (see the Architecture
+  // decision "suggestions, not enum") — variant keys stay a closed, exact-match
+  // set, but a field with `suggestions` accepts the adjuster's own words.
+  it('requires a variant value to match a listed key exactly, character for character', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/variant field/i)
+    expect(system).toMatch(/exactly one of the allowed values, character for character/i)
+    expect(system).toMatch(/internal keys the rendering step matches on, not prose/i)
+  })
+
+  it("tells the model a suggestions list is not closed and to use the adjuster's own words otherwise", () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/not a closed list, unlike a variant/i)
+    expect(system).toMatch(/use the adjuster's own words/i)
+  })
+
+  it("lists suggestion values distinctly from a variant's allowed values in the tag list", () => {
+    const { user } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(user).toContain(
+      'roof_covering_type (string) — Roof covering type — common values (suggestions, not a closed list): 3-tab asphalt shingle, architectural shingle',
+    )
   })
 
   it('instructs the empty-value convention instead of the impossible omit-the-field instruction', () => {
@@ -139,7 +165,12 @@ describe('buildPrompt', () => {
   })
 
   it('omits the field-specific guidance section when no relevant tags are present', () => {
-    const { user } = buildPrompt({ transcript: 'anything', templateSpec })
+    // roof_covering_type has its own guidance (see FIELD_GUIDANCE), so use a
+    // spec built entirely from unguided tags rather than the module-level
+    // templateSpec fixture above.
+    const spec = { some_unrelated_tag: { label: 'x', type: 'string' } }
+
+    const { user } = buildPrompt({ transcript: 'anything', templateSpec: spec })
 
     expect(user).not.toMatch(/field-specific guidance/i)
   })
@@ -175,6 +206,25 @@ describe('field-specific guidance', () => {
     expect(user).toMatch(/unplaced_notes/i)
   })
 
+  // Phase 3: a full-sentence answer to a clause field gets rejected at render
+  // time (see docgen.js's clauseNeedsReject) rather than printed as a broken
+  // sentence, so the prompt reinforces the one-clause contract for every
+  // field docgen normalizes as a clause.
+  it.each([
+    ['origin_narrative', 'Cause of loss'],
+    ['origin_damage_narrative', 'Resulting damage'],
+    ['coverage_cause_narrative', 'Coverage cause clause'],
+    ['subrogation_reason', 'Subrogation reason clause'],
+  ])('tells %s to stay mid-sentence: no leading capital, no trailing period', (tag, label) => {
+    const spec = { [tag]: { label, type: 'narrative' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain(tag + ':')
+    expect(user).toMatch(/no leading capital/i)
+    expect(user).toMatch(/no trailing period/i)
+  })
+
   it('tells interior_damage_narrative to write one block per room, not one paragraph', () => {
     const spec = {
       interior_damage_narrative: { label: 'Interior damage findings', type: 'narrative' },
@@ -198,6 +248,25 @@ describe('field-specific guidance', () => {
     expect(user).toMatch(/same shape as interior_damage_narrative/i)
   })
 
+  // Phase 5: each suggestions field now names the grammatical slot it fills,
+  // since a free-text value has to fit a fixed sentence.
+  it.each([
+    ['siding_type', 'The dwelling is wood framed with ___, and composition shingle roofing.'],
+    ['occupancy_status', 'The home is currently occupied by ___.'],
+    ['dwelling_type', 'The dwelling is a [stories], ___ structure.'],
+    ['foundation_type', 'It was built in [year] on a ___ foundation.'],
+    ['roof_covering_type', 'The shingles on the roof are a ___'],
+    ['roof_condition', 'The shingles are in ___ condition for their age.'],
+    ['roof_pitch', 'The slopes on the roof are pitched at ___.'],
+  ])('names the grammatical slot %s fills', (tag, fixedSentenceFragment) => {
+    const spec = { [tag]: { label: 'x', type: 'string', suggestions: ['a'] } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain(tag + ':')
+    expect(user).toContain(fixedSentenceFragment)
+  })
+
   it('tells coverage_determination to choose unknown rather than guess between covered and excluded', () => {
     const spec = { coverage_determination: { label: 'Coverage determination', type: 'variant' } }
 
@@ -205,6 +274,22 @@ describe('field-specific guidance', () => {
 
     expect(user).toContain('coverage_determination:')
     expect(user).toMatch(/"unknown" over guessing between covered and excluded/i)
+  })
+
+  // Phase 4: coverage_supporting_detail guidance is written by exclusion so the
+  // model stops filling it with a restatement of the cause or the determination
+  // — the sentence that used to say the same thing three times.
+  it('tells coverage_supporting_detail to hold only an independent fact, not a restated cause or determination', () => {
+    const spec = {
+      coverage_supporting_detail: { label: 'Coverage supporting detail', type: 'narrative' },
+    }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('coverage_supporting_detail:')
+    expect(user).toMatch(/independent policy fact/i)
+    expect(user).toMatch(/not itself a restatement of the cause/i)
+    expect(user).toMatch(/do not say the claim is or is not covered/i)
   })
 
   it('tells present_at_inspection to resolve a bare role to a name stated elsewhere in the call', () => {

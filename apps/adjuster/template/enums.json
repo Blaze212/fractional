@@ -32,18 +32,21 @@
   "origin_narrative": {
     "label": "Cause of loss",
     "type": "narrative",
+    "form": "clause",
     "section": "Origin",
     "required": true
   },
   "origin_damage_narrative": {
     "label": "Resulting damage (what was damaged)",
     "type": "narrative",
+    "form": "clause",
     "section": "Origin",
     "required": true
   },
   "coverage_cause_narrative": {
     "label": "Coverage cause clause (e.g. \"storm related\", \"related to a burst plumbing line due to freezing\")",
     "type": "narrative",
+    "form": "clause",
     "section": "Coverage",
     "required": true
   },
@@ -78,10 +81,10 @@
   },
   "dwelling_type": {
     "label": "Dwelling type",
-    "type": "enum",
+    "type": "string",
     "section": "Risk",
     "required": true,
-    "values": ["single family", "duplex", "multi family"]
+    "suggestions": ["single family", "duplex", "multi family"]
   },
   "dwelling_stories": {
     "label": "Dwelling stories",
@@ -97,17 +100,17 @@
   },
   "foundation_type": {
     "label": "Foundation type",
-    "type": "enum",
+    "type": "string",
     "section": "Risk",
     "required": true,
-    "values": ["crawlspace", "basement", "slab"]
+    "suggestions": ["crawlspace", "basement", "slab"]
   },
   "siding_type": {
     "label": "Siding type",
-    "type": "enum",
+    "type": "string",
     "section": "Risk",
     "required": true,
-    "values": [
+    "suggestions": [
       "vinyl siding",
       "stucco siding",
       "a brick veneer",
@@ -141,10 +144,10 @@
   },
   "occupancy_status": {
     "label": "Occupancy",
-    "type": "enum",
+    "type": "string",
     "section": "Risk",
     "required": true,
-    "values": ["the insured", "a tenant", "tenants"]
+    "suggestions": ["the insured", "a tenant", "tenants"]
   },
   "roof_status": {
     "label": "Roof status",
@@ -171,11 +174,11 @@
   },
   "roof_covering_type": {
     "label": "Roof covering type (shingle)",
-    "type": "enum",
+    "type": "string",
     "section": "Roof",
     "required": true,
     "requiredWhen": { "field": "roof_status", "equals": "shingle" },
-    "values": [
+    "suggestions": [
       "20 year 3 tab shingles",
       "25 year 3 tab shingles",
       "30 year laminate shingles",
@@ -187,11 +190,11 @@
   },
   "roof_condition": {
     "label": "Shingle condition",
-    "type": "enum",
+    "type": "string",
     "section": "Roof",
     "required": true,
     "requiredWhen": { "field": "roof_status", "equals": "shingle" },
-    "values": ["average", "below average"]
+    "suggestions": ["average", "below average"]
   },
   "roof_age_years": {
     "label": "Roof age (years)",
@@ -202,11 +205,11 @@
   },
   "roof_pitch": {
     "label": "Roof pitch",
-    "type": "enum",
+    "type": "string",
     "section": "Roof",
     "required": true,
     "requiredWhen": { "field": "roof_status", "equals": "shingle" },
-    "values": [
+    "suggestions": [
       "1/12",
       "2/12",
       "3/12",
@@ -381,11 +384,15 @@
     "section": "Mitigation",
     "required": true,
     "values": [
-      { "key": "none", "label": "No mitigation vendor involved", "text": "" },
+      {
+        "key": "none",
+        "label": "No mitigation vendor involved",
+        "text": "No mitigation services were performed on this loss."
+      },
       {
         "key": "present",
         "label": "Mitigation vendor involved",
-        "text": "MITIGATION:\n{{mitigation_narrative}}"
+        "text": "{{mitigation_narrative}}"
       }
     ]
   },
@@ -405,6 +412,7 @@
   "subrogation_reason": {
     "label": "Subrogation reason clause (e.g. \"weather related\", \"related to a 10 year old plumbing supply line that was not recently repaired\")",
     "type": "narrative",
+    "form": "clause",
     "section": "Salvage & Subrogation",
     "required": true
   },
