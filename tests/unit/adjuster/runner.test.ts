@@ -16,6 +16,7 @@ function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
   const extractCalls: Record<string, any>[] = []
   const validateCalls: Array<{ transcript: string }> = []
   const transcriptionCalls: Array<{ job: Job; claim: Job | null }> = []
+  const artifactWrites: Array<{ job: Job; extraction: Record<string, any> }> = []
 
   const sandbox = loadGs('apps/adjuster/src/runner.js', {
     logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
@@ -78,10 +79,26 @@ function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
     applyClaimPropertyFallback: (validated: unknown) => validated,
     generateDoc: () => ({ status: 'done', docUrl: 'https://doc', needsInputCount: 0 }),
     notifyJobFailed: () => {},
+    // Defined in replay.js, which this sandbox does not load. Stubbed rather
+    // than ignored: the pipeline persisting extraction.json is what makes a
+    // later free replay possible, so it is asserted below.
+    writeExtractionArtifact: (job: Job, _claim: Job | null, _input: unknown, extraction: any) => {
+      artifactWrites.push({ job, extraction })
+      return 'artifact-id'
+    },
     ...overrides,
   })
 
-  return { sandbox, jobs, logged, leases, extractCalls, validateCalls, transcriptionCalls }
+  return {
+    sandbox,
+    jobs,
+    logged,
+    leases,
+    extractCalls,
+    validateCalls,
+    transcriptionCalls,
+    artifactWrites,
+  }
 }
 
 function dograhJob(overrides: Job = {}): Job {
@@ -293,6 +310,18 @@ describe('stage B', () => {
     expect(extractCalls[0].transcript).toBe('dograh text')
     expect(extractCalls[0].transcriptSource).toBe('dograh')
     expect(validateCalls[0].transcript).toBe('dograh text')
+  })
+
+  it('saves the extraction so the rendering half can be replayed without paying again', () => {
+    const { sandbox, artifactWrites } = harness([
+      dograhJob({ status: 'transcribed', claim_id: 'claim-1', extraction_input: 'master' }),
+    ])
+
+    sandbox.processOldestPendingJob()
+
+    expect(artifactWrites).toHaveLength(1)
+    expect(artifactWrites[0].job.capture_id).toBe('dograh-1')
+    expect(artifactWrites[0].extraction).toMatchObject({ model: 'test-model' })
   })
 
   it('feeds the Dograh live export in as a cross-check hint, as before', () => {

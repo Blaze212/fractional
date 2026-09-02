@@ -111,6 +111,30 @@ Two operational notes:
   the existing call folder and versions the new filenames alongside the old ones,
   so nothing from the previous run is destroyed.
 
+## Replaying a call without re-running the pipeline
+
+A run through `scripts/adjuster-inject-test-job.mjs` spends two batch ASR calls,
+a long-context master-transcript merge and an extraction call before a single
+character reaches the draft. Everything downstream of extraction — `docgen.js`,
+`validate.js`, `enums.json`, the template — is decided after all of that, so
+iterating on it through injections pays vendors for output they had no part in.
+
+Every extraction now saves `extraction.json` into the call folder alongside the
+transcripts. Two entry points in `src/replay.js`, run by hand from the Apps
+Script editor against a `capture_id` from the Jobs tab, read it back:
+
+| Function                           | Cost                | Use it for                                              |
+| ---------------------------------- | ------------------- | ------------------------------------------------------- |
+| `regenerateDraftFromArtifacts(id)` | zero vendor calls   | rendering: highlights, blanks, spacing, tags            |
+| `reExtractFromArtifacts(id)`       | one OpenRouter call | prompt or schema changes, where the model is under test |
+
+Both render a real Google Doc into the drafts folder, suffixed `— REPLAY` and
+with the "draft ready" email suppressed, and neither touches the Jobs row — the
+row keeps pointing at the draft the live run produced.
+
+Only reach for the injection script when the call-ingest path itself is what you
+are testing.
+
 ## What's still deliberately out of scope
 
 - Multi-building/multi-address claims (seen in one sample report, e.g.

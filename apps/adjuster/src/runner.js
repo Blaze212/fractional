@@ -176,34 +176,9 @@ function resolveClaimMatch(job, claims) {
 // accepted one and the mode is live, otherwise whatever raw source stage A
 // resolved to — but its contract did not: extract, validate spans, generate.
 function runExtractionStage(job) {
-  var claims = getClaims()
-  var claim = job.claim_id
-    ? claims.filter(function (c) {
-        return c.claim_id === job.claim_id
-      })[0]
-    : null
-
+  var claim = findClaimForJob(job)
   var tagSchema = loadEnums()
-  // Both Dograh's Notetaker export (see webhook.js's handleDograhNotetaker) and
-  // Retell's post-call analysis (see webhook.js's handleRetellCallAnalyzed) hand
-  // back a per-field value captured live during the call, with no verbatim span
-  // into the transcript — without a cross-check pass every field outside the
-  // small enum/variant set (validateLiveFields' only checkable case) would be
-  // forced to NEEDS INPUT regardless of what the platform actually captured.
-  // Feeding it into the OpenRouter pass as a cross-check hint (see prompt.js's
-  // formatLiveExtraction) lets the model re-derive every field from the
-  // transcript itself, with a real source_span, using the platform's export
-  // only to know what to listen for. calendar_fields (see calendarSync.js) is
-  // the same kind of hint sourced from the scheduling note instead of the call
-  // — the live export wins on overlap since it was captured live during this
-  // specific call.
-  var hasLiveExport = job.source === 'dograh' || job.source === 'retell'
-  var liveFields = hasLiveExport ? JSON.parse(job.live_fields || '{}') : {}
-  var calendarFields = parseCalendarFields(claim)
-  var liveExtraction =
-    Object.keys(liveFields).length > 0 || Object.keys(calendarFields).length > 0
-      ? Object.assign({}, calendarFields, liveFields)
-      : null
+  var hints = buildExtractionHints(job, claim)
 
   // Decided in stage A and recorded on the job, so this stage never re-derives
   // it. haystack is the master's turn texts with the speaker labels stripped —
@@ -216,59 +191,23 @@ function runExtractionStage(job) {
     transcript_chars: input.transcript.length,
   })
 
-  var glossary = loadGlossary()
-
-  var extraction = extractFields({
-    apiKey: getConfig('OPENROUTER_API_KEY'),
-    model: getConfig('OPENROUTER_MODEL'),
-    fallbacks: getConfigList('OPENROUTER_FALLBACKS', []),
-    captureId: job.capture_id,
-    transcript: input.transcript,
-    transcriptSource: input.source,
-    claim: claim,
-    templateSpec: tagSchema,
-    glossary: glossary,
-    phraseBank: [],
-    liveExtraction: liveExtraction,
-    adjusterName: getOptionalConfig('ADJUSTER_NAME', 'Brandon'),
-  })
-
-  logEvent('runner.extracted', {
-    capture_id: job.capture_id,
-    model: extraction.model,
-    field_count: Object.keys(extraction.fields || {}).length,
-    unplaced_notes: (extraction.unplaced_notes || []).length,
-    live_extraction_fields: liveExtraction ? Object.keys(liveExtraction).length : 0,
-  })
+  var extraction = runFieldExtraction(job, claim, tagSchema, input, hints)
 
   upsertJob(job.capture_id, { status: 'generating', model: extraction.model })
 
-  var validated = validateFields(extraction.fields, input.haystack, tagSchema)
-  // Backstop for the fixed set of property facts the transcript is unlikely to
-  // ever state — see applyCalendarFallback's own comment for why the
-  // transcript-corroboration rule is deliberately skipped for just these tags.
-  validated = applyCalendarFallback(validated, calendarFields, tagSchema)
-  // Second backstop for the same facts, from the public-records lookup calendar
-  // sync writes onto the Claims row — see applyClaimPropertyFallback. Ordered
-  // after the calendar pass so a hand-typed invite value always wins.
-  validated = applyClaimPropertyFallback(validated, claim, tagSchema)
-  var unplacedNotes = extraction.unplaced_notes || []
-  logEvent('runner.validated', {
-    capture_id: job.capture_id,
-    valid: Object.keys(validated).filter(function (t) {
-      return validated[t].valid
-    }).length,
-    needs_input: Object.keys(validated).filter(function (t) {
-      return !validated[t].valid
-    }).length,
+  var result = renderDraftFromExtraction({
+    job: job,
+    claim: claim,
+    tagSchema: tagSchema,
+    haystack: input.haystack,
+    calendarFields: hints.calendarFields,
+    fields: extraction.fields,
+    unplacedNotes: extraction.unplaced_notes || [],
   })
-
-  var latestJob = getJobByCaptureId(job.capture_id)
-  var result = generateDoc(latestJob, claim, validated, tagSchema, unplacedNotes)
 
   if (result.status === 'failed') {
     logEvent('runner.docgen_failed', { capture_id: job.capture_id, error: result.error })
-    failJob(latestJob, result.error)
+    failJob(getJobByCaptureId(job.capture_id) || job, result.error)
     return
   }
 
@@ -285,6 +224,114 @@ function runExtractionStage(job) {
     lease_until: '',
     error: '',
   })
+}
+
+function findClaimForJob(job) {
+  if (!job || !job.claim_id) return null
+
+  return (
+    getClaims().filter(function (c) {
+      return c.claim_id === job.claim_id
+    })[0] || null
+  )
+}
+
+// The cross-check hints handed to the extractor. Both Dograh's Notetaker export
+// (see webhook.js's handleDograhNotetaker) and Retell's post-call analysis (see
+// handleRetellCallAnalyzed) hand back a per-field value captured live during the
+// call, with no verbatim span into the transcript — without a cross-check pass
+// every field outside the small enum/variant set (validateLiveFields' only
+// checkable case) would be forced to NEEDS INPUT regardless of what the platform
+// actually captured. Feeding it into the OpenRouter pass as a hint (see
+// prompt.js's formatLiveExtraction) lets the model re-derive every field from the
+// transcript itself, with a real source_span, using the platform's export only to
+// know what to listen for. calendar_fields (see calendarSync.js) is the same kind
+// of hint sourced from the scheduling note instead of the call — the live export
+// wins on overlap since it was captured live during this specific call.
+//
+// calendarFields rides along in the return because it is needed twice: once as a
+// prompt hint, once as validation's fallback source (applyCalendarFallback).
+function buildExtractionHints(job, claim) {
+  var hasLiveExport = job.source === 'dograh' || job.source === 'retell'
+  var liveFields = hasLiveExport ? JSON.parse(job.live_fields || '{}') : {}
+  var calendarFields = parseCalendarFields(claim)
+  var liveExtraction =
+    Object.keys(liveFields).length > 0 || Object.keys(calendarFields).length > 0
+      ? Object.assign({}, calendarFields, liveFields)
+      : null
+
+  return { calendarFields: calendarFields, liveExtraction: liveExtraction }
+}
+
+// The one paid step in the pipeline's second stage. Writes extraction.json to the
+// call folder on the way out so the rendering half can be replayed for free
+// afterwards — see replay.js for why that artifact exists.
+function runFieldExtraction(job, claim, tagSchema, input, hints) {
+  var extraction = extractFields({
+    apiKey: getConfig('OPENROUTER_API_KEY'),
+    model: getConfig('OPENROUTER_MODEL'),
+    fallbacks: getConfigList('OPENROUTER_FALLBACKS', []),
+    captureId: job.capture_id,
+    transcript: input.transcript,
+    transcriptSource: input.source,
+    claim: claim,
+    templateSpec: tagSchema,
+    glossary: loadGlossary(),
+    phraseBank: [],
+    liveExtraction: hints.liveExtraction,
+    adjusterName: getOptionalConfig('ADJUSTER_NAME', 'Brandon'),
+  })
+
+  logEvent('runner.extracted', {
+    capture_id: job.capture_id,
+    model: extraction.model,
+    field_count: Object.keys(extraction.fields || {}).length,
+    unplaced_notes: (extraction.unplaced_notes || []).length,
+    live_extraction_fields: hints.liveExtraction ? Object.keys(hints.liveExtraction).length : 0,
+  })
+
+  writeExtractionArtifact(job, claim, input, extraction)
+
+  return extraction
+}
+
+// Validation and rendering, shared by the live pipeline and by replay.js's entry
+// points. A replayed draft has to travel the exact path a live job travels — a
+// replay that drifts from production verifies nothing — so the sequence is
+// written down once, here, rather than reproduced at each caller.
+//
+// Backstops in order: applyCalendarFallback fills the fixed set of property facts
+// the transcript is unlikely to state from the scheduler's invite note, then
+// applyClaimPropertyFallback fills the same facts from the public-records lookup
+// on the Claims row. Calendar first, so a hand-typed invite value always wins.
+function renderDraftFromExtraction(options) {
+  var job = options.job
+  var tagSchema = options.tagSchema
+
+  var validated = validateFields(options.fields, options.haystack, tagSchema)
+  validated = applyCalendarFallback(validated, options.calendarFields, tagSchema)
+  validated = applyClaimPropertyFallback(validated, options.claim, tagSchema)
+
+  logEvent('runner.validated', {
+    capture_id: job.capture_id,
+    valid: Object.keys(validated).filter(function (t) {
+      return validated[t].valid
+    }).length,
+    needs_input: Object.keys(validated).filter(function (t) {
+      return !validated[t].valid
+    }).length,
+  })
+
+  var latestJob = getJobByCaptureId(job.capture_id) || job
+
+  return generateDoc(
+    latestJob,
+    options.claim,
+    validated,
+    tagSchema,
+    options.unplacedNotes || [],
+    options.docOptions,
+  )
 }
 
 // A hand-edited Claims row could carry malformed JSON in this cell — that

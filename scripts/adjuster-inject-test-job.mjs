@@ -7,6 +7,20 @@
  * Zero dependencies. Node 20+ (uses built-in fetch). Not wired into the app;
  * run it directly, it does not import anything from this repo.
  *
+ * COST. This is the expensive way to test. The injected row is picked up by the
+ * next runner tick and runs the entire pipeline: two batch ASR calls (ElevenLabs
+ * Scribe + Qwen), a long-context master-transcript merge, an extraction call,
+ * and an llmMatcher call when the claim match is ambiguous. Every injection pays
+ * all of that again. Use it only when the call-ingest path itself is what you are
+ * testing.
+ *
+ * For anything downstream of extraction — docgen, validate, enums.json, the
+ * template — replay a call you already ran instead, from the Apps Script editor
+ * (see apps/adjuster/src/replay.js):
+ *
+ *   regenerateDraftFromArtifacts(captureId)  // rendering changes, 0 vendor calls
+ *   reExtractFromArtifacts(captureId)        // prompt/schema changes, 1 LLM call
+ *
  * Posts to the Adjuster Apps Script web app's `manual_recording_inject` event
  * (see apps/adjuster/src/webhook.js). The audio travels as a base64 field in
  * the JSON body, not a fetchable URL — there is nothing to fetch, the file
