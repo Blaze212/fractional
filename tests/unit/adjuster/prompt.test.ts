@@ -226,6 +226,22 @@ describe('field-specific guidance', () => {
     expect(user).toMatch(/"unknown" over guessing between covered and excluded/i)
   })
 
+  // Phase 4: coverage_supporting_detail guidance is written by exclusion so the
+  // model stops filling it with a restatement of the cause or the determination
+  // — the sentence that used to say the same thing three times.
+  it('tells coverage_supporting_detail to hold only an independent fact, not a restated cause or determination', () => {
+    const spec = {
+      coverage_supporting_detail: { label: 'Coverage supporting detail', type: 'narrative' },
+    }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('coverage_supporting_detail:')
+    expect(user).toMatch(/independent policy fact/i)
+    expect(user).toMatch(/not itself a restatement of the cause/i)
+    expect(user).toMatch(/do not say the claim is or is not covered/i)
+  })
+
   it('tells present_at_inspection to resolve a bare role to a name stated elsewhere in the call', () => {
     const spec = {
       present_at_inspection: { label: 'Present at inspection', type: 'string' },

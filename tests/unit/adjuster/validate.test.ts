@@ -1,8 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { loadGs } from './loadGs'
 
-const { validateFields, applyCalendarFallback, applyClaimPropertyFallback, validateLiveFields } =
-  loadGs('apps/adjuster/src/validate.js')
+const {
+  validateFields,
+  applyCalendarFallback,
+  applyClaimPropertyFallback,
+  validateLiveFields,
+  dropCoverageRestatement,
+} = loadGs('apps/adjuster/src/validate.js')
 
 const transcript =
   'The roof covering is architectural shingle and the pitch is six twelve. There is not a mortgage on the property.'
@@ -509,5 +514,129 @@ describe('applyClaimPropertyFallback', () => {
     const result = applyClaimPropertyFallback(validated, null, propertySchema)
 
     expect(result.year_built).toEqual(needsInput('Year built'))
+  })
+})
+
+// The observed bug: cause + "which is covered under the insured's policy" +
+// coverage_supporting_detail restating one or both + branch tail said the same
+// thing three times. dropCoverageRestatement is the post-pass that catches a
+// restated supporting detail after coverage_determination and
+// coverage_cause_narrative have both settled.
+describe('dropCoverageRestatement', () => {
+  function validField(value: string, label = 'x') {
+    return { valid: true, label, value, source_span: '', confidence: 'high' }
+  }
+
+  it('is a no-op when coverage_supporting_detail was never filled', () => {
+    const validated = {
+      coverage_supporting_detail: { valid: true, empty: true, label: 'Coverage supporting detail' },
+    }
+
+    const result = dropCoverageRestatement(validated)
+
+    expect(result.dropped).toBeNull()
+    expect(result.validated.coverage_supporting_detail).toEqual(
+      validated.coverage_supporting_detail,
+    )
+  })
+
+  it('drops a detail that restates the determination ("which is covered")', () => {
+    const validated = {
+      coverage_supporting_detail: validField(
+        'The claim is covered because the damage is storm related.',
+        'Coverage supporting detail',
+      ),
+      coverage_determination: validField('covered'),
+      coverage_cause_narrative: validField('storm related'),
+    }
+
+    const result = dropCoverageRestatement(validated)
+
+    expect(result.dropped).toBe(
+      'Coverage supporting detail, as extracted: "The claim is covered because the damage is storm related."',
+    )
+    expect(result.validated.coverage_supporting_detail).toEqual({
+      valid: true,
+      empty: true,
+      label: 'Coverage supporting detail',
+    })
+  })
+
+  it('drops a detail that restates the cause by content-token overlap', () => {
+    const validated = {
+      coverage_supporting_detail: validField(
+        'Because it is a storm that caused the lightning strike, the claim is covered.',
+        'Coverage supporting detail',
+      ),
+      coverage_determination: validField('covered'),
+      coverage_cause_narrative: validField('storm related'),
+    }
+
+    const result = dropCoverageRestatement(validated)
+
+    expect(result.dropped).toContain('Coverage supporting detail, as extracted:')
+  })
+
+  it('drops a detail restating "no coverage concerns" even without the word "covered"', () => {
+    const validated = {
+      coverage_supporting_detail: validField(
+        'There are no coverage concerns with this claim.',
+        'Coverage supporting detail',
+      ),
+      coverage_determination: validField('covered'),
+      coverage_cause_narrative: validField('storm related'),
+    }
+
+    const result = dropCoverageRestatement(validated)
+
+    expect(result.dropped).not.toBeNull()
+  })
+
+  it('keeps an independent supporting detail untouched', () => {
+    const validated = {
+      coverage_supporting_detail: validField(
+        'Heat was maintained in the home throughout the freeze event.',
+        'Coverage supporting detail',
+      ),
+      coverage_determination: validField('covered'),
+      coverage_cause_narrative: validField('related to a burst plumbing line due to freezing'),
+    }
+
+    const result = dropCoverageRestatement(validated)
+
+    expect(result.dropped).toBeNull()
+    expect(result.validated.coverage_supporting_detail.value).toBe(
+      'Heat was maintained in the home throughout the freeze event.',
+    )
+  })
+
+  it('allows coverage vocabulary in the detail when the determination is unknown', () => {
+    const validated = {
+      coverage_supporting_detail: validField(
+        'The policy was in a lapsed status on the date of loss and is being reviewed by the carrier.',
+        'Coverage supporting detail',
+      ),
+      coverage_determination: validField('unknown'),
+      coverage_cause_narrative: validField('storm related'),
+    }
+
+    const result = dropCoverageRestatement(validated)
+
+    expect(result.dropped).toBeNull()
+  })
+
+  it('still applies the cause-overlap detector on the unknown branch', () => {
+    const validated = {
+      coverage_supporting_detail: validField(
+        'storm related storm related storm related',
+        'Coverage supporting detail',
+      ),
+      coverage_determination: validField('unknown'),
+      coverage_cause_narrative: validField('storm related'),
+    }
+
+    const result = dropCoverageRestatement(validated)
+
+    expect(result.dropped).not.toBeNull()
   })
 })

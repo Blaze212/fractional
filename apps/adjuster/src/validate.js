@@ -208,6 +208,118 @@ function applyClaimPropertyFallback(validated, claim, tagSchema) {
   return validated
 }
 
+// coverage_supporting_detail is meant to add one fact independent of the cause
+// or the determination (heat maintained through a freeze, a lapsed policy) —
+// but the model sometimes fills it with a restatement of one or both instead,
+// which is how a filed coverage paragraph ends up saying the same thing three
+// times: cause, "which is covered under the insured's policy", then the
+// "supporting" detail repeating either or both. Two detectors below catch that;
+// a genuinely independent detail passes through untouched.
+//
+// When coverage_determination is "unknown", the supporting detail is legitimately
+// the reason coverage is in question and may use coverage vocabulary itself (e.g.
+// "The policy was in a lapsed status on the date of loss") — only the cause-overlap
+// detector applies on that branch, since restating an undetermined coverage call
+// isn't the same failure as restating a settled one.
+var COVERAGE_DETERMINATION_RESTATEMENT_PATTERNS = [
+  /\b(?:is|are|was|were)\s+(?:covered|excluded)\b/i,
+  /\bcoverage\s+(?:applies|does not apply|is applicable)\b/i,
+  /\bthe claim is (?:covered|denied|excluded)\b/i,
+  /\bno coverage concerns\b/i,
+]
+
+var COVERAGE_OVERLAP_STOPWORDS = [
+  'a',
+  'an',
+  'the',
+  'and',
+  'or',
+  'but',
+  'is',
+  'are',
+  'was',
+  'were',
+  'be',
+  'been',
+  'being',
+  'to',
+  'of',
+  'in',
+  'on',
+  'at',
+  'for',
+  'with',
+  'by',
+  'this',
+  'that',
+  'these',
+  'those',
+  'it',
+  'its',
+  'as',
+  'from',
+  'due',
+]
+
+function coverageContentTokens(text) {
+  return String(text || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(function (token) {
+      return token && COVERAGE_OVERLAP_STOPWORDS.indexOf(token) === -1
+    })
+}
+
+// Drop when 60%+ of the cause's own content tokens (stopwords aside) also
+// appear in the detail — a genuinely independent fact shares little
+// vocabulary with the cause clause it sits beside.
+function coverageDetailRestatesCause(detail, cause) {
+  var causeTokens = coverageContentTokens(cause)
+  if (causeTokens.length === 0) return false
+
+  var detailTokens = coverageContentTokens(detail)
+  var overlap = causeTokens.filter(function (token) {
+    return detailTokens.indexOf(token) !== -1
+  })
+
+  return overlap.length / causeTokens.length >= 0.6
+}
+
+function coverageDetailRestatesDetermination(detail) {
+  return COVERAGE_DETERMINATION_RESTATEMENT_PATTERNS.some(function (pattern) {
+    return pattern.test(detail)
+  })
+}
+
+function dropCoverageRestatement(validated) {
+  var detailField = (validated || {}).coverage_supporting_detail
+  if (!detailField || !detailField.valid || detailField.empty) {
+    return { validated: validated, dropped: null }
+  }
+
+  var detail = String(detailField.value || '')
+  var determinationField = (validated || {}).coverage_determination
+  var determinationValue =
+    determinationField && determinationField.valid && !determinationField.empty
+      ? determinationField.value
+      : ''
+  var causeField = (validated || {}).coverage_cause_narrative
+  var causeValue = causeField && causeField.valid && !causeField.empty ? causeField.value : ''
+
+  var restatesCause = coverageDetailRestatesCause(detail, causeValue)
+  var restatesDetermination =
+    determinationValue !== 'unknown' && coverageDetailRestatesDetermination(detail)
+
+  if (!restatesCause && !restatesDetermination) {
+    return { validated: validated, dropped: null }
+  }
+
+  var label = detailField.label
+  validated.coverage_supporting_detail = omitted(label)
+
+  return { validated: validated, dropped: label + ', as extracted: "' + detail + '"' }
+}
+
 // A field can declare requiredWhen: { field, equals } to only be required when a
 // sibling field (e.g. roof_status) resolved to a specific value — e.g. roof_covering_type
 // is only required when roof_status is "shingle", not when the roof wasn't affected at all.
