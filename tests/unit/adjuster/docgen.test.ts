@@ -22,6 +22,22 @@ const tagSchema = {
       { key: 'no_mortgage', text: 'There is no mortgage on the property.' },
     ],
   },
+  coverage_supporting_detail: {
+    label: 'Coverage supporting detail',
+    type: 'string',
+    required: false,
+  },
+  // Mirrors the pre-Phase-6 mitigation_status "none" branch: a variant option
+  // whose canned text is empty, the exact shape that used to render as an
+  // invisible gap.
+  mitigation_status: {
+    label: 'Mitigation status',
+    type: 'variant',
+    values: [
+      { key: 'none', text: '' },
+      { key: 'present', text: 'MITIGATION:\n{{mitigation_narrative}}' },
+    ],
+  },
 }
 
 describe('resolveTagsForDoc', () => {
@@ -135,6 +151,45 @@ describe('resolveTagsForDoc', () => {
     const resolved = resolveTagsForDoc(validated, tagSchema)
 
     expect(resolved.roof_pitch).toMatchObject({ text: '' })
+  })
+
+  it('renders an optional field as empty when it validly resolves to nothing', () => {
+    const validated = {
+      coverage_supporting_detail: { valid: true, empty: true, label: 'Coverage supporting detail' },
+    }
+
+    const resolved = resolveTagsForDoc(validated, tagSchema)
+
+    expect(resolved.coverage_supporting_detail).toMatchObject({ text: '' })
+  })
+
+  it('flags a required variant branch whose canned text is blank instead of rendering an invisible gap', () => {
+    const validated = { mitigation_status: { valid: true, value: 'none', confidence: 'high' } }
+
+    const resolved = resolveTagsForDoc(validated, tagSchema)
+
+    expect(resolved.mitigation_status).toMatchObject({
+      text: '[NEEDS INPUT: Mitigation status]',
+      needsReview: false,
+    })
+  })
+
+  it('never flags an optional field for a blank branch (no such case exists today, but the backstop must not overreach)', () => {
+    const optionalTagSchema = {
+      coverage_supporting_detail: {
+        label: 'Coverage supporting detail',
+        type: 'variant',
+        required: false,
+        values: [{ key: 'blank', text: '' }],
+      },
+    }
+    const validated = {
+      coverage_supporting_detail: { valid: true, value: 'blank', confidence: 'high' },
+    }
+
+    const resolved = resolveTagsForDoc(validated, optionalTagSchema)
+
+    expect(resolved.coverage_supporting_detail.text).toBe('')
   })
 })
 
@@ -252,6 +307,57 @@ describe('highlightMarkers (DocumentApp body double)', () => {
     highlightMarkers(body)
 
     expect(body.highlighted).toHaveLength(1)
+  })
+})
+
+// An omitted optional field (coverage_supporting_detail is the only one that
+// sits mid-sentence in every branch today) leaves a gap in the fixed template
+// sentence around it — a double space, a stray comma, a space before the
+// period. tidyRendering runs the same regex-replace sequence docgen.js sends
+// through the real DocumentApp Body.replaceText, so this double just records
+// every call and checks the pattern/replacement pairs.
+describe('tidyRendering', () => {
+  const { tidyRendering } = loadGs('apps/adjuster/src/docgen.js')
+
+  function fakeBody() {
+    const calls: Array<{ pattern: string; replacement: string }> = []
+    return {
+      calls,
+      replaceText: (pattern: string, replacement: string) => calls.push({ pattern, replacement }),
+    }
+  }
+
+  it('collapses a double space left by an omitted mid-sentence optional field', () => {
+    const body = fakeBody()
+
+    tidyRendering(body)
+
+    expect(body.calls).toContainEqual({ pattern: '[ ]{2,}', replacement: ' ' })
+  })
+
+  it('removes a space before a trailing period or comma', () => {
+    const body = fakeBody()
+
+    tidyRendering(body)
+
+    expect(body.calls).toContainEqual({ pattern: ' \\.', replacement: '.' })
+    expect(body.calls).toContainEqual({ pattern: ' \\,', replacement: ',' })
+  })
+
+  it('collapses a doubled comma left by two adjacent omitted fields', () => {
+    const body = fakeBody()
+
+    tidyRendering(body)
+
+    expect(body.calls).toContainEqual({ pattern: ',[ ]*,', replacement: ',' })
+  })
+
+  it('strips trailing spaces before a line break', () => {
+    const body = fakeBody()
+
+    tidyRendering(body)
+
+    expect(body.calls).toContainEqual({ pattern: '[ ]+\\n', replacement: '\n' })
   })
 })
 

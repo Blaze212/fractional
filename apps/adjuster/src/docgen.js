@@ -29,6 +29,7 @@ function generateDoc(job, claim, validated, tagSchema, unplacedNotes, options) {
     if (!resolved[tag].isVariant) replaceTag(body, tag, resolved[tag])
   })
 
+  tidyRendering(body)
   styleRoomLabels(body, collectRoomLabels(resolved))
   highlightMarkers(body)
   appendUnplacedNotes(body, unplacedNotes)
@@ -81,27 +82,43 @@ function resolveTagsForDoc(validated, tagSchema) {
     }
 
     var needsReview = field.confidence === 'medium'
+    var entry
 
     if (isVariant) {
       var option = (schema.values || []).filter(function (o) {
         return o.key === field.value
       })[0]
-      resolved[tag] = {
+      entry = {
         isVariant: true,
         text: option ? option.text : '[NEEDS INPUT: ' + schema.label + ']',
         needsReview: needsReview && !!option,
         label: schema.label,
       }
-      return
+    } else {
+      entry = {
+        isVariant: false,
+        text: String(field.value),
+        needsReview: needsReview,
+        sourceSpan: field.source_span,
+        label: schema.label,
+      }
     }
 
-    resolved[tag] = {
-      isVariant: false,
-      text: String(field.value),
-      needsReview: needsReview,
-      sourceSpan: field.source_span,
-      label: schema.label,
+    // A field that validated cleanly (not omitted, per the field.empty check
+    // above) is a required field by construction — see validate.js's
+    // isRequired — so it is always meant to carry visible content. A variant
+    // branch with empty canned text (mitigation_status: "none" before Phase 6)
+    // is the known way that content can still come out blank; this is the
+    // runtime backstop for that case and any other still-missed by the
+    // schema-lint test in template.test.ts. Optional fields never reach here
+    // with nothing to show — a genuinely blank optional value took the
+    // field.empty branch above instead.
+    if (schema.required !== false && !String(entry.text).trim()) {
+      entry.text = '[NEEDS INPUT: ' + schema.label + ']'
+      entry.needsReview = false
     }
+
+    resolved[tag] = entry
   })
 
   return resolved
@@ -240,6 +257,20 @@ function styleRoomLabels(body, labels) {
 
 function escapeForFindText(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// Cleans up the residue an omitted optional field leaves behind mid-sentence —
+// the only always-visible optional field today is coverage_supporting_detail,
+// which sits inside all three coverage branches and leaves a double space when
+// left out. Runs after both replacement passes (it operates on final rendered
+// text) and before styleRoomLabels/highlightMarkers, since collapsing spaces
+// shifts character offsets those later passes locate text by.
+function tidyRendering(body) {
+  body.replaceText('[ ]{2,}', ' ')
+  body.replaceText(' \\.', '.')
+  body.replaceText(' \\,', ',')
+  body.replaceText(',[ ]*,', ',')
+  body.replaceText('[ ]+\\n', '\n')
 }
 
 // One pass over every plain-text marker kind: a needs-input placeholder, a

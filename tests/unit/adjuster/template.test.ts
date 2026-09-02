@@ -90,6 +90,26 @@ describe('adjuster template / enums parity', () => {
   })
 })
 
+// Phase 2: a variant branch with empty (or whitespace-only) text is a section
+// that silently disappears — no heading, no sentence, no [NEEDS INPUT] flag —
+// which is exactly the class of bug this spec fixes. mitigation_status "none"
+// is the one known violation, fixed by Phase 6's canned "No mitigation
+// services were performed on this loss." sentence; until that phase lands,
+// resolveTagsForDoc's runtime backstop (see docgen.js) still keeps it from
+// rendering as an invisible gap.
+describe('schema lint: no variant option renders blank', () => {
+  it('gives every variant option non-empty, non-whitespace-only text', () => {
+    const violations: string[] = []
+    Object.entries(enums).forEach(([tag, schema]) => {
+      if (schema.type !== 'variant') return
+      ;(schema.values as VariantOption[]).forEach((option) => {
+        if (!option.text.trim()) violations.push(`${tag}.${option.key}`)
+      })
+    })
+    expect(violations).toEqual([])
+  })
+})
+
 // Fields referenced only inside one variant branch must be required exactly when that
 // branch is chosen — otherwise a missing value renders as silent blank text (e.g.
 // "mortgage is through .") instead of a [NEEDS INPUT] marker the reviewer can see.
