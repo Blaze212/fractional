@@ -1,8 +1,16 @@
-function generateDoc(job, claim, validated, tagSchema, unplacedNotes) {
+// options is the replay hatch (see replay.js): a hand-run replay renders a real
+// draft to look at, but it is a scratch copy — it must not mail Brandon a
+// "draft ready" notice, and it has to be tellable from the real draft in the
+// same folder. Absent options, every default is the live pipeline's behaviour.
+function generateDoc(job, claim, validated, tagSchema, unplacedNotes, options) {
+  var settings = options || {}
   var needsInputCount = countNeedsInput(validated, tagSchema)
   var templateFile = DriveApp.getFileById(getConfig('TEMPLATE_DOC_ID'))
   var draftsFolder = DriveApp.getFolderById(getConfig('DRAFTS_FOLDER_ID'))
-  var copy = templateFile.makeCopy(buildDraftName(job, claim), draftsFolder)
+  var copy = templateFile.makeCopy(
+    buildDraftName(job, claim) + (settings.nameSuffix || ''),
+    draftsFolder,
+  )
   var doc = DocumentApp.openById(copy.getId())
   var body = doc.getBody()
 
@@ -37,7 +45,7 @@ function generateDoc(job, claim, validated, tagSchema, unplacedNotes) {
     }
   }
 
-  notifyDraftReady(copy.getUrl(), needsInputCount)
+  if (settings.notify !== false) notifyDraftReady(copy.getUrl(), needsInputCount)
   return { status: 'done', docUrl: copy.getUrl(), needsInputCount: needsInputCount }
 }
 

@@ -79,6 +79,7 @@ var JOBS_TRANSCRIPTION_COLUMNS = [
   'master_coverage',
   'transcription_sources',
   'extraction_input',
+  'extraction_artifact_id',
 ]
 
 // Same cap the Jobs sheet's other transcript columns use.
@@ -176,6 +177,24 @@ function getOrCreateCallFolder(job, claim) {
   var root = DriveApp.getFolderById(rootId)
   var existing = root.getFoldersByName(name)
   return existing.hasNext() ? existing.next() : root.createFolder(name)
+}
+
+// Read-only sibling of getOrCreateCallFolder. Stage B and the replay entry
+// points want the folder this call already has and must never make a new one —
+// a created-on-read folder would be an empty folder that looks like a call.
+function getExistingCallFolder(job) {
+  if (!job || !job.call_folder_id) return null
+
+  try {
+    return DriveApp.getFolderById(job.call_folder_id)
+  } catch (err) {
+    logEvent('transcription.call_folder_missing', {
+      capture_id: job.capture_id || '',
+      call_folder_id: job.call_folder_id,
+      error: String(err),
+    })
+    return null
+  }
 }
 
 function buildCallFolderName(job, claim) {
