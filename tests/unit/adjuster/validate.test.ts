@@ -7,6 +7,7 @@ const {
   applyClaimPropertyFallback,
   validateLiveFields,
   dropCoverageRestatement,
+  collectOffSuggestionFields,
 } = loadGs('apps/adjuster/src/validate.js')
 
 const transcript =
@@ -15,8 +16,14 @@ const transcript =
 const tagSchema = {
   roof_covering_type: {
     label: 'Roof covering type',
-    type: 'enum',
-    values: ['3-tab asphalt shingle', 'architectural shingle', 'metal', 'tile', 'modified bitumen'],
+    type: 'string',
+    suggestions: [
+      '3-tab asphalt shingle',
+      'architectural shingle',
+      'metal',
+      'tile',
+      'modified bitumen',
+    ],
   },
   roof_pitch: { label: 'Roof pitch', type: 'string' },
   mortgage_company: { label: 'Mortgage company', type: 'string', required: false },
@@ -77,7 +84,7 @@ describe('validateFields', () => {
     })
   })
 
-  it('rejects a value that is not a member of the enum list', () => {
+  it('accepts an off-list value for a suggestions field — suggestions are advisory, not enforced', () => {
     const fields = {
       roof_covering_type: {
         value: 'wood shake',
@@ -88,11 +95,7 @@ describe('validateFields', () => {
 
     const result = validateFields(fields, transcript, tagSchema)
 
-    expect(result.roof_covering_type).toEqual({
-      valid: false,
-      empty: false,
-      label: 'Roof covering type',
-    })
+    expect(result.roof_covering_type).toMatchObject({ valid: true, value: 'wood shake' })
   })
 
   it('rejects a field with low confidence even when the span matches', () => {
@@ -236,7 +239,11 @@ describe('requiredWhen', () => {
 
 describe('applyCalendarFallback', () => {
   const propertySchema = {
-    bedroom_count: { label: 'Bedroom count', type: 'enum', values: ['1', '2', '3', '4', '5', '6'] },
+    bedroom_count: {
+      label: 'Bedroom count',
+      type: 'string',
+      suggestions: ['1', '2', '3', '4', '5', '6'],
+    },
     square_footage: { label: 'Interior square footage', type: 'string' },
     year_built: { label: 'Year built', type: 'string' },
     // Deliberately not in CALENDAR_FALLBACK_TAGS — a narrative field must never
@@ -279,15 +286,15 @@ describe('applyCalendarFallback', () => {
     expect(result.square_footage.confidence).toBe('high')
   })
 
-  it("rejects a calendar value outside an enum field's allowed set", () => {
+  it('fills an off-list calendar value for a suggestions field — suggestions are advisory, not enforced', () => {
     const validated = { bedroom_count: needsInput('Bedroom count') }
 
     const result = applyCalendarFallback(validated, { bedroom_count: 'a lot' }, propertySchema)
 
-    expect(result.bedroom_count).toEqual(needsInput('Bedroom count'))
+    expect(result.bedroom_count).toMatchObject({ valid: true, value: 'a lot' })
   })
 
-  it('accepts a calendar value that is a valid enum member', () => {
+  it('accepts a calendar value that is a listed suggestion', () => {
     const validated = { bedroom_count: needsInput('Bedroom count') }
 
     const result = applyCalendarFallback(validated, { bedroom_count: '4' }, propertySchema)
@@ -354,14 +361,10 @@ describe('validateLiveFields', () => {
     })
   })
 
-  it('rejects a value that is not a member of the enum list, regardless of source', () => {
+  it('trusts an off-list value for a suggestions field, regardless of source', () => {
     const result = validateLiveFields({ roof_covering_type: 'wood shake' }, tagSchema, 'retell')
 
-    expect(result.roof_covering_type).toEqual({
-      valid: false,
-      empty: false,
-      label: 'Roof covering type',
-    })
+    expect(result.roof_covering_type).toMatchObject({ valid: true, value: 'wood shake' })
   })
 
   it('accepts a variant field whose value matches one of the option keys', () => {
@@ -638,5 +641,68 @@ describe('dropCoverageRestatement', () => {
     const result = dropCoverageRestatement(validated)
 
     expect(result.dropped).not.toBeNull()
+  })
+})
+
+// The vocabulary signal for the seven suggestions fields: an off-list value
+// still renders (see the "suggestions, not enum" Architecture decision), but
+// is worth surfacing so the list can grow from what adjusters actually say.
+describe('collectOffSuggestionFields', () => {
+  const suggestionsSchema = {
+    roof_covering_type: {
+      label: 'Roof covering type',
+      type: 'string',
+      suggestions: ['architectural shingle', 'metal'],
+    },
+    origin_narrative: { label: 'Cause of loss', type: 'narrative', form: 'clause' },
+  }
+
+  it('flags a field whose validated value is not in its suggestions list', () => {
+    const validated = {
+      roof_covering_type: {
+        valid: true,
+        label: 'Roof covering type',
+        value: 'wood shake',
+        confidence: 'high',
+      },
+    }
+
+    const result = collectOffSuggestionFields(validated, suggestionsSchema)
+
+    expect(result).toEqual([{ tag: 'roof_covering_type', value: 'wood shake', source: 'high' }])
+  })
+
+  it('does not flag a value that is in the suggestions list', () => {
+    const validated = {
+      roof_covering_type: {
+        valid: true,
+        label: 'Roof covering type',
+        value: 'architectural shingle',
+        confidence: 'high',
+      },
+    }
+
+    expect(collectOffSuggestionFields(validated, suggestionsSchema)).toEqual([])
+  })
+
+  it('never flags a field with no suggestions list, however unusual its value', () => {
+    const validated = {
+      origin_narrative: {
+        valid: true,
+        label: 'Cause of loss',
+        value: 'a wind driven rain event',
+        confidence: 'high',
+      },
+    }
+
+    expect(collectOffSuggestionFields(validated, suggestionsSchema)).toEqual([])
+  })
+
+  it('skips an invalid or validly-omitted field rather than flagging it', () => {
+    const validated = {
+      roof_covering_type: { valid: false, empty: false, label: 'Roof covering type' },
+    }
+
+    expect(collectOffSuggestionFields(validated, suggestionsSchema)).toEqual([])
   })
 })

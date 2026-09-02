@@ -42,7 +42,8 @@ function buildPrompt(input) {
     'Every filled field must include a source_span that is an exact, contiguous substring of the transcript. Copy it verbatim, including any transcription errors — do not paraphrase, correct, or splice separate sentences together. A span that does not appear in the transcript character for character (whitespace aside) invalidates the whole field. Use the shortest span that contains the evidence for the value.',
     'The value may normalize the spoken form found in the span (spelled-out numbers to digits, "six twelve" to "6/12") but must never add facts the span does not state. Narrative fields are written in the report\'s first-person-plural voice ("We observed...", "We will estimate to repair..."); their source_span is the contiguous passage of the transcript they are drawn from, and every fact in the narrative must appear in that passage.',
     'Set confidence to "high" only when the source_span states the value directly and unambiguously. Set it to "medium" when you are confident in the value but had to do a small amount of work to get there — resolving a role reference (e.g. "the tenant") to a name stated elsewhere in the call, normalizing a mis-transcribed proper noun against the claim context, a safe arithmetic or date computation, or a close enum match. Medium-confidence fields are still filled in on the report, just highlighted for a quick human check. Set it to "low" whenever you are genuinely torn between two plausible readings or the evidence is too garbled to trust — low-confidence fields are routed to the adjuster for full confirmation instead of being filled in, so when torn between low and anything else, choose "low".',
-    'For enum and variant fields, value must be exactly one of the allowed values, character for character. Choose the closest matching allowed value only when the transcript clearly supports it; if nothing said reasonably maps to any allowed value, return the field empty instead of forcing a bad fit. If the transcript includes descriptive detail beyond what the closest value captures (e.g. "a 1 story with a room over the garage"), put the extra detail in unplaced_notes rather than distorting the enum choice or dropping the detail.',
+    'For a variant field, value must be exactly one of the allowed values, character for character — these are internal keys the rendering step matches on, not prose, and a value that does not match one exactly cannot be rendered at all. If nothing said reasonably maps to any allowed key, return the field empty instead of forcing a bad fit.',
+    'A field listing common values under "suggestions" is not a closed list, unlike a variant: prefer a listed value when the transcript clearly supports it, but use the adjuster\'s own words when none of them fit rather than distorting his answer or leaving the field empty. If the transcript includes descriptive detail beyond what the closest suggestion captures (e.g. "a 1 story with a room over the garage"), put the extra detail in unplaced_notes rather than dropping it.',
     'Status variants (roof, exterior, personal property, mitigation, mortgage, coinsurance) require an affirmative statement — "the roof was not affected", "there is no mortgage", "no coinsurance penalty applies" — before you choose a value. Silence about a section is not evidence of "none" or "not_affected"; return the field empty instead.',
     'Anything said that does not fit a listed field goes into unplaced_notes instead of being discarded — common examples include dates (received, contacted, inspected, date of loss — these are merge fields filled outside this pipeline, not extraction targets), claim numbers, carrier names, tree removal, business personal property, additional living expense, loss of use, and references to a prior/previous claim. Write each note as one short, self-contained sentence the adjuster can act on.',
     TRANSCRIPT_SOURCE_FRAMING[transcriptSource] || '',
@@ -119,8 +120,22 @@ var FIELD_GUIDANCE = {
     'What was actually damaged as a result of the cause described in origin_narrative, written as the clause that completes ", resulting in damage to ___." — e.g. "the kitchen ceiling, the adjoining dining room flooring, and the insured\'s personal property". Start mid-sentence: no leading capital, no trailing period. The specific items, rooms, or areas affected. Only facts the adjuster stated; do not restate the cause or the date here, only the resulting damage. A one-sentence answer is exactly what this clause is; do not answer with two sentences — a rendering pass rejects a clause that still reads as more than one.',
   dwelling_stories:
     'The number of stories as the adjuster actually said it — e.g. "1 story", "2 story", "3 story" are the common cases, but use whatever he says (e.g. "a story and a half", "split level") rather than forcing it into one of those three.',
+  dwelling_type:
+    'Completes "The dwelling is a [stories], ___ structure." — a noun phrase naming the dwelling type, e.g. "single family". The listed common values cover the normal cases; use the adjuster\'s own words when the transcript describes something else (e.g. "a townhome").',
+  foundation_type:
+    'Completes "It was built in [year] on a ___ foundation." — a noun phrase naming the foundation type, e.g. "crawlspace". Use the adjuster\'s own words when the transcript names a foundation type not in the common-values list (e.g. "pier and beam").',
+  siding_type:
+    'Completes "The dwelling is wood framed with ___, and composition shingle roofing." — a noun phrase naming the siding, e.g. "vinyl siding". Use the adjuster\'s own words when the transcript describes a siding not in the common-values list, rather than forcing the closest one.',
+  occupancy_status:
+    'Completes "The home is currently occupied by ___." — e.g. "the insured", "a tenant", "tenants". Use the adjuster\'s own words for a case the common values don\'t cover (e.g. "the insured\'s daughter").',
   roof_age_years:
     'A number of years as digits (e.g. "12"), not an install year. The adjuster\'s own hedged estimate ("I\'d guess about twelve years") is still his estimate — extract it with high confidence; use low confidence only when you had to compute the age yourself (e.g. from an install year).',
+  roof_covering_type:
+    'Completes "The shingles on the roof are a ___ that are approximately [age] years old." — a noun phrase naming the shingle product, e.g. "30 year laminate shingles". Use the adjuster\'s own words when the transcript names a product not in the common-values list rather than forcing the closest one.',
+  roof_condition:
+    'Completes "The shingles are in ___ condition for their age." — e.g. "average", "below average". Use the adjuster\'s own words for a condition the common values don\'t cover.',
+  roof_pitch:
+    'Completes "The slopes on the roof are pitched at ___." — a pitch expressed as "N/12" (spoken pitches like "six twelve" normalize to "6/12"). Use the adjuster\'s own words for a pitch outside the common-values list (e.g. "greater than 12/12" already covers the steep case, but use his own description if he gives one that doesn\'t fit any listed value).',
   mitigation_narrative:
     'Cover who responded, what emergency work was performed, and what is still running or pending, in report prose.',
   soft_metal_status:
@@ -191,11 +206,10 @@ function formatTagList(templateSpec) {
       var def = templateSpec[tag]
       var descriptor = '- ' + tag + ' (' + def.type + ')'
       if (def.label) descriptor += ' — ' + def.label
-      if (def.type === 'enum' && def.values)
-        descriptor += ' — allowed values: ' + def.values.join(', ')
       // Variant values are {key, text} pairs and the key is what validateFields
-      // matches on. Listing only enum values left the model guessing variant keys
-      // it had never been shown, so every variant field came back needing input.
+      // matches on. Listing only the keys, not the rendered text, left the model
+      // guessing variant keys it had never been shown, so every variant field
+      // came back needing input.
       if (def.type === 'variant' && def.values)
         descriptor +=
           ' — allowed values: ' +
@@ -204,6 +218,12 @@ function formatTagList(templateSpec) {
               return option.key
             })
             .join(', ')
+      // A `suggestions` list (see the "suggestions, not enum" Architecture
+      // decision) is advisory — worded distinctly from a variant's closed set
+      // of allowed values so the model doesn't read it as another closed list.
+      if (def.suggestions)
+        descriptor +=
+          ' — common values (suggestions, not a closed list): ' + def.suggestions.join(', ')
       return descriptor
     })
     .join('\n')

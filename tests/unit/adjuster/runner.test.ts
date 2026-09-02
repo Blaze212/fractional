@@ -78,6 +78,7 @@ function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
     applyCalendarFallback: (validated: unknown) => validated,
     applyClaimPropertyFallback: (validated: unknown) => validated,
     dropCoverageRestatement: (validated: unknown) => ({ validated, dropped: null }),
+    collectOffSuggestionFields: () => [],
     generateDoc: () => ({ status: 'done', docUrl: 'https://doc', needsInputCount: 0 }),
     notifyJobFailed: () => {},
     // Defined in replay.js, which this sandbox does not load. Stubbed rather

@@ -102,10 +102,10 @@ function syncEnumsFileFromRepo_20260902() {
   },
   "dwelling_type": {
     "label": "Dwelling type",
-    "type": "enum",
+    "type": "string",
     "section": "Risk",
     "required": true,
-    "values": ["single family", "duplex", "multi family"]
+    "suggestions": ["single family", "duplex", "multi family"]
   },
   "dwelling_stories": {
     "label": "Dwelling stories",
@@ -121,17 +121,17 @@ function syncEnumsFileFromRepo_20260902() {
   },
   "foundation_type": {
     "label": "Foundation type",
-    "type": "enum",
+    "type": "string",
     "section": "Risk",
     "required": true,
-    "values": ["crawlspace", "basement", "slab"]
+    "suggestions": ["crawlspace", "basement", "slab"]
   },
   "siding_type": {
     "label": "Siding type",
-    "type": "enum",
+    "type": "string",
     "section": "Risk",
     "required": true,
-    "values": [
+    "suggestions": [
       "vinyl siding",
       "stucco siding",
       "a brick veneer",
@@ -165,10 +165,10 @@ function syncEnumsFileFromRepo_20260902() {
   },
   "occupancy_status": {
     "label": "Occupancy",
-    "type": "enum",
+    "type": "string",
     "section": "Risk",
     "required": true,
-    "values": ["the insured", "a tenant", "tenants"]
+    "suggestions": ["the insured", "a tenant", "tenants"]
   },
   "roof_status": {
     "label": "Roof status",
@@ -195,11 +195,11 @@ function syncEnumsFileFromRepo_20260902() {
   },
   "roof_covering_type": {
     "label": "Roof covering type (shingle)",
-    "type": "enum",
+    "type": "string",
     "section": "Roof",
     "required": true,
     "requiredWhen": { "field": "roof_status", "equals": "shingle" },
-    "values": [
+    "suggestions": [
       "20 year 3 tab shingles",
       "25 year 3 tab shingles",
       "30 year laminate shingles",
@@ -211,11 +211,11 @@ function syncEnumsFileFromRepo_20260902() {
   },
   "roof_condition": {
     "label": "Shingle condition",
-    "type": "enum",
+    "type": "string",
     "section": "Roof",
     "required": true,
     "requiredWhen": { "field": "roof_status", "equals": "shingle" },
-    "values": ["average", "below average"]
+    "suggestions": ["average", "below average"]
   },
   "roof_age_years": {
     "label": "Roof age (years)",
@@ -226,11 +226,11 @@ function syncEnumsFileFromRepo_20260902() {
   },
   "roof_pitch": {
     "label": "Roof pitch",
-    "type": "enum",
+    "type": "string",
     "section": "Roof",
     "required": true,
     "requiredWhen": { "field": "roof_status", "equals": "shingle" },
-    "values": [
+    "suggestions": [
       "1/12",
       "2/12",
       "3/12",

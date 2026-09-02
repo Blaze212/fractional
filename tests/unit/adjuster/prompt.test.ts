@@ -8,8 +8,8 @@ const { buildPrompt, formatFieldGuidance, formatLiveExtraction } = loadGs(
 const templateSpec = {
   roof_covering_type: {
     label: 'Roof covering type',
-    type: 'enum',
-    values: ['3-tab asphalt shingle', 'architectural shingle'],
+    type: 'string',
+    suggestions: ['3-tab asphalt shingle', 'architectural shingle'],
   },
   roof_pitch: { label: 'Roof pitch', type: 'string' },
 }
@@ -22,7 +22,7 @@ describe('buildPrompt', () => {
     expect(system).toMatch(/exact/i)
   })
 
-  it('lists every tag with its label and enum values', () => {
+  it('lists every tag with its label and suggestion values', () => {
     const { user } = buildPrompt({ transcript: 'anything', templateSpec })
 
     expect(user).toContain('roof_covering_type')
@@ -79,11 +79,37 @@ describe('buildPrompt', () => {
     expect(user).toContain(transcript)
   })
 
-  it('instructs enum fields to send extra descriptive detail to unplaced_notes', () => {
+  it('instructs suggestion fields to send extra descriptive detail to unplaced_notes', () => {
     const { system } = buildPrompt({ transcript: 'anything', templateSpec })
 
     expect(system).toMatch(/unplaced_notes/)
-    expect(system).toMatch(/closest matching allowed value/i)
+    expect(system).toMatch(/closest suggestion captures/i)
+  })
+
+  // Phase 5: enum is retired for a "suggestions" list (see the Architecture
+  // decision "suggestions, not enum") — variant keys stay a closed, exact-match
+  // set, but a field with `suggestions` accepts the adjuster's own words.
+  it('requires a variant value to match a listed key exactly, character for character', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/variant field/i)
+    expect(system).toMatch(/exactly one of the allowed values, character for character/i)
+    expect(system).toMatch(/internal keys the rendering step matches on, not prose/i)
+  })
+
+  it("tells the model a suggestions list is not closed and to use the adjuster's own words otherwise", () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/not a closed list, unlike a variant/i)
+    expect(system).toMatch(/use the adjuster's own words/i)
+  })
+
+  it("lists suggestion values distinctly from a variant's allowed values in the tag list", () => {
+    const { user } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(user).toContain(
+      'roof_covering_type (string) — Roof covering type — common values (suggestions, not a closed list): 3-tab asphalt shingle, architectural shingle',
+    )
   })
 
   it('instructs the empty-value convention instead of the impossible omit-the-field instruction', () => {
@@ -139,7 +165,12 @@ describe('buildPrompt', () => {
   })
 
   it('omits the field-specific guidance section when no relevant tags are present', () => {
-    const { user } = buildPrompt({ transcript: 'anything', templateSpec })
+    // roof_covering_type has its own guidance (see FIELD_GUIDANCE), so use a
+    // spec built entirely from unguided tags rather than the module-level
+    // templateSpec fixture above.
+    const spec = { some_unrelated_tag: { label: 'x', type: 'string' } }
+
+    const { user } = buildPrompt({ transcript: 'anything', templateSpec: spec })
 
     expect(user).not.toMatch(/field-specific guidance/i)
   })
@@ -215,6 +246,25 @@ describe('field-specific guidance', () => {
 
     expect(user).toContain('other_structures_narrative:')
     expect(user).toMatch(/same shape as interior_damage_narrative/i)
+  })
+
+  // Phase 5: each suggestions field now names the grammatical slot it fills,
+  // since a free-text value has to fit a fixed sentence.
+  it.each([
+    ['siding_type', 'The dwelling is wood framed with ___, and composition shingle roofing.'],
+    ['occupancy_status', 'The home is currently occupied by ___.'],
+    ['dwelling_type', 'The dwelling is a [stories], ___ structure.'],
+    ['foundation_type', 'It was built in [year] on a ___ foundation.'],
+    ['roof_covering_type', 'The shingles on the roof are a ___'],
+    ['roof_condition', 'The shingles are in ___ condition for their age.'],
+    ['roof_pitch', 'The slopes on the roof are pitched at ___.'],
+  ])('names the grammatical slot %s fills', (tag, fixedSentenceFragment) => {
+    const spec = { [tag]: { label: 'x', type: 'string', suggestions: ['a'] } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain(tag + ':')
+    expect(user).toContain(fixedSentenceFragment)
   })
 
   it('tells coverage_determination to choose unknown rather than guess between covered and excluded', () => {

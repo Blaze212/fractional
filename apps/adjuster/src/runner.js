@@ -326,6 +326,18 @@ function renderDraftFromExtraction(options) {
     })
   }
 
+  // Vocabulary signal for the seven suggestions fields (see validate.js's
+  // Architecture-decision comment): an off-list value still validates and
+  // renders, this only makes it visible for periodic review.
+  collectOffSuggestionFields(validated, tagSchema).forEach(function (entry) {
+    logEvent('extraction.off_suggestion', {
+      capture_id: job.capture_id,
+      tag: entry.tag,
+      value: entry.value,
+      source: entry.source,
+    })
+  })
+
   logEvent('runner.validated', {
     capture_id: job.capture_id,
     valid: Object.keys(validated).filter(function (t) {
