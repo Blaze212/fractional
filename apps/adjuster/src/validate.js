@@ -189,7 +189,9 @@ function applyClaimPropertyFallback(validated, claim, tagSchema) {
 
     // Sheet cells come back as numbers as readily as strings (a bare 1978 or
     // 2150), and every consumer downstream treats a field value as a string.
-    var value = String(claim[CLAIM_PROPERTY_FALLBACK_TAGS[tag]] || '').trim()
+    var raw = claim[CLAIM_PROPERTY_FALLBACK_TAGS[tag]]
+    if (raw === undefined || raw === null) return
+    var value = String(raw).trim()
     if (!value) return
 
     if (schema.type === 'enum' && (schema.values || []).indexOf(value) === -1) return
