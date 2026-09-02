@@ -9,6 +9,8 @@ const {
   collectRoomLabels,
   styleRoomLabels,
   countNeedsInput,
+  normalizeClause,
+  clauseNeedsReject,
 } = loadGs('apps/adjuster/src/docgen.js')
 
 const tagSchema = {
@@ -46,7 +48,7 @@ describe('resolveTagsForDoc', () => {
       roof_pitch: { valid: true, value: '6/12', confidence: 'high', source_span: 'six twelve' },
     }
 
-    const resolved = resolveTagsForDoc(validated, tagSchema)
+    const { resolved } = resolveTagsForDoc(validated, tagSchema)
 
     expect(resolved.roof_pitch).toMatchObject({ text: '6/12', needsReview: false })
   })
@@ -56,7 +58,7 @@ describe('resolveTagsForDoc', () => {
       roof_pitch: { valid: true, value: '6/12', confidence: 'medium', source_span: 'six twelve' },
     }
 
-    const resolved = resolveTagsForDoc(validated, tagSchema)
+    const { resolved } = resolveTagsForDoc(validated, tagSchema)
 
     expect(resolved.roof_pitch).toMatchObject({
       text: '6/12',
@@ -68,7 +70,7 @@ describe('resolveTagsForDoc', () => {
   it('renders a needs-input field as a placeholder with no heard hint when there is no source_span', () => {
     const validated = { roof_pitch: { valid: false, empty: false, label: 'Roof pitch' } }
 
-    const resolved = resolveTagsForDoc(validated, tagSchema)
+    const { resolved } = resolveTagsForDoc(validated, tagSchema)
 
     expect(resolved.roof_pitch.text).toBe('[NEEDS INPUT: Roof pitch]')
   })
@@ -83,7 +85,7 @@ describe('resolveTagsForDoc', () => {
       },
     }
 
-    const resolved = resolveTagsForDoc(validated, tagSchema)
+    const { resolved } = resolveTagsForDoc(validated, tagSchema)
 
     expect(resolved.mitigation_narrative.text).toBe(
       '[NEEDS INPUT: Mitigation details — heard: "mitigashun was performt by ay bee cee restoration"]',
@@ -100,7 +102,7 @@ describe('resolveTagsForDoc', () => {
       },
     }
 
-    const resolved = resolveTagsForDoc(validated, tagSchema)
+    const { resolved } = resolveTagsForDoc(validated, tagSchema)
 
     expect(resolved.mortgage_status).toMatchObject({
       isVariant: true,
@@ -120,7 +122,7 @@ describe('resolveTagsForDoc', () => {
       },
     }
 
-    const resolved = resolveTagsForDoc(validated, tagSchema)
+    const { resolved } = resolveTagsForDoc(validated, tagSchema)
     const body = { replaceText: (_pattern: string, value: string) => (body.result = value) } as {
       replaceText: (pattern: string, value: string) => void
       result?: string
@@ -137,7 +139,7 @@ describe('resolveTagsForDoc', () => {
       mortgage_status: { valid: true, value: 'unknown_status', confidence: 'medium' },
     }
 
-    const resolved = resolveTagsForDoc(validated, tagSchema)
+    const { resolved } = resolveTagsForDoc(validated, tagSchema)
 
     expect(resolved.mortgage_status).toMatchObject({
       text: '[NEEDS INPUT: Mortgage status]',
@@ -148,7 +150,7 @@ describe('resolveTagsForDoc', () => {
   it('renders a validly-omitted field as empty regardless of confidence', () => {
     const validated = { roof_pitch: { valid: true, empty: true, label: 'Roof pitch' } }
 
-    const resolved = resolveTagsForDoc(validated, tagSchema)
+    const { resolved } = resolveTagsForDoc(validated, tagSchema)
 
     expect(resolved.roof_pitch).toMatchObject({ text: '' })
   })
@@ -158,7 +160,7 @@ describe('resolveTagsForDoc', () => {
       coverage_supporting_detail: { valid: true, empty: true, label: 'Coverage supporting detail' },
     }
 
-    const resolved = resolveTagsForDoc(validated, tagSchema)
+    const { resolved } = resolveTagsForDoc(validated, tagSchema)
 
     expect(resolved.coverage_supporting_detail).toMatchObject({ text: '' })
   })
@@ -166,7 +168,7 @@ describe('resolveTagsForDoc', () => {
   it('flags a required variant branch whose canned text is blank instead of rendering an invisible gap', () => {
     const validated = { mitigation_status: { valid: true, value: 'none', confidence: 'high' } }
 
-    const resolved = resolveTagsForDoc(validated, tagSchema)
+    const { resolved } = resolveTagsForDoc(validated, tagSchema)
 
     expect(resolved.mitigation_status).toMatchObject({
       text: '[NEEDS INPUT: Mitigation status]',
@@ -187,7 +189,7 @@ describe('resolveTagsForDoc', () => {
       coverage_supporting_detail: { valid: true, value: 'blank', confidence: 'high' },
     }
 
-    const resolved = resolveTagsForDoc(validated, optionalTagSchema)
+    const { resolved } = resolveTagsForDoc(validated, optionalTagSchema)
 
     expect(resolved.coverage_supporting_detail.text).toBe('')
   })
@@ -551,5 +553,110 @@ describe('countNeedsInput', () => {
     }
 
     expect(countNeedsInput(validated, schema)).toBe(0)
+  })
+})
+
+describe('normalizeClause', () => {
+  it('lowercases the first character and strips the trailing period', () => {
+    expect(normalizeClause('A severe storm.', null)).toBe('a severe storm')
+  })
+
+  it('passes an already mid-sentence clause through unchanged', () => {
+    expect(normalizeClause('a wind driven rain event', null)).toBe('a wind driven rain event')
+  })
+
+  it('strips a restated leading stock prefix', () => {
+    expect(normalizeClause('Damage occurred due to a severe storm', null)).toBe('a severe storm')
+    expect(normalizeClause('Due to a severe storm', null)).toBe('a severe storm')
+    expect(normalizeClause('Resulting in damage to the kitchen ceiling', null)).toBe(
+      'the kitchen ceiling',
+    )
+    expect(normalizeClause('The damages were caused by a severe storm', null)).toBe(
+      'a severe storm',
+    )
+  })
+
+  it('keeps an all-caps acronym capitalized', () => {
+    expect(normalizeClause('HVAC failure in the attic', null)).toBe('HVAC failure in the attic')
+  })
+
+  it('keeps a proper noun from the matched claim row capitalized', () => {
+    const claim = { insured_last_name: 'Whitfield', carrier: 'State Farm' }
+
+    expect(normalizeClause('Whitfield reported the leak himself', claim)).toBe(
+      'Whitfield reported the leak himself',
+    )
+    expect(normalizeClause('State Farm was notified the same day', claim)).toBe(
+      'State Farm was notified the same day',
+    )
+  })
+
+  it('lowercases a capitalized word that is not a claim proper noun, even with a claim present', () => {
+    const claim = { insured_last_name: 'Whitfield' }
+
+    expect(normalizeClause('A severe storm.', claim)).toBe('a severe storm')
+  })
+})
+
+describe('clauseNeedsReject', () => {
+  it('accepts a clean mid-sentence clause', () => {
+    expect(clauseNeedsReject('a wind driven rain event')).toBe(false)
+  })
+
+  it('rejects a normalized value that still reads as two sentences', () => {
+    expect(clauseNeedsReject('a severe storm damaged the roof. Water then entered the attic')).toBe(
+      true,
+    )
+  })
+
+  it('rejects a trailing question or exclamation mark', () => {
+    expect(clauseNeedsReject('a severe storm, according to the insured!')).toBe(true)
+  })
+
+  it('rejects an explicit date, since [DATE_LOSS] already prints one', () => {
+    expect(clauseNeedsReject('a severe storm on 4/12/2026')).toBe(true)
+    expect(clauseNeedsReject('a severe storm in April')).toBe(true)
+  })
+})
+
+describe('resolveTagsForDoc: clause fields', () => {
+  const clauseSchema = {
+    origin_narrative: { label: 'Cause of loss', type: 'narrative', form: 'clause' },
+  }
+
+  it('renders a normalized clause plainly', () => {
+    const validated = {
+      origin_narrative: {
+        valid: true,
+        value: 'A severe storm.',
+        confidence: 'high',
+        source_span: 'a severe storm',
+      },
+    }
+
+    const { resolved, salvaged } = resolveTagsForDoc(validated, clauseSchema)
+
+    expect(resolved.origin_narrative).toMatchObject({ text: 'a severe storm' })
+    expect(salvaged).toEqual([])
+  })
+
+  it('rejects an unsalvageable clause, flags it, and salvages the raw value into unplaced notes', () => {
+    const validated = {
+      origin_narrative: {
+        valid: true,
+        value: 'A severe storm damaged the roof. Water then entered the attic.',
+        confidence: 'high',
+        source_span: 'a severe storm damaged the roof. water then entered the attic',
+      },
+    }
+
+    const { resolved, salvaged } = resolveTagsForDoc(validated, clauseSchema)
+
+    expect(resolved.origin_narrative.text).toBe(
+      '[NEEDS INPUT: Cause of loss — heard: "a severe storm damaged the roof. water then entered the attic"]',
+    )
+    expect(salvaged).toEqual([
+      'Cause of loss, as extracted: "A severe storm damaged the roof. Water then entered the attic."',
+    ])
   })
 })

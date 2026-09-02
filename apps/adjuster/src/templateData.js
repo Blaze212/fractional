@@ -8,16 +8,17 @@ function loadGlossary() {
   return JSON.parse(file.getBlob().getDataAsString())
 }
 
-// One-time migration (2026-09-01): pushes the repo's template/enums.json
-// content onto the live ENUMS_FILE_ID Drive file after adding the
-// coverage_determination "unknown" branch, the interior_status /
-// other_structures_status variants with their room-grouped narratives, and
-// loosening bedroom_count/bathroom_count off closed enums. Run once from the
-// editor, then delete this function — it is a point-in-time snapshot, not
-// something that stays in sync on its own. The JSON below is a verbatim copy
-// of template/enums.json; tests/unit/adjuster/templateData.test.ts fails if
-// the two ever drift.
-function syncEnumsFileFromRepo_20260901() {
+// One-time migration (2026-09-02): pushes the repo's template/enums.json
+// content onto the live ENUMS_FILE_ID Drive file after adding form: "clause"
+// to the four clause fields (spec 020 phase 3). Carries whichever of phases
+// 4, 5, and 6 land alongside it too — enums.json only has one sync function
+// at a time (see templateData.test.ts), so each phase that touches the
+// schema updates this same function's JSON body rather than adding another.
+// Run once from the editor, then delete this function — it is a
+// point-in-time snapshot, not something that stays in sync on its own. The
+// JSON below is a verbatim copy of template/enums.json;
+// tests/unit/adjuster/templateData.test.ts fails if the two ever drift.
+function syncEnumsFileFromRepo_20260902() {
   var json = `{
   "contacted_party_name": {
     "label": "Contacted party",
@@ -52,18 +53,21 @@ function syncEnumsFileFromRepo_20260901() {
   "origin_narrative": {
     "label": "Cause of loss",
     "type": "narrative",
+    "form": "clause",
     "section": "Origin",
     "required": true
   },
   "origin_damage_narrative": {
     "label": "Resulting damage (what was damaged)",
     "type": "narrative",
+    "form": "clause",
     "section": "Origin",
     "required": true
   },
   "coverage_cause_narrative": {
     "label": "Coverage cause clause (e.g. \\"storm related\\", \\"related to a burst plumbing line due to freezing\\")",
     "type": "narrative",
+    "form": "clause",
     "section": "Coverage",
     "required": true
   },
@@ -425,6 +429,7 @@ function syncEnumsFileFromRepo_20260901() {
   "subrogation_reason": {
     "label": "Subrogation reason clause (e.g. \\"weather related\\", \\"related to a 10 year old plumbing supply line that was not recently repaired\\")",
     "type": "narrative",
+    "form": "clause",
     "section": "Salvage & Subrogation",
     "required": true
   },
@@ -453,7 +458,8 @@ function syncEnumsFileFromRepo_20260901() {
     "required": true,
     "requiredWhen": { "field": "coinsurance_status", "equals": "applies" }
   }
-}`
+}
+`
   var file = DriveApp.getFileById(getConfig('ENUMS_FILE_ID'))
   file.setContent(json)
   logEvent('enums.synced_from_repo', { bytes: json.length, file_id: file.getId() })

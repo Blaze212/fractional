@@ -16,7 +16,12 @@ function generateDoc(job, claim, validated, tagSchema, unplacedNotes, options) {
 
   insertHeaderBlock(body, job, claim, needsInputCount)
 
-  var resolved = resolveTagsForDoc(validated, tagSchema)
+  var tagResolution = resolveTagsForDoc(validated, tagSchema, claim)
+  var resolved = tagResolution.resolved
+  // A rejected clause (see normalizeClause) is not discarded — it rides along
+  // here so the adjuster still gets what was actually said, under "Not placed",
+  // instead of losing it behind a bare [NEEDS INPUT] flag.
+  var allUnplacedNotes = (unplacedNotes || []).concat(tagResolution.salvaged)
 
   // Pass 1: variant tags expand to stored paragraph text, which may itself contain
   // other {{tags}} (e.g. coverage_determination's text references {{loss_cause}}).
@@ -32,7 +37,7 @@ function generateDoc(job, claim, validated, tagSchema, unplacedNotes, options) {
   tidyRendering(body)
   styleRoomLabels(body, collectRoomLabels(resolved))
   highlightMarkers(body)
-  appendUnplacedNotes(body, unplacedNotes)
+  appendUnplacedNotes(body, allUnplacedNotes)
   doc.saveAndClose()
 
   var leftoverTags = findLeftoverTags(DocumentApp.openById(copy.getId()).getBody().getText())
@@ -61,8 +66,9 @@ function generateDoc(job, claim, validated, tagSchema, unplacedNotes, options) {
 // verified transcript text behind it — just enough that the model wasn't sure
 // how to render it — so that snippet rides along on the placeholder as a
 // "heard" hint instead of leaving the adjuster to start from zero.
-function resolveTagsForDoc(validated, tagSchema) {
+function resolveTagsForDoc(validated, tagSchema, claim) {
   var resolved = {}
+  var salvaged = []
 
   Object.keys(tagSchema).forEach(function (tag) {
     var schema = tagSchema[tag]
@@ -94,6 +100,26 @@ function resolveTagsForDoc(validated, tagSchema) {
         needsReview: needsReview && !!option,
         label: schema.label,
       }
+    } else if (schema.form === 'clause') {
+      var normalized = normalizeClause(field.value, claim)
+      if (clauseNeedsReject(normalized)) {
+        var clauseHeard = field.source_span
+          ? ' — heard: "' + sanitizeSpan(field.source_span) + '"'
+          : ''
+        entry = {
+          isVariant: false,
+          text: '[NEEDS INPUT: ' + schema.label + clauseHeard + ']',
+        }
+        salvaged.push(schema.label + ', as extracted: "' + field.value + '"')
+      } else {
+        entry = {
+          isVariant: false,
+          text: normalized,
+          needsReview: needsReview,
+          sourceSpan: field.source_span,
+          label: schema.label,
+        }
+      }
     } else {
       entry = {
         isVariant: false,
@@ -121,7 +147,75 @@ function resolveTagsForDoc(validated, tagSchema) {
     resolved[tag] = entry
   })
 
-  return resolved
+  return { resolved: resolved, salvaged: salvaged }
+}
+
+// origin_narrative, origin_damage_narrative, coverage_cause_narrative, and
+// subrogation_reason are all mid-sentence clauses dropped into a fixed
+// template sentence (schema.form === 'clause', see enums.json) — the
+// contract was prompt-only before this and nothing checked it, so a
+// full-sentence answer printed as "Damage occurred due to A severe storm
+// damaged the roof. on [DATE_LOSS], ...". This normalizes the common case
+// (a stray leading capital, a stock restated prefix, a trailing period) and
+// leaves the reject decision — the case a clause genuinely can't be
+// salvaged into a fragment — to clauseNeedsReject.
+var CLAUSE_STOCK_PREFIX_PATTERN =
+  /^(damage occurred due to|due to|resulting in damage to|the damages? (?:was|were) caused by)\s*/i
+
+function normalizeClause(value, claim) {
+  var text = String(value || '').trim()
+  text = text.replace(/\.$/, '').trim()
+  text = text.replace(CLAUSE_STOCK_PREFIX_PATTERN, '').trim()
+
+  if (text && !clauseKeepsLeadingCapital(text, claim)) {
+    text = text.charAt(0).toLowerCase() + text.slice(1)
+  }
+
+  return text
+}
+
+// The first word stays capitalized when it's an acronym-shaped all-caps word
+// (e.g. "HVAC") or when it's a proper noun the matched claim row itself
+// names — the insured's last name, the carrier, a contact name — since
+// lowercasing a real name reads as a typo, not a style choice.
+function clauseKeepsLeadingCapital(text, claim) {
+  var firstWord = (text.match(/^\S+/) || [''])[0]
+  if (firstWord.length > 1 && /^[A-Z]+$/.test(firstWord)) return true
+  return claimNamesWord(claim, firstWord)
+}
+
+function claimNamesWord(claim, word) {
+  if (!claim || !word) return false
+  var target = word.replace(/[^A-Za-z]/g, '').toLowerCase()
+  if (!target) return false
+
+  return Object.keys(claim).some(function (key) {
+    var value = claim[key]
+    if (typeof value !== 'string') return false
+    return value.split(/\s+/).some(function (token) {
+      return token.replace(/[^A-Za-z]/g, '').toLowerCase() === target
+    })
+  })
+}
+
+// A clause that still contains a sentence boundary (the adjuster answered
+// with a full sentence, or two) or an explicit date (a merge field already
+// prints the date; a date inside the clause would print twice) can't be
+// safely dropped into the middle of the template's fixed sentence — reject it
+// rather than print something that reads as broken or duplicated.
+var CLAUSE_SENTENCE_BOUNDARY_PATTERN = /[.!?]\s+[A-Z]/
+var CLAUSE_TRAILING_PUNCTUATION_PATTERN = /[!?]$/
+var CLAUSE_DATE_PATTERN = /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/
+var CLAUSE_MONTH_PATTERN =
+  /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i
+
+function clauseNeedsReject(text) {
+  return (
+    CLAUSE_SENTENCE_BOUNDARY_PATTERN.test(text) ||
+    CLAUSE_TRAILING_PUNCTUATION_PATTERN.test(text) ||
+    CLAUSE_DATE_PATTERN.test(text) ||
+    CLAUSE_MONTH_PATTERN.test(text)
+  )
 }
 
 // Medium confidence gets a visible, plain-text marker rather than a sentinel

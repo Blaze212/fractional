@@ -32,18 +32,21 @@
   "origin_narrative": {
     "label": "Cause of loss",
     "type": "narrative",
+    "form": "clause",
     "section": "Origin",
     "required": true
   },
   "origin_damage_narrative": {
     "label": "Resulting damage (what was damaged)",
     "type": "narrative",
+    "form": "clause",
     "section": "Origin",
     "required": true
   },
   "coverage_cause_narrative": {
     "label": "Coverage cause clause (e.g. \"storm related\", \"related to a burst plumbing line due to freezing\")",
     "type": "narrative",
+    "form": "clause",
     "section": "Coverage",
     "required": true
   },
@@ -405,6 +408,7 @@
   "subrogation_reason": {
     "label": "Subrogation reason clause (e.g. \"weather related\", \"related to a 10 year old plumbing supply line that was not recently repaired\")",
     "type": "narrative",
+    "form": "clause",
     "section": "Salvage & Subrogation",
     "required": true
   },

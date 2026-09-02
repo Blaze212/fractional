@@ -175,6 +175,25 @@ describe('field-specific guidance', () => {
     expect(user).toMatch(/unplaced_notes/i)
   })
 
+  // Phase 3: a full-sentence answer to a clause field gets rejected at render
+  // time (see docgen.js's clauseNeedsReject) rather than printed as a broken
+  // sentence, so the prompt reinforces the one-clause contract for every
+  // field docgen normalizes as a clause.
+  it.each([
+    ['origin_narrative', 'Cause of loss'],
+    ['origin_damage_narrative', 'Resulting damage'],
+    ['coverage_cause_narrative', 'Coverage cause clause'],
+    ['subrogation_reason', 'Subrogation reason clause'],
+  ])('tells %s to stay mid-sentence: no leading capital, no trailing period', (tag, label) => {
+    const spec = { [tag]: { label, type: 'narrative' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain(tag + ':')
+    expect(user).toMatch(/no leading capital/i)
+    expect(user).toMatch(/no trailing period/i)
+  })
+
   it('tells interior_damage_narrative to write one block per room, not one paragraph', () => {
     const spec = {
       interior_damage_narrative: { label: 'Interior damage findings', type: 'narrative' },
