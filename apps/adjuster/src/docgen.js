@@ -83,7 +83,7 @@ function resolveTagsForDoc(validated, tagSchema, claim) {
     }
 
     if (field.empty) {
-      resolved[tag] = { isVariant: isVariant, text: '' }
+      resolved[tag] = { isVariant: isVariant, text: schema.emptyText || '' }
       return
     }
 

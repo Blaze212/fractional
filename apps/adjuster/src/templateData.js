@@ -13,13 +13,16 @@ function loadGlossary() {
 // and 6 — form: "clause" on the four clause fields, seven enum fields loosened
 // to suggestions, and mitigation_status's "none" branch gaining a canned
 // sentence in place of empty text (its MITIGATION: heading moved into
-// template.flattened.txt/the live Doc, see the acceptance criteria). enums.json
-// only carries one sync function at a time (see templateData.test.ts); this is
-// the one all three phases' schema edits landed in. Run once from the editor,
-// then delete this function — it is a point-in-time snapshot, not something
-// that stays in sync on its own. The JSON below is a verbatim copy of
-// template/enums.json; tests/unit/adjuster/templateData.test.ts fails if the
-// two ever drift.
+// template.flattened.txt/the live Doc, see the acceptance criteria) — plus
+// interior_status gaining an emptyText fallback so an untouched Interior
+// section renders "Inspection found no interior-related damages." instead of
+// a blank line under the heading. enums.json only carries one sync function
+// at a time (see templateData.test.ts); this is the one all three phases'
+// schema edits and the interior_status fix landed in. Run once from the
+// editor, then delete this function — it is a point-in-time snapshot, not
+// something that stays in sync on its own. The JSON below is a verbatim copy
+// of template/enums.json; tests/unit/adjuster/templateData.test.ts fails if
+// the two ever drift.
 function syncEnumsFileFromRepo_20260902() {
   var json = `{
   "contacted_party_name": {
@@ -331,6 +334,7 @@ function syncEnumsFileFromRepo_20260902() {
     "type": "variant",
     "section": "Interior",
     "required": true,
+    "emptyText": "Inspection found no interior-related damages.",
     "values": [
       {
         "key": "not_affected",
