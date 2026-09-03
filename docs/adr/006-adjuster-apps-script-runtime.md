@@ -57,7 +57,7 @@ Consequences accepted deliberately:
   Cloudflare Pages pipeline that ships `apps/portal`.
 - **All model calls still go through OpenRouter**, consistent with
   [010-openrouter-ai-client.md](../specs/010-openrouter-ai-client.md), via a
-  hand-rolled ~50-line `UrlFetchApp` wrapper (`apps/adjuster/src/llm/openrouter.js`)
+  hand-rolled ~50-line `UrlFetchApp` wrapper (`apps/adjuster/src/core/openrouter.js`)
   rather than an SDK, because no maintained OpenRouter or OpenAI/Anthropic
   client library targets the Apps Script runtime.
 

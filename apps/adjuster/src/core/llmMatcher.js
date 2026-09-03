@@ -13,16 +13,22 @@ var LLM_MATCH_SYSTEM_PROMPT = [
   'If no candidate is a plausible match, return an empty claim_id — never guess.',
 ].join(' ')
 
-function matchClaimWithLlm(callStartedAt, transcript, claims) {
+// config carries { apiKey, model, fallbacks } — assembled by the adapter from
+// Script Properties at the call site (see coreDeps.js's buildMatchConfig), not
+// read here. deps carries the injected HTTP client and logger.
+function matchClaimWithLlm(callStartedAt, transcript, claims, config, deps) {
   var pool = claims || []
   if (pool.length === 0) {
     return { claim_id: null, match_method: 'none', match_confidence: 'none', candidates: [] }
   }
 
+  var settings = config || {}
+
   var response = callOpenRouter({
-    apiKey: getConfig('OPENROUTER_API_KEY'),
-    model: getConfig('OPENROUTER_MODEL'),
-    fallbacks: getConfigList('OPENROUTER_FALLBACKS', []),
+    apiKey: settings.apiKey,
+    model: settings.model,
+    fallbacks: settings.fallbacks || [],
+    deps: deps,
     messages: [
       { role: 'system', content: LLM_MATCH_SYSTEM_PROMPT },
       { role: 'user', content: buildLlmMatchPrompt(callStartedAt, transcript, pool) },

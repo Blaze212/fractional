@@ -8,7 +8,7 @@ const {
   validateLiveFields,
   dropCoverageRestatement,
   collectOffSuggestionFields,
-} = loadGs('apps/adjuster/src/validate.js')
+} = loadGs('apps/adjuster/src/core/validate.js')
 
 const transcript =
   'The roof covering is architectural shingle and the pitch is six twelve. There is not a mortgage on the property.'

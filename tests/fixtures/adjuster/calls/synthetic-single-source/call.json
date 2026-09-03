@@ -1,0 +1,31 @@
+{
+  "captureId": "fixture-single-source",
+  "callStartedAt": "2026-06-21T17:40:00Z",
+  "sources": {
+    "dograh": "sources/dograh.txt"
+  },
+  "precedence": ["elevenlabs", "qwen", "dograh"],
+  "claim": {
+    "claim_id": "FIXTURE-0002",
+    "insured_last_name": "Vasquez-Lindqvist",
+    "address_line1": "2200 Pelham Row",
+    "city": "Fairhaven",
+    "carrier": "Northbridge Mutual",
+    "claim_number": "FX-4471999",
+    "appt_end": "2026-06-21T18:00:00Z"
+  },
+  "claims": [
+    {
+      "claim_id": "FIXTURE-0002",
+      "insured_last_name": "Vasquez-Lindqvist",
+      "address_line1": "2200 Pelham Row",
+      "city": "Fairhaven",
+      "carrier": "Northbridge Mutual",
+      "claim_number": "FX-4471999",
+      "appt_end": "2026-06-21T18:00:00Z"
+    }
+  ],
+  "liveFields": null,
+  "tagSchema": "tagSchema.json",
+  "glossary": "glossary.json"
+}

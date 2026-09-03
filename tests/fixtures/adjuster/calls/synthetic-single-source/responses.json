@@ -1,0 +1,16 @@
+{
+  "extraction": {
+    "model": "fixture-model",
+    "usage": {
+      "prompt_tokens": 1200,
+      "completion_tokens": 300
+    },
+    "choices": [
+      {
+        "message": {
+          "content": "{\"fields\": {\"contacted_party_name\": {\"value\": \"\", \"source_span\": \"\", \"confidence\": \"low\"}, \"present_at_inspection\": {\"value\": \"No one; exterior only inspection\", \"source_span\": \"Nobody was home so I did an exterior only inspection\", \"confidence\": \"high\"}, \"mortgage_status\": {\"value\": \"no_mortgage\", \"source_span\": \"There is no mortgage on the property\", \"confidence\": \"high\"}, \"origin_narrative\": {\"value\": \"a burst supply line under the kitchen sink from the freeze last week\", \"source_span\": \"a burst supply line under the kitchen sink from the freeze last week\", \"confidence\": \"high\"}, \"roof_covering_type\": {\"value\": \"standing seam metal\", \"source_span\": \"The roof is standing seam metal\", \"confidence\": \"high\"}, \"coverage_determination\": {\"value\": \"unknown\", \"source_span\": \"I could not determine coverage today\", \"confidence\": \"high\"}, \"coverage_cause_narrative\": {\"value\": \"related to a burst supply line due to freezing\", \"source_span\": \"a burst supply line under the kitchen sink from the freeze\", \"confidence\": \"medium\"}, \"coverage_supporting_detail\": {\"value\": \"The policy status was still being confirmed by the carrier.\", \"source_span\": \"the policy status was still being confirmed by the carrier\", \"confidence\": \"high\"}, \"year_built\": {\"value\": \"\", \"source_span\": \"\", \"confidence\": \"low\"}, \"bedroom_count\": {\"value\": \"\", \"source_span\": \"\", \"confidence\": \"low\"}}, \"unplaced_notes\": []}"
+        }
+      }
+    ]
+  }
+}
