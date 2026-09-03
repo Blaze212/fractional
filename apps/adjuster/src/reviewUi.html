@@ -429,6 +429,12 @@
   .split[hidden] {
     display: none;
   }
+  .split.full-width {
+    grid-template-columns: 1fr;
+  }
+  .split.full-width .rail {
+    display: none;
+  }
   @container app (max-width: 760px) {
     .split {
       grid-template-columns: 1fr;
@@ -478,6 +484,27 @@
   }
   .doc-body p:last-child {
     margin-bottom: 0;
+  }
+  .full-doc-heading {
+    font-size: 14.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--brand-dark);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+    margin: 30px 0 12px;
+  }
+  .full-doc-heading:first-child {
+    margin-top: 0;
+  }
+  :root[data-theme='dark'] .full-doc-heading {
+    color: var(--text);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .full-doc-heading {
+      color: var(--text);
+    }
   }
 
   .fld {
@@ -1024,6 +1051,9 @@
     function iconTranscript() {
       return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v4"/></svg>'
     }
+    function iconFullDoc() {
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>'
+    }
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, function (c) {
         return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
@@ -1180,15 +1210,20 @@
         })
         .join('')
 
-      var transcriptTab =
+      var specialTabs =
         '<span class="tab-divider" aria-hidden="true"></span>' +
+        '<button type="button" class="tab special" data-tab="__full" aria-selected="' +
+        (activeTab === '__full') +
+        '">' +
+        iconFullDoc() +
+        ' Full report</button>' +
         '<button type="button" class="tab special" data-tab="__transcript" aria-selected="' +
         (activeTab === '__transcript') +
         '">' +
         iconTranscript() +
         ' Call transcript</button>'
 
-      tabs.innerHTML = sectionTabs + transcriptTab
+      tabs.innerHTML = sectionTabs + specialTabs
 
       tabs.querySelectorAll('[data-tab]').forEach(function (btn) {
         btn.onclick = function () {
@@ -1205,11 +1240,18 @@
 
     function renderSection() {
       var isTranscript = activeTab === '__transcript'
+      var isFull = activeTab === '__full'
       document.getElementById('split').hidden = isTranscript
+      document.getElementById('split').classList.toggle('full-width', isFull)
       document.getElementById('transcriptWrap').hidden = !isTranscript
 
       if (isTranscript) {
         renderTranscript()
+        return
+      }
+
+      if (isFull) {
+        renderFullDocument()
         return
       }
 
@@ -1225,6 +1267,38 @@
 
       renderDocBody()
       renderRail()
+    }
+
+    // The whole report, every section in template order, in one scroll —
+    // for reading it the way it will actually print, not one section at a
+    // time. Fields stay the same editable chips as the per-section view
+    // (see wireEditableChips); there is no per-section rail here, since the
+    // point of this view is reading flow, not the accept/reject queue.
+    function renderFullDocument() {
+      document.getElementById('secTitle').textContent = 'Full report'
+      var pending = currentJob.items.filter(function (i) {
+        return i.status === 'pending'
+      }).length
+      document.getElementById('secSub').textContent =
+        pending === 0
+          ? 'All fields resolved.'
+          : pending + ' field(s) still need your review, across all sections.'
+
+      var html = sectionsWithTemplates()
+        .map(function (section) {
+          return (
+            '<h3 class="full-doc-heading">' +
+            escapeHtml(section) +
+            '</h3>' +
+            blocksToParagraphsHtml(currentJob.doc_blocks[section] || [])
+          )
+        })
+        .join('')
+
+      var container = document.getElementById('docBody')
+      container.innerHTML = html
+      wireEditableChips(container)
+      document.getElementById('rail').innerHTML = ''
     }
 
     // The text a field chip shows — also the baseline commitEdit() diffs a
@@ -1272,12 +1346,11 @@
       return escapeHtml(block.value)
     }
 
-    function renderDocBody() {
-      var blocks = currentJob.doc_blocks[activeTab] || []
-      // Section templates use \n\n for paragraph breaks and \n for line
-      // breaks within a paragraph (see reviewUi.js's SECTION_TEMPLATES,
-      // transcribed from template/template.flattened.txt).
-      var html = blocks
+    // Section templates use \n\n for paragraph breaks and \n for line breaks
+    // within a paragraph (see reviewUi.js's SECTION_TEMPLATES, transcribed
+    // from template/template.flattened.txt).
+    function blocksToParagraphsHtml(blocks) {
+      return blocks
         .map(blockToHtml)
         .join('')
         .split(/\n\n+/)
@@ -1285,25 +1358,29 @@
           return '<p>' + para.replace(/\n/g, '<br>') + '</p>'
         })
         .join('')
-      document.getElementById('docBody').innerHTML =
-        html || '<p class="transcript-empty">Nothing to show.</p>'
+    }
 
-      document
-        .getElementById('docBody')
-        .querySelectorAll('[data-tag]')
-        .forEach(function (el) {
-          el.addEventListener('blur', function () {
-            commitEdit(el)
-          })
-          el.addEventListener('keydown', function (e) {
-            // A chip is one field's worth of text, not a paragraph — Enter
-            // commits instead of inserting a line break.
-            if (e.key === 'Enter') {
-              e.preventDefault()
-              el.blur()
-            }
-          })
+    function wireEditableChips(container) {
+      container.querySelectorAll('[data-tag]').forEach(function (el) {
+        el.addEventListener('blur', function () {
+          commitEdit(el)
         })
+        el.addEventListener('keydown', function (e) {
+          // A chip is one field's worth of text, not a paragraph — Enter
+          // commits instead of inserting a line break.
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            el.blur()
+          }
+        })
+      })
+    }
+
+    function renderDocBody() {
+      var html = blocksToParagraphsHtml(currentJob.doc_blocks[activeTab] || [])
+      var container = document.getElementById('docBody')
+      container.innerHTML = html || '<p class="transcript-empty">Nothing to show.</p>'
+      wireEditableChips(container)
     }
 
     // Fires on every blur, including a click-in-click-out with no typing —
