@@ -7,9 +7,14 @@
   this implements.
 
   Scope trims from the mockup, deliberate (see PR notes):
-  - The doc pane is read-only (click-to-review, not type-to-edit). Spec 012's
-    own Edge Cases table defers resolved_value editing to a follow-up spec —
-    accept injects source_span verbatim, same as here.
+  - Each review-eligible field is its own directly-editable chip (click in,
+    type a correction, commits on blur as the accepted value — see
+    commitEdit), not the mockup's fully free-flowing contenteditable
+    paragraph. This keeps every edit anchored to one tag, which is what lets
+    it round-trip to reviewDecide() at all — free-flowing text has no way to
+    say which words belong to which field once a chip is deleted. This is
+    also what closes spec 012's "accept injects source_span verbatim... too
+    rigid" gap from its own Edge Cases table.
   - No audio playback (spec 012 non-goal; that's spec 013).
   - No desktop/tablet/mobile preview-frame chrome — that was mockup
     presentation scaffolding, not part of the product; the real page is
@@ -479,10 +484,15 @@
     border-radius: 5px;
     padding: 1px 4px;
     margin: 0 1px;
-    cursor: pointer;
+    cursor: text;
     border-bottom: 2px solid transparent;
     transition: background 0.15s;
     font-weight: 600;
+    outline: none;
+  }
+  .fld:focus {
+    box-shadow: 0 0 0 2px var(--brand-tint);
+    background: var(--surface);
   }
   .fld.pending[data-confidence='medium'] {
     background: var(--md-bg);
@@ -1217,29 +1227,26 @@
       renderRail()
     }
 
-    // rejected fields render as a plain [NEEDS INPUT: label] marker (matching
-    // what the real doc renders — see docgen.js's resolveTagsForDoc); pending/
-    // accepted fields are clickable chips into the rail, not free text (see
-    // this file's top-of-file scope note — no inline typing here).
+    // The text a field chip shows — also the baseline commitEdit() diffs a
+    // blur against, so "the adjuster didn't actually change anything" never
+    // fires a spurious save.
+    function fieldDisplayText(item) {
+      if (item.status === 'rejected') return '[NEEDS INPUT: ' + item.label + ']'
+      if (item.status === 'accepted') return item.resolved_value || item.source_span || item.label
+      return item.source_span || item.label.toLowerCase()
+    }
+
+    // Every review-eligible field renders as a directly editable chip —
+    // click in, type a correction, it commits on blur (see commitEdit) as
+    // the accepted value. This is what closes spec 012's own named gap
+    // ("accept injects source_span verbatim... too rigid if it needs
+    // editing") — accept still injects verbatim by default, but nothing
+    // stops the adjuster from fixing the wording first.
     function fieldChipHtml(tag) {
       var item = itemByTag(tag)
       if (!item) return '<span class="placeholder-tag">?' + escapeHtml(tag) + '</span>'
 
-      if (item.status === 'rejected') {
-        return (
-          '<span class="fld rejected" data-tag="' +
-          escapeHtml(tag) +
-          '">[NEEDS INPUT: ' +
-          escapeHtml(item.label) +
-          ']</span>'
-        )
-      }
-
       var cls = 'fld ' + item.status
-      var text =
-        item.status === 'accepted'
-          ? item.resolved_value || item.source_span || item.label
-          : item.source_span || item.label.toLowerCase()
       return (
         '<span class="' +
         cls +
@@ -1247,12 +1254,13 @@
         tierOf(item) +
         '" data-tag="' +
         escapeHtml(tag) +
-        '" tabindex="0" role="button" aria-label="' +
+        '" contenteditable="true" spellcheck="false" title="Click to edit" ' +
+        'role="textbox" aria-label="' +
         escapeHtml(item.label) +
         ', ' +
         item.status +
         '">' +
-        escapeHtml(text) +
+        escapeHtml(fieldDisplayText(item)) +
         '</span>'
       )
     }
@@ -1284,9 +1292,38 @@
         .getElementById('docBody')
         .querySelectorAll('[data-tag]')
         .forEach(function (el) {
-          el.onclick = function () {
-            goToCard(el.dataset.tag)
-          }
+          el.addEventListener('blur', function () {
+            commitEdit(el)
+          })
+          el.addEventListener('keydown', function (e) {
+            // A chip is one field's worth of text, not a paragraph — Enter
+            // commits instead of inserting a line break.
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              el.blur()
+            }
+          })
+        })
+    }
+
+    // Fires on every blur, including a click-in-click-out with no typing —
+    // diff against the baseline so that's a no-op, not a spurious save.
+    function commitEdit(el) {
+      var tag = el.dataset.tag
+      var item = itemByTag(tag)
+      if (!item) return
+
+      var edited = el.textContent.trim()
+      if (!edited || edited === fieldDisplayText(item)) return
+
+      call('reviewDecide', currentJob.job_id, tag, 'accepted', edited)
+        .then(function (job) {
+          currentJob = job
+          renderAll()
+        })
+        .catch(function (err) {
+          showToast('Error saving edit: ' + (err && err.message ? err.message : err))
+          renderSection()
         })
     }
 
