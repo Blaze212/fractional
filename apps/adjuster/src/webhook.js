@@ -40,9 +40,19 @@ function doPost(e) {
   }
 }
 
-// Reachability probe. Hitting the deployment URL in a browser or with curl proves
-// the URL is live and running current code without needing a call from Telnyx.
-function doGet() {
+// Reachability probe by default. Hitting the deployment URL in a browser or
+// with curl proves the URL is live and running current code without needing a
+// call from Telnyx. ?page=review instead serves the Review UI prototype (see
+// reviewUi.js / docs/specs/012) — a separate branch, never deployed alongside
+// this repo's normal CI, so this routing only ever runs against a manual
+// `clasp push` someone chose to do.
+function doGet(e) {
+  var params = (e && e.parameter) || {}
+
+  if (params.page === 'review') {
+    return renderReviewPage()
+  }
+
   var responseBody = 'adjuster-webhook ok'
   logEvent('webhook.ping', { response_body: responseBody })
   return ContentService.createTextOutput(responseBody)

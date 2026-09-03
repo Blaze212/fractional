@@ -1,0 +1,1743 @@
+<!--
+  Review UI prototype (option A — native Apps Script HtmlService).
+  Visual design and interaction model ported from the approved Claude Design
+  mockup ("Adjuster Review"). Data flow (sections/items/doc_blocks/notes/
+  transcript) comes from reviewUi.js's google.script.run server functions —
+  see docs/specs/012-adjuster-review-webapp.md for the field-review design
+  this implements.
+
+  Scope trims from the mockup, deliberate (see PR notes):
+  - Each review-eligible field is its own directly-editable chip (click in,
+    type a correction, commits on blur as the accepted value — see
+    commitEdit), not the mockup's fully free-flowing contenteditable
+    paragraph. This keeps every edit anchored to one tag, which is what lets
+    it round-trip to reviewDecide() at all — free-flowing text has no way to
+    say which words belong to which field once a chip is deleted. This is
+    also what closes spec 012's "accept injects source_span verbatim... too
+    rigid" gap from its own Edge Cases table.
+  - No audio playback (spec 012 non-goal; that's spec 013).
+  - No desktop/tablet/mobile preview-frame chrome — that was mockup
+    presentation scaffolding, not part of the product; the real page is
+    responsive via the same @container queries instead.
+-->
+<title>Adjuster Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,400;0,600;0,700;0,800;1,400&display=swap"
+  rel="stylesheet"
+/>
+
+<style>
+  :root {
+    --bg: #f5f5f5;
+    --surface: #ffffff;
+    --surface-2: #f7f9fc;
+    --border: #e2e2e2;
+    --text: #333333;
+    --text-muted: #666666;
+    --text-faint: #8a8f98;
+    --brand: #2ea3f2;
+    --brand-light: #43bfff;
+    --brand-dark: #273d5c;
+    --brand-tint: #eaf6ff;
+    --focus-ring: #2ea3f2;
+
+    --hi-fg: #1e7a42;
+    --hi-bg: #e6f4ea;
+    --hi-bd: #b7e0c3;
+    --md-fg: #8a5a00;
+    --md-bg: #fff3da;
+    --md-bd: #f0d28a;
+    --lo-fg: #b23a2e;
+    --lo-bg: #fceae8;
+    --lo-bd: #f0c4be;
+
+    --shadow-sm: 0 1px 2px rgba(39, 61, 92, 0.06);
+    --shadow-md: 0 6px 20px rgba(39, 61, 92, 0.12);
+    --shadow-lg: 0 16px 40px rgba(39, 61, 92, 0.18);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --bg: #12161d;
+      --surface: #1b212b;
+      --surface-2: #212834;
+      --border: #2c3543;
+      --text: #e7ebf1;
+      --text-muted: #9ba6b5;
+      --text-faint: #71798a;
+      --brand: #5fc7ff;
+      --brand-light: #7fd3ff;
+      --brand-dark: #bfe4ff;
+      --brand-tint: #16283a;
+      --focus-ring: #5fc7ff;
+      --hi-fg: #7fdda0;
+      --hi-bg: #16301f;
+      --hi-bd: #245c36;
+      --md-fg: #f3c568;
+      --md-bg: #3a2c0c;
+      --md-bd: #6b4f14;
+      --lo-fg: #f29b90;
+      --lo-bg: #3a1714;
+      --lo-bd: #6b2a22;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+      --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.4);
+      --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5);
+    }
+  }
+  :root[data-theme='dark'] {
+    --bg: #12161d;
+    --surface: #1b212b;
+    --surface-2: #212834;
+    --border: #2c3543;
+    --text: #e7ebf1;
+    --text-muted: #9ba6b5;
+    --text-faint: #71798a;
+    --brand: #5fc7ff;
+    --brand-light: #7fd3ff;
+    --brand-dark: #bfe4ff;
+    --brand-tint: #16283a;
+    --focus-ring: #5fc7ff;
+    --hi-fg: #7fdda0;
+    --hi-bg: #16301f;
+    --hi-bd: #245c36;
+    --md-fg: #f3c568;
+    --md-bg: #3a2c0c;
+    --md-bd: #6b4f14;
+    --lo-fg: #f29b90;
+    --lo-bg: #3a1714;
+    --lo-bd: #6b2a22;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 6px 20px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+  html,
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Open Sans', Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    min-height: 100%;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    text-wrap: balance;
+    margin: 0;
+  }
+  button {
+    font-family: inherit;
+  }
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border-radius: 8px;
+    padding: 9px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .btn svg {
+    width: 15px;
+    height: 15px;
+    flex: none;
+  }
+  .btn-primary {
+    background: var(--brand);
+    color: #fff;
+  }
+  .btn-primary:hover {
+    background: var(--brand-light);
+  }
+  .btn-outline {
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--text);
+  }
+  .btn-outline:hover {
+    border-color: var(--brand);
+    color: var(--brand);
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-muted);
+  }
+  .btn-ghost:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .btn-sm {
+    padding: 6px 10px;
+    font-size: 12.5px;
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* ---------- job list ---------- */
+  #jobListWrap {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 28px 20px 60px;
+  }
+  .list-header {
+    margin-bottom: 18px;
+  }
+  .list-header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--brand-dark);
+  }
+  :root[data-theme='dark'] .list-header h1 {
+    color: var(--text);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .list-header h1 {
+      color: var(--text);
+    }
+  }
+  .list-header p {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+  .job-row {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    transition: border-color 0.15s;
+  }
+  .job-row:hover {
+    border-color: var(--brand);
+  }
+  .job-row .job-id {
+    font-weight: 700;
+    font-size: 14.5px;
+  }
+  .job-row .job-meta {
+    color: var(--text-faint);
+    font-size: 12.5px;
+    margin-top: 3px;
+  }
+  .pill {
+    border-radius: 999px;
+    padding: 4px 11px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .pill.pending {
+    color: var(--md-fg);
+    background: var(--md-bg);
+  }
+  .pill.done {
+    color: var(--hi-fg);
+    background: var(--hi-bg);
+  }
+  #jobListEmpty {
+    color: var(--text-faint);
+    padding: 50px 0;
+    text-align: center;
+    font-size: 14px;
+  }
+  #jobListStatus {
+    color: var(--text-muted);
+    font-size: 13px;
+    padding: 4px 0 12px;
+  }
+
+  /* ---------- app shell ---------- */
+  #app {
+    display: none;
+  }
+  .app-wrap {
+    display: flex;
+    justify-content: center;
+    padding: 20px 16px 0;
+  }
+  .app-inner {
+    container-type: inline-size;
+    container-name: app;
+    width: 100%;
+    max-width: 1280px;
+    background: var(--bg);
+  }
+
+  .app-header {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px 12px 0 0;
+    padding: 18px 24px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .app-title {
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--brand-dark);
+  }
+  :root[data-theme='dark'] .app-title {
+    color: var(--text);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .app-title {
+      color: var(--text);
+    }
+  }
+  .app-meta {
+    margin-top: 4px;
+    font-size: 13px;
+    color: var(--text-muted);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+  }
+  .app-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  /* ---------- tabs ---------- */
+  .tabs {
+    display: flex;
+    gap: 6px;
+    padding: 12px 24px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    overflow-x: auto;
+    align-items: center;
+  }
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    padding: 7px 13px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .tab:hover {
+    border-color: var(--brand);
+    color: var(--brand);
+  }
+  .tab[aria-selected='true'] {
+    background: var(--brand-tint);
+    border-color: var(--brand);
+    color: var(--brand-dark);
+  }
+  :root[data-theme='dark'] .tab[aria-selected='true'] {
+    color: var(--text);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .tab[aria-selected='true'] {
+      color: var(--text);
+    }
+  }
+  .tab-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--md-fg);
+    flex: none;
+  }
+  .tab[data-done='true'] .tab-dot {
+    background: var(--hi-fg);
+  }
+  .tab-count {
+    font-variant-numeric: tabular-nums;
+    font-size: 11px;
+    background: rgba(0, 0, 0, 0.06);
+    border-radius: 999px;
+    padding: 1px 6px;
+  }
+  :root[data-theme='dark'] .tab-count {
+    background: rgba(255, 255, 255, 0.1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .tab-count {
+      background: rgba(255, 255, 255, 0.1);
+    }
+  }
+  .tab-divider {
+    width: 1px;
+    align-self: stretch;
+    background: var(--border);
+    margin: 0 6px;
+    flex: none;
+  }
+  .tab.special svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  /* ---------- split ---------- */
+  .split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 20px;
+    padding: 20px 24px 24px;
+    align-items: start;
+    background: var(--bg);
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .split[hidden] {
+    display: none;
+  }
+  .split.full-width {
+    grid-template-columns: 1fr;
+  }
+  .split.full-width .rail {
+    display: none;
+  }
+  @container app (max-width: 760px) {
+    .split {
+      grid-template-columns: 1fr;
+    }
+    .rail {
+      order: 2;
+    }
+    .doc-card {
+      order: 1;
+    }
+  }
+
+  .doc-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 26px 28px;
+    box-shadow: var(--shadow-sm);
+  }
+  .doc-card h2 {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--brand-dark);
+    margin-bottom: 4px;
+  }
+  :root[data-theme='dark'] .doc-card h2 {
+    color: var(--text);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .doc-card h2 {
+      color: var(--text);
+    }
+  }
+  .doc-sub {
+    font-size: 12.5px;
+    color: var(--text-faint);
+    margin-bottom: 16px;
+  }
+  .doc-body {
+    max-width: 62ch;
+    font-size: 15.5px;
+    line-height: 1.75;
+    color: var(--text);
+  }
+  .doc-body p {
+    margin: 0 0 14px;
+  }
+  .doc-body p:last-child {
+    margin-bottom: 0;
+  }
+  .full-doc-heading {
+    font-size: 14.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--brand-dark);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+    margin: 30px 0 12px;
+  }
+  .full-doc-heading:first-child {
+    margin-top: 0;
+  }
+  :root[data-theme='dark'] .full-doc-heading {
+    color: var(--text);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .full-doc-heading {
+      color: var(--text);
+    }
+  }
+
+  .fld {
+    border-radius: 5px;
+    padding: 1px 4px;
+    margin: 0 1px;
+    cursor: text;
+    border-bottom: 2px solid transparent;
+    transition: background 0.15s;
+    font-weight: 600;
+    outline: none;
+  }
+  .fld:focus {
+    box-shadow: 0 0 0 2px var(--brand-tint);
+    background: var(--surface);
+  }
+  .fld.pending[data-confidence='medium'] {
+    background: var(--md-bg);
+    border-color: var(--md-bd);
+    color: var(--md-fg);
+  }
+  .fld.pending[data-confidence='low'] {
+    background: var(--lo-bg);
+    border-color: var(--lo-bd);
+    color: var(--lo-fg);
+  }
+  .fld.accepted {
+    background: transparent;
+    border-bottom: 2px dotted var(--hi-fg);
+    color: var(--text);
+    font-weight: 400;
+  }
+  .fld.rejected {
+    background: var(--lo-bg);
+    border-bottom: 2px dashed var(--lo-bd);
+    color: var(--lo-fg);
+  }
+  .fld:hover {
+    filter: brightness(0.97);
+  }
+  :root[data-theme='dark'] .fld:hover {
+    filter: brightness(1.15);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .fld:hover {
+      filter: brightness(1.15);
+    }
+  }
+  .fld.flash {
+    animation: flash-pulse 900ms ease;
+  }
+  @keyframes flash-pulse {
+    0% {
+      box-shadow: 0 0 0 0 var(--brand);
+    }
+    30% {
+      box-shadow: 0 0 0 4px var(--brand);
+    }
+    100% {
+      box-shadow: 0 0 0 0 transparent;
+    }
+  }
+  .placeholder-tag {
+    font-size: 12px;
+    color: var(--text-faint);
+    background: var(--surface-2);
+    border-radius: 4px;
+    padding: 0 4px;
+  }
+
+  /* ---------- rail ---------- */
+  .rail {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .rail-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+  }
+  .rail-card > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 13px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 700;
+    font-size: 13.5px;
+    color: var(--text);
+  }
+  .rail-card > summary::-webkit-details-marker {
+    display: none;
+  }
+  .tier-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .tier-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+  }
+  .tier-dot.medium {
+    background: var(--md-fg);
+  }
+  .tier-dot.low {
+    background: var(--lo-fg);
+  }
+  .tier-badge {
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-faint);
+  }
+  .tier-body {
+    padding: 0 12px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .item-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    background: var(--surface-2);
+  }
+  .item-card.resolved {
+    opacity: 0.68;
+  }
+  .item-label {
+    font-weight: 700;
+    font-size: 13.5px;
+    margin-bottom: 5px;
+  }
+  .item-quote {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-style: italic;
+    line-height: 1.5;
+    margin-bottom: 7px;
+  }
+  .item-quote::before {
+    content: '\201C';
+  }
+  .item-quote::after {
+    content: '\201D';
+  }
+  .item-empty {
+    font-size: 12.5px;
+    color: var(--text-faint);
+    margin-bottom: 7px;
+  }
+  .item-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .icon-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: all 0.15s;
+    flex: none;
+  }
+  .icon-btn svg {
+    width: 16px;
+    height: 16px;
+  }
+  .icon-btn.accept[aria-pressed='true'] {
+    background: var(--hi-bg);
+    border-color: var(--hi-bd);
+    color: var(--hi-fg);
+  }
+  .icon-btn.reject[aria-pressed='true'] {
+    background: var(--lo-bg);
+    border-color: var(--lo-bd);
+    color: var(--lo-fg);
+  }
+  .icon-btn.accept:hover {
+    border-color: var(--hi-fg);
+    color: var(--hi-fg);
+  }
+  .icon-btn.reject:hover {
+    border-color: var(--lo-fg);
+    color: var(--lo-fg);
+  }
+  .item-status-txt {
+    font-size: 12px;
+    font-weight: 700;
+    margin-left: 2px;
+  }
+  .item-status-txt.accepted {
+    color: var(--hi-fg);
+  }
+  .item-status-txt.rejected {
+    color: var(--lo-fg);
+  }
+
+  .rail-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 2px 0;
+  }
+  .notes-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .notes-head h3 {
+    font-size: 13.5px;
+    font-weight: 700;
+  }
+  .notes-head span {
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+  .note-card {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+    background: var(--surface-2);
+    margin-bottom: 10px;
+  }
+  .note-card:last-child {
+    margin-bottom: 0;
+  }
+  .note-text {
+    font-size: 13px;
+    line-height: 1.55;
+    margin-bottom: 9px;
+  }
+
+  /* ---------- transcript pane ---------- */
+  .transcript-wrap {
+    padding: 20px 24px 24px;
+    display: flex;
+    justify-content: center;
+    background: var(--bg);
+    border-left: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .transcript-wrap[hidden] {
+    display: none;
+  }
+  .transcript-pane {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 26px 30px;
+    box-shadow: var(--shadow-sm);
+    max-width: 68ch;
+    width: 100%;
+  }
+  .transcript-pane h2 {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--brand-dark);
+    margin-bottom: 4px;
+  }
+  :root[data-theme='dark'] .transcript-pane h2 {
+    color: var(--text);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .transcript-pane h2 {
+      color: var(--text);
+    }
+  }
+  .transcript-pane p.sub {
+    font-size: 12.5px;
+    color: var(--text-faint);
+    margin: 2px 0 18px;
+  }
+  .transcript-text {
+    font-size: 14.5px;
+    line-height: 1.85;
+    color: var(--text);
+    white-space: pre-wrap;
+  }
+  .tx-hl {
+    border-radius: 5px;
+    padding: 1px 4px;
+    cursor: pointer;
+    border-bottom: 2px solid;
+    transition: filter 0.15s;
+  }
+  .tx-hl:hover {
+    filter: brightness(0.97);
+  }
+  :root[data-theme='dark'] .tx-hl:hover {
+    filter: brightness(1.15);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .tx-hl:hover {
+      filter: brightness(1.15);
+    }
+  }
+  .tx-hl[data-confidence='medium'] {
+    background: var(--md-bg);
+    border-color: var(--md-bd);
+    color: var(--md-fg);
+  }
+  .tx-hl[data-confidence='low'] {
+    background: var(--lo-bg);
+    border-color: var(--lo-bd);
+    color: var(--lo-fg);
+  }
+  .transcript-empty {
+    color: var(--text-faint);
+    font-size: 13px;
+    font-style: italic;
+  }
+
+  /* ---------- finalize bar ---------- */
+  .finalize-bar {
+    position: sticky;
+    bottom: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0 0 12px 12px;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    box-shadow: 0 -6px 16px rgba(0, 0, 0, 0.05);
+  }
+  .progress-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 200px;
+  }
+  .progress-track {
+    flex: 1;
+    max-width: 260px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--border);
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--brand);
+    border-radius: 999px;
+    transition: width 0.25s ease;
+  }
+  .progress-txt {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--text-muted);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- toast ---------- */
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 28px;
+    transform: translate(-50%, 12px);
+    background: var(--brand-dark);
+    color: #eaf3ff;
+    padding: 11px 18px;
+    border-radius: 10px;
+    font-size: 13.5px;
+    font-weight: 600;
+    box-shadow: var(--shadow-lg);
+    z-index: 90;
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      opacity 0.18s,
+      transform 0.18s;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    max-width: 90vw;
+  }
+  .toast.show {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  .toast svg {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    color: var(--hi-fg);
+  }
+
+  /* ---------- confirm modal ---------- */
+  .modal-scrim {
+    position: fixed;
+    inset: 0;
+    background: rgba(10, 14, 20, 0.45);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 80;
+    padding: 20px;
+  }
+  .modal-scrim.open {
+    display: flex;
+  }
+  .modal {
+    background: var(--surface);
+    border-radius: 14px;
+    max-width: 420px;
+    width: 100%;
+    padding: 22px;
+    box-shadow: var(--shadow-lg);
+  }
+  .modal h3 {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  .modal p {
+    font-size: 13.5px;
+    color: var(--text-muted);
+    line-height: 1.55;
+    margin: 0 0 14px;
+  }
+  .modal ul {
+    margin: 0 0 16px;
+    padding-left: 18px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+</style>
+
+<div id="jobListWrap">
+  <div class="list-header">
+    <h1>Adjuster Review</h1>
+    <p>Jobs with fields flagged for human review before the report is finalized.</p>
+  </div>
+  <div id="jobListStatus"></div>
+  <div id="jobRows"></div>
+  <div id="jobListEmpty" style="display: none">No jobs currently need review.</div>
+</div>
+
+<div class="app-wrap" id="app">
+  <div class="app-inner">
+    <header class="app-header">
+      <div>
+        <div class="app-title" id="appTitle"></div>
+        <div class="app-meta" id="appMeta"></div>
+      </div>
+      <div class="app-actions">
+        <button class="btn btn-outline" id="copyBtn">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
+          >
+            <rect x="9" y="9" width="12" height="12" rx="2" />
+            <path d="M5 15V5a2 2 0 0 1 2-2h10" />
+          </svg>
+          Copy document text
+        </button>
+        <button class="btn btn-ghost" id="backBtn">&larr; All jobs</button>
+      </div>
+    </header>
+
+    <nav class="tabs" id="tabs" aria-label="Sections and views"></nav>
+
+    <div class="split" id="split">
+      <div class="doc-card">
+        <h2 id="secTitle"></h2>
+        <div class="doc-sub" id="secSub"></div>
+        <div class="doc-body" id="docBody"></div>
+      </div>
+      <aside class="rail" id="rail"></aside>
+    </div>
+
+    <div class="transcript-wrap" id="transcriptWrap" hidden>
+      <div class="transcript-pane">
+        <h2>Call transcript</h2>
+        <p class="sub">Highlighted moments are what the review items above were drafted from.</p>
+        <div class="transcript-text" id="transcriptBody"></div>
+      </div>
+    </div>
+
+    <div class="finalize-bar">
+      <div class="progress-wrap">
+        <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+        <span class="progress-txt" id="progressTxt"></span>
+      </div>
+      <button class="btn btn-primary" id="finalizeBtn">Finalize report</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-scrim" id="modalScrim">
+  <div class="modal">
+    <h3 id="modalHead">Finalize this report?</h3>
+    <p id="modalBody"></p>
+    <ul id="modalList"></ul>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="modalCancel">Keep reviewing</button>
+      <button class="btn btn-primary" id="modalConfirm">Finalize anyway</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+  ;(function () {
+    'use strict'
+
+    var currentJob = null
+    var activeTab = null
+
+    function iconCheck() {
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
+    }
+    function iconX() {
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>'
+    }
+    function iconTranscript() {
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v4"/></svg>'
+    }
+    function iconFullDoc() {
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>'
+    }
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+      })
+    }
+
+    // ---- server call helper: google.script.run wrapped as a promise ----
+    function call(method) {
+      var args = Array.prototype.slice.call(arguments, 1)
+      return new Promise(function (resolve, reject) {
+        google.script.run
+          .withSuccessHandler(resolve)
+          .withFailureHandler(reject)
+          [method].apply(null, args)
+      })
+    }
+
+    function setListStatus(text) {
+      document.getElementById('jobListStatus').textContent = text || ''
+    }
+
+    function showList() {
+      currentJob = null
+      activeTab = null
+      document.getElementById('jobListWrap').style.display = 'block'
+      document.getElementById('app').style.display = 'none'
+      loadList()
+    }
+
+    function loadList() {
+      setListStatus('Loading jobs...')
+      call('reviewListJobs')
+        .then(renderJobList)
+        .catch(function (err) {
+          setListStatus('Error: ' + (err && err.message ? err.message : err))
+        })
+    }
+
+    function renderJobList(jobs) {
+      setListStatus('')
+      var rows = document.getElementById('jobRows')
+      var empty = document.getElementById('jobListEmpty')
+      rows.innerHTML = ''
+
+      if (!jobs || jobs.length === 0) {
+        empty.style.display = 'block'
+        return
+      }
+      empty.style.display = 'none'
+
+      jobs.forEach(function (job) {
+        var row = document.createElement('div')
+        row.className = 'job-row'
+        row.onclick = function () {
+          openJob(job.job_id)
+        }
+
+        var left = document.createElement('div')
+        var id = document.createElement('div')
+        id.className = 'job-id'
+        id.textContent = job.job_id + (job.claim_id ? ' — claim ' + job.claim_id : '')
+        var meta = document.createElement('div')
+        meta.className = 'job-meta'
+        meta.textContent = job.created_at ? 'Captured ' + job.created_at : ''
+        left.appendChild(id)
+        left.appendChild(meta)
+
+        var pill = document.createElement('span')
+        var done = job.pending_count === 0
+        pill.className = 'pill ' + (done ? 'done' : 'pending')
+        pill.textContent = done
+          ? 'all ' + job.item_count + ' decided'
+          : job.pending_count + ' of ' + job.item_count + ' pending'
+
+        row.appendChild(left)
+        row.appendChild(pill)
+        rows.appendChild(row)
+      })
+    }
+
+    function openJob(jobId) {
+      setListStatus('Loading review items...')
+      call('reviewGetJob', jobId)
+        .then(function (job) {
+          setListStatus('')
+          currentJob = job
+          activeTab = sectionsWithTemplates()[0]
+          document.getElementById('jobListWrap').style.display = 'none'
+          document.getElementById('app').style.display = 'block'
+          document.getElementById('appTitle').textContent = job.job_id
+          document.getElementById('appMeta').innerHTML =
+            '<span>' +
+            (job.claim_id ? 'Claim ' + escapeHtml(job.claim_id) : 'No claim matched') +
+            '</span>'
+          renderAll()
+        })
+        .catch(function (err) {
+          setListStatus('Error: ' + (err && err.message ? err.message : err))
+        })
+    }
+
+    function sectionsWithTemplates() {
+      return Object.keys(currentJob.doc_blocks)
+    }
+    function itemsFor(section) {
+      return currentJob.items.filter(function (i) {
+        return i.section === section
+      })
+    }
+    function itemByTag(tag) {
+      return currentJob.items.filter(function (i) {
+        return i.tag === tag
+      })[0]
+    }
+    function tierOf(item) {
+      return item.confidence === 'medium' ? 'medium' : 'low'
+    }
+    function sectionDone(section) {
+      var items = itemsFor(section)
+      return (
+        items.length > 0 &&
+        items.every(function (i) {
+          return i.status !== 'pending'
+        })
+      )
+    }
+
+    function renderAll() {
+      renderTabs()
+      renderSection()
+      renderProgress()
+    }
+
+    function renderTabs() {
+      var tabs = document.getElementById('tabs')
+      var sectionTabs = sectionsWithTemplates()
+        .map(function (section) {
+          var items = itemsFor(section)
+          var pending = items.filter(function (i) {
+            return i.status === 'pending'
+          }).length
+          return (
+            '<button type="button" class="tab" data-tab="' +
+            escapeHtml(section) +
+            '" data-done="' +
+            sectionDone(section) +
+            '" aria-selected="' +
+            (activeTab === section) +
+            '"><span class="tab-dot"></span>' +
+            escapeHtml(section) +
+            (pending ? '<span class="tab-count">' + pending + '</span>' : '') +
+            '</button>'
+          )
+        })
+        .join('')
+
+      var specialTabs =
+        '<span class="tab-divider" aria-hidden="true"></span>' +
+        '<button type="button" class="tab special" data-tab="__full" aria-selected="' +
+        (activeTab === '__full') +
+        '">' +
+        iconFullDoc() +
+        ' Full report</button>' +
+        '<button type="button" class="tab special" data-tab="__transcript" aria-selected="' +
+        (activeTab === '__transcript') +
+        '">' +
+        iconTranscript() +
+        ' Call transcript</button>'
+
+      tabs.innerHTML = sectionTabs + specialTabs
+
+      tabs.querySelectorAll('[data-tab]').forEach(function (btn) {
+        btn.onclick = function () {
+          switchTab(btn.dataset.tab)
+        }
+      })
+    }
+
+    function switchTab(tab) {
+      activeTab = tab
+      renderTabs()
+      renderSection()
+    }
+
+    function renderSection() {
+      var isTranscript = activeTab === '__transcript'
+      var isFull = activeTab === '__full'
+      document.getElementById('split').hidden = isTranscript
+      document.getElementById('split').classList.toggle('full-width', isFull)
+      document.getElementById('transcriptWrap').hidden = !isTranscript
+
+      if (isTranscript) {
+        renderTranscript()
+        return
+      }
+
+      if (isFull) {
+        renderFullDocument()
+        return
+      }
+
+      document.getElementById('secTitle').textContent = activeTab
+      var pending = itemsFor(activeTab).filter(function (i) {
+        return i.status === 'pending'
+      }).length
+      document.getElementById('secSub').textContent = sectionDone(activeTab)
+        ? 'All fields resolved for this section.'
+        : itemsFor(activeTab).length === 0
+          ? 'Nothing in this section needed review.'
+          : pending + ' field(s) still need your review.'
+
+      renderDocBody()
+      renderRail()
+    }
+
+    // The whole report, every section in template order, in one scroll —
+    // for reading it the way it will actually print, not one section at a
+    // time. Fields stay the same editable chips as the per-section view
+    // (see wireEditableChips); there is no per-section rail here, since the
+    // point of this view is reading flow, not the accept/reject queue.
+    function renderFullDocument() {
+      document.getElementById('secTitle').textContent = 'Full report'
+      var pending = currentJob.items.filter(function (i) {
+        return i.status === 'pending'
+      }).length
+      document.getElementById('secSub').textContent =
+        pending === 0
+          ? 'All fields resolved.'
+          : pending + ' field(s) still need your review, across all sections.'
+
+      var html = sectionsWithTemplates()
+        .map(function (section) {
+          return (
+            '<h3 class="full-doc-heading">' +
+            escapeHtml(section) +
+            '</h3>' +
+            blocksToParagraphsHtml(currentJob.doc_blocks[section] || [])
+          )
+        })
+        .join('')
+
+      var container = document.getElementById('docBody')
+      container.innerHTML = html
+      wireEditableChips(container)
+      document.getElementById('rail').innerHTML = ''
+    }
+
+    // The text a field chip shows — also the baseline commitEdit() diffs a
+    // blur against, so "the adjuster didn't actually change anything" never
+    // fires a spurious save.
+    function fieldDisplayText(item) {
+      if (item.status === 'rejected') return '[NEEDS INPUT: ' + item.label + ']'
+      if (item.status === 'accepted') return item.resolved_value || item.source_span || item.label
+      return item.source_span || item.label.toLowerCase()
+    }
+
+    // Every review-eligible field renders as a directly editable chip —
+    // click in, type a correction, it commits on blur (see commitEdit) as
+    // the accepted value. This is what closes spec 012's own named gap
+    // ("accept injects source_span verbatim... too rigid if it needs
+    // editing") — accept still injects verbatim by default, but nothing
+    // stops the adjuster from fixing the wording first.
+    function fieldChipHtml(tag) {
+      var item = itemByTag(tag)
+      if (!item) return '<span class="placeholder-tag">?' + escapeHtml(tag) + '</span>'
+
+      var cls = 'fld ' + item.status
+      return (
+        '<span class="' +
+        cls +
+        '" data-confidence="' +
+        tierOf(item) +
+        '" data-tag="' +
+        escapeHtml(tag) +
+        '" contenteditable="true" spellcheck="false" title="Click to edit" ' +
+        'role="textbox" aria-label="' +
+        escapeHtml(item.label) +
+        ', ' +
+        item.status +
+        '">' +
+        escapeHtml(fieldDisplayText(item)) +
+        '</span>'
+      )
+    }
+
+    function blockToHtml(block) {
+      if (block.type === 'tag') return fieldChipHtml(block.tag)
+      if (block.type === 'placeholder')
+        return '<span class="placeholder-tag">[' + escapeHtml(block.name) + ']</span>'
+      return escapeHtml(block.value)
+    }
+
+    // Section templates use \n\n for paragraph breaks and \n for line breaks
+    // within a paragraph (see reviewUi.js's SECTION_TEMPLATES, transcribed
+    // from template/template.flattened.txt).
+    function blocksToParagraphsHtml(blocks) {
+      return blocks
+        .map(blockToHtml)
+        .join('')
+        .split(/\n\n+/)
+        .map(function (para) {
+          return '<p>' + para.replace(/\n/g, '<br>') + '</p>'
+        })
+        .join('')
+    }
+
+    function wireEditableChips(container) {
+      container.querySelectorAll('[data-tag]').forEach(function (el) {
+        el.addEventListener('blur', function () {
+          commitEdit(el)
+        })
+        el.addEventListener('keydown', function (e) {
+          // A chip is one field's worth of text, not a paragraph — Enter
+          // commits instead of inserting a line break.
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            el.blur()
+          }
+        })
+      })
+    }
+
+    function renderDocBody() {
+      var html = blocksToParagraphsHtml(currentJob.doc_blocks[activeTab] || [])
+      var container = document.getElementById('docBody')
+      container.innerHTML = html || '<p class="transcript-empty">Nothing to show.</p>'
+      wireEditableChips(container)
+    }
+
+    // Fires on every blur, including a click-in-click-out with no typing —
+    // diff against the baseline so that's a no-op, not a spurious save.
+    function commitEdit(el) {
+      var tag = el.dataset.tag
+      var item = itemByTag(tag)
+      if (!item) return
+
+      var edited = el.textContent.trim()
+      if (!edited || edited === fieldDisplayText(item)) return
+
+      call('reviewDecide', currentJob.job_id, tag, 'accepted', edited)
+        .then(function (job) {
+          currentJob = job
+          renderAll()
+        })
+        .catch(function (err) {
+          showToast('Error saving edit: ' + (err && err.message ? err.message : err))
+          renderSection()
+        })
+    }
+
+    function itemCardHtml(item) {
+      var resolvedCls = item.status !== 'pending' ? ' resolved' : ''
+      var body = item.source_span
+        ? '<div class="item-quote">' + escapeHtml(item.source_span) + '</div>'
+        : '<div class="item-empty">No matching moment found in the call — this field wasn’t mentioned.</div>'
+      var statusTxt = ''
+      if (item.status === 'accepted')
+        statusTxt = '<span class="item-status-txt accepted">Accepted</span>'
+      if (item.status === 'rejected')
+        statusTxt = '<span class="item-status-txt rejected">Left for manual entry</span>'
+
+      return (
+        '<div class="item-card' +
+        resolvedCls +
+        '" data-item="' +
+        escapeHtml(item.tag) +
+        '">' +
+        '<div class="item-label">' +
+        escapeHtml(item.label) +
+        '</div>' +
+        body +
+        '<div class="item-actions">' +
+        '<button class="icon-btn accept" data-act="accept" data-tag="' +
+        escapeHtml(item.tag) +
+        '" aria-pressed="' +
+        (item.status === 'accepted') +
+        '" aria-label="Accept ' +
+        escapeHtml(item.label) +
+        '"' +
+        (item.source_span ? '' : ' disabled title="Nothing heard to accept"') +
+        '>' +
+        iconCheck() +
+        '</button>' +
+        '<button class="icon-btn reject" data-act="reject" data-tag="' +
+        escapeHtml(item.tag) +
+        '" aria-pressed="' +
+        (item.status === 'rejected') +
+        '" aria-label="Reject ' +
+        escapeHtml(item.label) +
+        '">' +
+        iconX() +
+        '</button>' +
+        statusTxt +
+        '</div></div>'
+      )
+    }
+
+    function noteCardHtml(note, index) {
+      return (
+        '<div class="note-card">' +
+        '<div class="note-text">' +
+        escapeHtml(note) +
+        '</div>' +
+        '<button class="btn btn-outline btn-sm" data-copy-note="' +
+        index +
+        '">Copy note text</button>' +
+        '</div>'
+      )
+    }
+
+    function renderRail() {
+      var rail = document.getElementById('rail')
+      var items = itemsFor(activeTab)
+      var groups = {
+        medium: items.filter(function (i) {
+          return tierOf(i) === 'medium'
+        }),
+        low: items.filter(function (i) {
+          return tierOf(i) === 'low'
+        }),
+      }
+
+      var order = [
+        { key: 'medium', title: 'Medium confidence', cls: 'medium' },
+        { key: 'low', title: 'Needs input', cls: 'low' },
+      ]
+      var html = order
+        .map(function (g) {
+          var groupItems = groups[g.key]
+          if (!groupItems.length) return ''
+          var doneCount = groupItems.filter(function (i) {
+            return i.status !== 'pending'
+          }).length
+          return (
+            '<details class="rail-card" open>' +
+            '<summary><span class="tier-label"><span class="tier-dot ' +
+            g.cls +
+            '"></span>' +
+            g.title +
+            '</span><span class="tier-badge">' +
+            doneCount +
+            '/' +
+            groupItems.length +
+            '</span></summary>' +
+            '<div class="tier-body">' +
+            groupItems.map(itemCardHtml).join('') +
+            '</div></details>'
+          )
+        })
+        .join('')
+
+      var notesHtml = currentJob.notes.length
+        ? '<div class="rail-divider"></div><div><div class="notes-head"><h3>Notes from the call</h3><span>' +
+          currentJob.notes.length +
+          '</span></div>' +
+          currentJob.notes.map(noteCardHtml).join('') +
+          '</div>'
+        : ''
+
+      rail.innerHTML =
+        html + notesHtml || '<div class="item-empty">Nothing in this section needed review.</div>'
+
+      rail.querySelectorAll('[data-act]').forEach(function (btn) {
+        btn.onclick = function () {
+          var tag = btn.dataset.tag
+          var next = btn.dataset.act === 'accept' ? 'accepted' : 'rejected'
+          decide(tag, next)
+        }
+      })
+      rail.querySelectorAll('[data-copy-note]').forEach(function (btn) {
+        btn.onclick = function () {
+          copyText(currentJob.notes[Number(btn.dataset.copyNote)], 'Note text copied to clipboard')
+        }
+      })
+    }
+
+    function renderTranscript() {
+      var body = document.getElementById('transcriptBody')
+      var text = currentJob.transcript || ''
+      if (!text) {
+        body.innerHTML = '<div class="transcript-empty">No transcript available for this job.</div>'
+        return
+      }
+
+      var matches = []
+      currentJob.items.forEach(function (item) {
+        if (!item.source_span) return
+        var index = text.indexOf(item.source_span)
+        if (index === -1) return
+        matches.push({ start: index, end: index + item.source_span.length, item: item })
+      })
+      matches.sort(function (a, b) {
+        return a.start - b.start
+      })
+
+      var html = ''
+      var cursor = 0
+      matches.forEach(function (m) {
+        if (m.start < cursor) return // overlapping span — skip, keep the earlier one
+        html += escapeHtml(text.slice(cursor, m.start))
+        html +=
+          '<span class="tx-hl" data-confidence="' +
+          tierOf(m.item) +
+          '" data-tag="' +
+          escapeHtml(m.item.tag) +
+          '" role="button" tabindex="0" aria-label="Jump to ' +
+          escapeHtml(m.item.label) +
+          '">' +
+          escapeHtml(text.slice(m.start, m.end)) +
+          '</span>'
+        cursor = m.end
+      })
+      html += escapeHtml(text.slice(cursor))
+
+      body.innerHTML = html
+      body.querySelectorAll('[data-tag]').forEach(function (el) {
+        el.onclick = function () {
+          goToCard(el.dataset.tag)
+        }
+      })
+    }
+
+    function decide(tag, status) {
+      var item = itemByTag(tag)
+      var nextStatus = item.status === status ? 'pending' : status
+      var resolvedValue = nextStatus === 'accepted' ? item.source_span : ''
+
+      call('reviewDecide', currentJob.job_id, tag, nextStatus, resolvedValue)
+        .then(function (job) {
+          currentJob = job
+          renderAll()
+          flashField(tag)
+        })
+        .catch(function (err) {
+          showToast('Error: ' + (err && err.message ? err.message : err))
+        })
+    }
+
+    function flashField(tag) {
+      document.querySelectorAll('[data-tag="' + tag + '"]').forEach(function (el) {
+        el.classList.remove('flash')
+        void el.offsetWidth
+        el.classList.add('flash')
+      })
+    }
+
+    function goToCard(tag) {
+      var item = itemByTag(tag)
+      if (!item) return
+      if (activeTab !== item.section) switchTab(item.section)
+      setTimeout(function () {
+        var card = document.querySelector('.item-card[data-item="' + tag + '"]')
+        if (!card) return
+        var details = card.closest('details')
+        if (details) details.open = true
+        card.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      }, 30)
+    }
+
+    function renderProgress() {
+      var total = currentJob.items.length
+      var done = currentJob.items.filter(function (i) {
+        return i.status !== 'pending'
+      }).length
+      var pct = total > 0 ? Math.round((done / total) * 100) : 100
+      document.getElementById('progressFill').style.width = pct + '%'
+      document.getElementById('progressTxt').textContent =
+        total > 0 ? done + '/' + total + ' fields decided' : 'Nothing needed review'
+    }
+
+    // ---- doc text (for Copy document text) ----
+    function fieldPlainText(tag) {
+      var item = itemByTag(tag)
+      if (!item) return ''
+      if (item.status === 'accepted') return item.resolved_value || item.source_span || ''
+      if (item.status === 'rejected') return '[NEEDS INPUT: ' + item.label + ']'
+      return (
+        '[NEEDS INPUT: ' +
+        item.label +
+        (item.source_span ? ' — heard: "' + item.source_span + '"' : '') +
+        ']'
+      )
+    }
+    function blockToPlainText(block) {
+      if (block.type === 'tag') return fieldPlainText(block.tag)
+      if (block.type === 'placeholder') return '[' + block.name + ']'
+      return block.value
+    }
+    function fullDocumentText() {
+      return sectionsWithTemplates()
+        .map(function (section) {
+          var body = (currentJob.doc_blocks[section] || []).map(blockToPlainText).join('').trim()
+          return section.toUpperCase() + '\n' + body
+        })
+        .join('\n\n')
+    }
+
+    function copyText(text, successMsg) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(
+          function () {
+            showToast(successMsg)
+          },
+          function () {
+            showToast('Copy blocked by the browser — try again from the deployed app')
+          },
+        )
+      } else {
+        showToast('Copy blocked by the browser — try again from the deployed app')
+      }
+    }
+
+    var toastTimer = null
+    function showToast(msg) {
+      var toast = document.getElementById('toast')
+      toast.innerHTML = iconCheck() + '<span>' + escapeHtml(msg) + '</span>'
+      toast.classList.add('show')
+      clearTimeout(toastTimer)
+      toastTimer = setTimeout(function () {
+        toast.classList.remove('show')
+      }, 2600)
+    }
+
+    function openFinalizeModal() {
+      var remaining = currentJob.items.filter(function (i) {
+        return i.status === 'pending'
+      })
+      var head = document.getElementById('modalHead')
+      var body = document.getElementById('modalBody')
+      var list = document.getElementById('modalList')
+
+      if (!remaining.length) {
+        head.textContent = 'Finalize this report?'
+        body.textContent =
+          'Every field has a decision. This sends accepted values to document generation.'
+        list.innerHTML = ''
+      } else {
+        head.textContent = 'Finalize with ' + remaining.length + ' field(s) still pending?'
+        body.textContent = 'These fields will stay marked [NEEDS INPUT] in the final document:'
+        list.innerHTML = remaining
+          .map(function (i) {
+            return '<li>' + escapeHtml(i.label) + ' — ' + escapeHtml(i.section) + '</li>'
+          })
+          .join('')
+      }
+      document.getElementById('modalScrim').classList.add('open')
+    }
+    function closeFinalizeModal() {
+      document.getElementById('modalScrim').classList.remove('open')
+    }
+
+    function finalize() {
+      closeFinalizeModal()
+      document.getElementById('finalizeBtn').disabled = true
+      showToast('Generating document...')
+      call('reviewFinalize', currentJob.job_id)
+        .then(function (result) {
+          document.getElementById('finalizeBtn').disabled = false
+          if (result && result.status === 'failed') {
+            showToast('Finalize failed: ' + result.error)
+            return
+          }
+          showToast(
+            result && result.docUrl ? 'Report finalized — ' + result.docUrl : 'Report finalized',
+          )
+          showList()
+        })
+        .catch(function (err) {
+          document.getElementById('finalizeBtn').disabled = false
+          showToast('Error: ' + (err && err.message ? err.message : err))
+        })
+    }
+
+    document.getElementById('backBtn').onclick = showList
+    document.getElementById('copyBtn').onclick = function () {
+      copyText(fullDocumentText(), 'Document text copied to clipboard')
+    }
+    document.getElementById('finalizeBtn').onclick = openFinalizeModal
+    document.getElementById('modalCancel').onclick = closeFinalizeModal
+    document.getElementById('modalConfirm').onclick = finalize
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeFinalizeModal()
+    })
+
+    showList()
+  })()
+</script>

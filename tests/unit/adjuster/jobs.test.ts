@@ -521,3 +521,177 @@ describe('claim candidates cache', () => {
     expect(claims).toEqual([{ claim_id: 'evt-5', insured_last_name: 'Diaz', _rowIndex: 2 }])
   })
 })
+
+// Review UI prototype (option A — native Apps Script HtmlService), see
+// docs/specs/012-adjuster-review-webapp.md and reviewUi.js. Unlike Jobs/
+// Claims/Raw, the Review tab is new and did not exist on any spreadsheet
+// provisioned before this prototype, so getReviewSheet() has to create it.
+describe('Review tab (option A prototype)', () => {
+  const REVIEW_HEADERS = [
+    'job_id',
+    'tag',
+    'label',
+    'section',
+    'source_span',
+    'confidence',
+    'status',
+    'resolved_value',
+    'decided_at',
+    'created_at',
+  ]
+
+  function emptySheet() {
+    const values: string[][] = []
+    return {
+      values,
+      getDataRange: () => ({ getValues: () => values }),
+      getLastRow: () => values.length,
+      appendRow: (row: string[]) => values.push(row.slice()),
+      getRange: (rowIndex: number, col: number) => ({
+        setValue: (value: string) => {
+          values[rowIndex - 1][col - 1] = value
+        },
+      }),
+    }
+  }
+
+  function fakeReviewSheet(rows: string[][] = []) {
+    const values: string[][] = [REVIEW_HEADERS.slice(), ...rows]
+    return {
+      values,
+      getDataRange: () => ({ getValues: () => values }),
+      getLastRow: () => values.length,
+      appendRow: (row: string[]) => values.push(row.slice()),
+      getRange: (rowIndex: number, col: number) => ({
+        setValue: (value: string) => {
+          values[rowIndex - 1][col - 1] = value
+        },
+      }),
+    }
+  }
+
+  function reviewHarness(jobsRows: string[][] = [], reviewSheetExists = true) {
+    const jobsSheet = fakeSheet(jobsRows)
+    let reviewSheet: ReturnType<typeof fakeReviewSheet> | null = reviewSheetExists
+      ? fakeReviewSheet()
+      : null
+    const insertSheetCalls: string[] = []
+
+    const spreadsheet = {
+      getSheetByName: (name: string) => {
+        if (name === 'Jobs') return jobsSheet
+        if (name === 'Review') return reviewSheet
+        return null
+      },
+      insertSheet: (name: string) => {
+        insertSheetCalls.push(name)
+        reviewSheet = emptySheet()
+        return reviewSheet
+      },
+    }
+
+    const sandbox = loadGs('apps/adjuster/src/jobs.js', {
+      getConfig: () => 'sheet-1',
+      SpreadsheetApp: { openById: () => spreadsheet, flush: () => {} },
+    })
+
+    return { sandbox, jobsSheet, getReviewSheet: () => reviewSheet, insertSheetCalls }
+  }
+
+  it('creates the Review tab with headers on first use', () => {
+    const { sandbox, insertSheetCalls, getReviewSheet } = reviewHarness([], false)
+
+    sandbox.getReviewSheet()
+
+    expect(insertSheetCalls).toEqual(['Review'])
+    expect(getReviewSheet()!.values[0]).toEqual(REVIEW_HEADERS)
+  })
+
+  it('does not recreate an existing Review tab', () => {
+    const { sandbox, insertSheetCalls } = reviewHarness([], true)
+
+    sandbox.getReviewSheet()
+
+    expect(insertSheetCalls).toEqual([])
+  })
+
+  it('upsertReviewItems inserts a pending row per item', () => {
+    const { sandbox, getReviewSheet } = reviewHarness()
+
+    sandbox.upsertReviewItems('cap-1', [
+      {
+        tag: 'contacted_party_name',
+        label: 'Contacted party',
+        section: 'Assignment',
+        source_span: 'talked to Jane',
+        confidence: '',
+      },
+    ])
+
+    const values = getReviewSheet()!.values
+    expect(values).toHaveLength(2)
+    expect(values[1][REVIEW_HEADERS.indexOf('job_id')]).toBe('cap-1')
+    expect(values[1][REVIEW_HEADERS.indexOf('tag')]).toBe('contacted_party_name')
+    expect(values[1][REVIEW_HEADERS.indexOf('status')]).toBe('pending')
+  })
+
+  it('refreshes field metadata on re-ingest without clobbering an existing decision', () => {
+    const { sandbox, getReviewSheet } = reviewHarness()
+
+    sandbox.upsertReviewItems('cap-1', [
+      {
+        tag: 'contacted_party_name',
+        label: 'Contacted party',
+        section: 'Assignment',
+        source_span: 'talked to Jane',
+        confidence: '',
+      },
+    ])
+    sandbox.updateReviewItemDecision('cap-1', 'contacted_party_name', 'accepted', 'Jane Smith')
+    sandbox.upsertReviewItems('cap-1', [
+      {
+        tag: 'contacted_party_name',
+        label: 'Contacted party',
+        section: 'Assignment',
+        source_span: 'talked to Jane (re-extracted)',
+        confidence: '',
+      },
+    ])
+
+    const values = getReviewSheet()!.values
+    expect(values).toHaveLength(2)
+    expect(values[1][REVIEW_HEADERS.indexOf('source_span')]).toBe('talked to Jane (re-extracted)')
+    expect(values[1][REVIEW_HEADERS.indexOf('status')]).toBe('accepted')
+    expect(values[1][REVIEW_HEADERS.indexOf('resolved_value')]).toBe('Jane Smith')
+  })
+
+  it('getReviewItemsForJob only returns rows for that job', () => {
+    const { sandbox } = reviewHarness()
+
+    sandbox.upsertReviewItems('cap-1', [{ tag: 'a', label: 'A', section: 'S' }])
+    sandbox.upsertReviewItems('cap-2', [{ tag: 'b', label: 'B', section: 'S' }])
+
+    expect(sandbox.getReviewItemsForJob('cap-1').map((row: { tag: string }) => row.tag)).toEqual([
+      'a',
+    ])
+  })
+
+  it('updateReviewItemDecision throws for an unknown (job_id, tag) pair', () => {
+    const { sandbox } = reviewHarness()
+
+    expect(() => sandbox.updateReviewItemDecision('cap-1', 'missing', 'accepted', '')).toThrow(
+      'No review item for job_id=cap-1 tag=missing',
+    )
+  })
+
+  it('listJobsNeedingReview returns only Jobs rows in needs_review status', () => {
+    const { sandbox } = reviewHarness([
+      HEADERS.map((h) => (h === 'capture_id' ? 'cap-1' : h === 'status' ? 'needs_review' : '')),
+      HEADERS.map((h) => (h === 'capture_id' ? 'cap-2' : h === 'status' ? 'done' : '')),
+    ])
+
+    expect(
+      sandbox.listJobsNeedingReview().map((job: { capture_id: string }) => job.capture_id),
+    ).toEqual(['cap-1'])
+  })
+})

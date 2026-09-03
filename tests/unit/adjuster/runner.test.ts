@@ -385,8 +385,98 @@ describe('stage B', () => {
   })
 })
 
+// Review UI prototype (option A — native Apps Script HtmlService), see
+// docs/specs/012-adjuster-review-webapp.md and reviewUi.js.
+describe('review gating', () => {
+  it('parks the job in needs_review instead of generating a doc when a field needs review', () => {
+    const reviewUpserts: Array<{ jobId: string; items: unknown[] }> = []
+    const generateDoc = vi.fn()
+    const { sandbox, jobs, logged } = harness(
+      [dograhJob({ status: 'transcribed', claim_id: 'claim-1' })],
+      {
+        validateFields: () => ({
+          contacted_party_name: {
+            valid: false,
+            label: 'Contacted party',
+            source_span: 'talked to Jane',
+          },
+        }),
+        upsertReviewItems: (jobId: string, items: unknown[]) => {
+          reviewUpserts.push({ jobId, items })
+        },
+        generateDoc,
+      },
+    )
+
+    sandbox.processOldestPendingJob()
+
+    expect(jobs.get('dograh-1')?.status).toBe('needs_review')
+    expect(jobs.get('dograh-1')?.validated_json).toContain('contacted_party_name')
+    expect(reviewUpserts).toEqual([
+      {
+        jobId: 'dograh-1',
+        items: [
+          {
+            tag: 'contacted_party_name',
+            label: 'Contacted party',
+            section: '',
+            source_span: 'talked to Jane',
+            confidence: '',
+          },
+        ],
+      },
+    ])
+    expect(generateDoc).not.toHaveBeenCalled()
+    expect(events(logged)).toContain('runner.job_needs_review')
+  })
+
+  it('still generates the doc immediately when nothing needs review', () => {
+    const { sandbox, jobs } = harness([dograhJob({ status: 'transcribed', claim_id: 'claim-1' })])
+
+    sandbox.processOldestPendingJob()
+
+    expect(jobs.get('dograh-1')?.status).toBe('done')
+    expect(jobs.get('dograh-1')?.validated_json).toBeUndefined()
+  })
+})
+
+describe('buildReviewItems', () => {
+  const TAG_SCHEMA_WITH_SECTIONS = {
+    contacted_party_name: { label: 'Contacted party', section: 'Assignment' },
+    roof_status: { label: 'Roof status', section: 'Roof' },
+    mortgage_status: { label: 'Mortgage status', section: 'Mortgage' },
+  }
+
+  it('flags invalid fields and medium-confidence fields, skips everything else', () => {
+    const { sandbox } = harness([])
+
+    const items = sandbox.buildReviewItems(
+      'cap-1',
+      {
+        contacted_party_name: { valid: false, source_span: 'talked to Jane' },
+        roof_status: { valid: true, confidence: 'medium', source_span: 'looked fine' },
+        mortgage_status: { valid: true, confidence: 'high' },
+      },
+      TAG_SCHEMA_WITH_SECTIONS,
+    )
+
+    expect(items.map((item: { tag: string }) => item.tag)).toEqual([
+      'contacted_party_name',
+      'roof_status',
+    ])
+  })
+
+  it('omits fields the extraction never produced at all', () => {
+    const { sandbox } = harness([])
+
+    const items = sandbox.buildReviewItems('cap-1', {}, TAG_SCHEMA_WITH_SECTIONS)
+
+    expect(items).toEqual([])
+  })
+})
+
 describe('runPipelineTick', () => {
-  it('adds the transcription columns before anything writes to them', () => {
+  it('adds the transcription and review columns before anything writes to them', () => {
     const order: string[] = []
     const { sandbox } = harness([], {
       reclaimStuckJobs: () => order.push('reclaim'),
@@ -398,7 +488,7 @@ describe('runPipelineTick', () => {
 
     sandbox.runPipelineTick()
 
-    expect(order).toEqual(['reclaim', 'ensure_columns'])
+    expect(order).toEqual(['reclaim', 'ensure_columns', 'ensure_columns'])
   })
 
   it('reports the columns it had to add', () => {
