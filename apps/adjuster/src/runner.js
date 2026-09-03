@@ -37,8 +37,12 @@ function ensureTranscriptionColumns() {
 // Review UI prototype (option A, see docs/specs/012). validated_json holds the
 // full validated field map from the last extraction, so finalizeJobReview (see
 // reviewUi.js) can re-run generateDoc with the adjuster's decisions overlaid
-// without re-extracting or re-validating.
-var JOBS_REVIEW_COLUMNS = ['validated_json']
+// without re-extracting or re-validating. unplaced_notes_json carries anything
+// runFieldExtraction pulled out of the call that didn't map to a tagSchema
+// field (plus any coverage-restatement drop — see computeValidatedFields), so
+// the review page can still surface it even though it plays no part in
+// generateDoc().
+var JOBS_REVIEW_COLUMNS = ['validated_json', 'unplaced_notes_json']
 
 function ensureReviewColumns() {
   var added = ensureJobsColumns(JOBS_REVIEW_COLUMNS)
@@ -230,6 +234,7 @@ function runExtractionStage(job) {
     upsertJob(job.capture_id, {
       status: 'needs_review',
       validated_json: JSON.stringify(prepared.validated),
+      unplaced_notes_json: JSON.stringify(prepared.unplacedNotes),
       lease_until: '',
       error: '',
     })
