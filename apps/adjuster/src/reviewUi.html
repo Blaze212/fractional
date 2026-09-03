@@ -1,0 +1,550 @@
+<!--
+  Review UI prototype (option A — native Apps Script HtmlService).
+  See docs/specs/012-adjuster-review-webapp.md for the field-review design
+  this implements, and reviewUi.js for the google.script.run server functions
+  this page calls.
+-->
+<style>
+  :root {
+    color-scheme: light;
+    --ink: #1f2430;
+    --muted: #6b7280;
+    --line: #e2e5ea;
+    --bg: #f7f8fa;
+    --card: #ffffff;
+    --accept: #1a7f4b;
+    --accept-bg: #e7f6ee;
+    --reject: #b3261e;
+    --reject-bg: #fdeceb;
+    --pending: #a15c00;
+    --pending-bg: #fff3e0;
+    --accent: #2f5fd6;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--line);
+    background: var(--card);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  header h1 {
+    font-size: 16px;
+    margin: 0;
+  }
+  header .sub {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  #back {
+    display: none;
+    background: none;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  main {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+  #status {
+    color: var(--muted);
+    font-size: 13px;
+    padding: 4px 0 16px;
+  }
+
+  /* Job list */
+  .job-row {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+  }
+  .job-row:hover {
+    border-color: var(--accent);
+  }
+  .job-row .id {
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .job-row .meta {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 2px;
+  }
+  .badge {
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .badge.pending {
+    color: var(--pending);
+    background: var(--pending-bg);
+  }
+  .badge.accepted {
+    color: var(--accept);
+    background: var(--accept-bg);
+  }
+  .badge.rejected {
+    color: var(--reject);
+    background: var(--reject-bg);
+  }
+  .badge.done {
+    color: var(--accept);
+    background: var(--accept-bg);
+  }
+
+  /* Detail view */
+  #detail {
+    display: none;
+  }
+  .tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .tab {
+    border: 1px solid var(--line);
+    background: var(--card);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .tab.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .tab .count {
+    color: var(--muted);
+    margin-left: 4px;
+  }
+  .tab.section-done {
+    color: var(--accept);
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+  }
+  .card .label {
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 4px;
+  }
+  .card .confidence {
+    color: var(--muted);
+    font-size: 12px;
+    margin-bottom: 8px;
+  }
+  .card .quote {
+    background: #fbf6e6;
+    border-left: 3px solid #e0b13a;
+    padding: 8px 10px;
+    font-size: 13px;
+    font-style: italic;
+    margin-bottom: 10px;
+    border-radius: 4px;
+  }
+  .card .no-quote {
+    color: var(--muted);
+    font-size: 12px;
+    font-style: italic;
+    margin-bottom: 10px;
+  }
+  .card .actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .card button {
+    border: 1px solid var(--line);
+    background: var(--card);
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .card button.accept.active {
+    background: var(--accept-bg);
+    border-color: var(--accept);
+    color: var(--accept);
+  }
+  .card button.reject.active {
+    background: var(--reject-bg);
+    border-color: var(--reject);
+    color: var(--reject);
+  }
+  .card .decided-note {
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  footer {
+    position: sticky;
+    bottom: 0;
+    background: var(--card);
+    border-top: 1px solid var(--line);
+    padding: 14px 24px;
+    display: none;
+    justify-content: space-between;
+    align-items: center;
+  }
+  footer .summary {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  footer button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  footer button:disabled {
+    background: #b6c3ea;
+    cursor: not-allowed;
+  }
+  #finalize-result {
+    max-width: 1000px;
+    margin: 16px auto 0;
+    padding: 0 24px;
+    font-size: 13px;
+  }
+  #empty {
+    color: var(--muted);
+    padding: 40px 0;
+    text-align: center;
+  }
+</style>
+
+<header>
+  <button id="back" onclick="showList()">&larr; All jobs</button>
+  <div>
+    <h1 id="title">Adjuster Review</h1>
+    <div class="sub" id="subtitle">Fields flagged for human review</div>
+  </div>
+</header>
+
+<main>
+  <div id="status"></div>
+
+  <div id="list">
+    <div id="job-rows"></div>
+    <div id="empty" style="display: none">No jobs currently need review.</div>
+  </div>
+
+  <div id="detail">
+    <div class="tabs" id="tabs"></div>
+    <div id="cards"></div>
+  </div>
+</main>
+
+<footer id="footer">
+  <div class="summary" id="finalize-summary"></div>
+  <button id="finalize-btn" onclick="finalize()">Finalize &amp; generate doc</button>
+</footer>
+<div id="finalize-result"></div>
+
+<script>
+  var currentJob = null
+  var activeSection = null
+
+  function setStatus(text) {
+    document.getElementById('status').textContent = text || ''
+  }
+
+  function showList() {
+    currentJob = null
+    document.getElementById('back').style.display = 'none'
+    document.getElementById('list').style.display = 'block'
+    document.getElementById('detail').style.display = 'none'
+    document.getElementById('footer').style.display = 'none'
+    document.getElementById('title').textContent = 'Adjuster Review'
+    document.getElementById('subtitle').textContent = 'Fields flagged for human review'
+    document.getElementById('finalize-result').textContent = ''
+    loadList()
+  }
+
+  function loadList() {
+    setStatus('Loading jobs...')
+    google.script.run.withSuccessHandler(renderList).withFailureHandler(showError).reviewListJobs()
+  }
+
+  function renderList(jobs) {
+    setStatus('')
+    var rows = document.getElementById('job-rows')
+    var empty = document.getElementById('empty')
+    rows.innerHTML = ''
+
+    if (!jobs || jobs.length === 0) {
+      empty.style.display = 'block'
+      return
+    }
+    empty.style.display = 'none'
+
+    jobs.forEach(function (job) {
+      var row = document.createElement('div')
+      row.className = 'job-row'
+      row.onclick = function () {
+        openJob(job.job_id)
+      }
+
+      var left = document.createElement('div')
+      var id = document.createElement('div')
+      id.className = 'id'
+      id.textContent = job.job_id + (job.claim_id ? ' — claim ' + job.claim_id : '')
+      var meta = document.createElement('div')
+      meta.className = 'meta'
+      meta.textContent = job.created_at ? 'Captured ' + job.created_at : ''
+      left.appendChild(id)
+      left.appendChild(meta)
+
+      var badge = document.createElement('span')
+      badge.className = 'badge ' + (job.pending_count > 0 ? 'pending' : 'accepted')
+      badge.textContent =
+        job.pending_count > 0
+          ? job.pending_count + ' of ' + job.item_count + ' pending'
+          : 'all ' + job.item_count + ' decided'
+
+      row.appendChild(left)
+      row.appendChild(badge)
+      rows.appendChild(row)
+    })
+  }
+
+  function openJob(jobId) {
+    setStatus('Loading review items...')
+    google.script.run
+      .withSuccessHandler(renderJob)
+      .withFailureHandler(showError)
+      .reviewGetJob(jobId)
+  }
+
+  function sectionsOf(items) {
+    var order = []
+    items.forEach(function (item) {
+      var section = item.section || 'Other'
+      if (order.indexOf(section) === -1) order.push(section)
+    })
+    return order
+  }
+
+  function renderJob(job) {
+    setStatus('')
+    currentJob = job
+    activeSection =
+      activeSection && sectionsOf(job.items).indexOf(activeSection) !== -1
+        ? activeSection
+        : sectionsOf(job.items)[0]
+
+    document.getElementById('back').style.display = 'inline-block'
+    document.getElementById('list').style.display = 'none'
+    document.getElementById('detail').style.display = 'block'
+    document.getElementById('footer').style.display = 'flex'
+    document.getElementById('title').textContent = job.job_id
+    document.getElementById('subtitle').textContent = job.claim_id
+      ? 'Claim ' + job.claim_id
+      : 'No claim matched'
+
+    renderTabs()
+    renderCards()
+    renderFooter()
+  }
+
+  function renderTabs() {
+    var tabs = document.getElementById('tabs')
+    tabs.innerHTML = ''
+    var sections = sectionsOf(currentJob.items)
+
+    sections.forEach(function (section) {
+      var itemsInSection = currentJob.items.filter(function (i) {
+        return (i.section || 'Other') === section
+      })
+      var pending = itemsInSection.filter(function (i) {
+        return i.status === 'pending'
+      }).length
+
+      var tab = document.createElement('div')
+      tab.className =
+        'tab' +
+        (section === activeSection ? ' active' : '') +
+        (pending === 0 ? ' section-done' : '')
+      tab.onclick = function () {
+        activeSection = section
+        renderTabs()
+        renderCards()
+      }
+
+      var label = document.createElement('span')
+      label.textContent = section
+      var count = document.createElement('span')
+      count.className = 'count'
+      count.textContent = pending === 0 ? '✓' : '(' + pending + ')'
+
+      tab.appendChild(label)
+      tab.appendChild(count)
+      tabs.appendChild(tab)
+    })
+  }
+
+  function renderCards() {
+    var cards = document.getElementById('cards')
+    cards.innerHTML = ''
+
+    var itemsInSection = currentJob.items.filter(function (i) {
+      return (i.section || 'Other') === activeSection
+    })
+
+    itemsInSection.forEach(function (item) {
+      cards.appendChild(buildCard(item))
+    })
+  }
+
+  function buildCard(item) {
+    var card = document.createElement('div')
+    card.className = 'card'
+
+    var label = document.createElement('div')
+    label.className = 'label'
+    label.textContent = item.label
+    card.appendChild(label)
+
+    var confidence = document.createElement('div')
+    confidence.className = 'confidence'
+    confidence.textContent = item.confidence
+      ? 'confidence: ' + item.confidence
+      : 'no value captured'
+    card.appendChild(confidence)
+
+    if (item.source_span) {
+      var quote = document.createElement('div')
+      quote.className = 'quote'
+      quote.textContent = '"' + item.source_span + '"'
+      card.appendChild(quote)
+    } else {
+      var noQuote = document.createElement('div')
+      noQuote.className = 'no-quote'
+      noQuote.textContent = 'Nothing heard on this field — needs manual entry.'
+      card.appendChild(noQuote)
+    }
+
+    var actions = document.createElement('div')
+    actions.className = 'actions'
+
+    var acceptBtn = document.createElement('button')
+    acceptBtn.className = 'accept' + (item.status === 'accepted' ? ' active' : '')
+    acceptBtn.textContent = '✓ Accept'
+    acceptBtn.disabled = !item.source_span
+    acceptBtn.title = item.source_span ? '' : 'No heard value to accept'
+    acceptBtn.onclick = function () {
+      decide(item.tag, 'accepted', item.source_span)
+    }
+
+    var rejectBtn = document.createElement('button')
+    rejectBtn.className = 'reject' + (item.status === 'rejected' ? ' active' : '')
+    rejectBtn.textContent = '✗ Reject'
+    rejectBtn.onclick = function () {
+      decide(item.tag, 'rejected', '')
+    }
+
+    actions.appendChild(acceptBtn)
+    actions.appendChild(rejectBtn)
+
+    if (item.status !== 'pending') {
+      var undo = document.createElement('button')
+      undo.textContent = 'Undo'
+      undo.onclick = function () {
+        decide(item.tag, 'pending', '')
+      }
+      actions.appendChild(undo)
+    }
+
+    card.appendChild(actions)
+    return card
+  }
+
+  function decide(tag, status, resolvedValue) {
+    setStatus('Saving...')
+    google.script.run
+      .withSuccessHandler(function (job) {
+        setStatus('')
+        renderJob(job)
+      })
+      .withFailureHandler(showError)
+      .reviewDecide(currentJob.job_id, tag, status, resolvedValue)
+  }
+
+  function renderFooter() {
+    var pending = currentJob.items.filter(function (i) {
+      return i.status === 'pending'
+    }).length
+    var accepted = currentJob.items.filter(function (i) {
+      return i.status === 'accepted'
+    }).length
+    var rejected = currentJob.items.filter(function (i) {
+      return i.status === 'rejected'
+    }).length
+
+    document.getElementById('finalize-summary').textContent =
+      accepted + ' accepted, ' + rejected + ' rejected, ' + pending + ' still pending'
+
+    var btn = document.getElementById('finalize-btn')
+    btn.textContent =
+      pending > 0
+        ? 'Finalize anyway (' + pending + ' left as NEEDS INPUT)'
+        : 'Finalize & generate doc'
+  }
+
+  function finalize() {
+    setStatus('Generating doc...')
+    document.getElementById('finalize-btn').disabled = true
+    google.script.run
+      .withSuccessHandler(function (result) {
+        setStatus('')
+        document.getElementById('finalize-btn').disabled = false
+        document.getElementById('finalize-result').textContent =
+          result && result.docUrl
+            ? 'Doc generated: ' + result.docUrl
+            : 'Finalize failed — check logs.'
+        showList()
+      })
+      .withFailureHandler(function (err) {
+        document.getElementById('finalize-btn').disabled = false
+        showError(err)
+      })
+      .reviewFinalize(currentJob.job_id)
+  }
+
+  function showError(err) {
+    setStatus('Error: ' + (err && err.message ? err.message : err))
+  }
+
+  showList()
+</script>

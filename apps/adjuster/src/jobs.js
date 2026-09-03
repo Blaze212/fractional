@@ -1,6 +1,19 @@
 var JOBS_TAB = 'Jobs'
 var CLAIMS_TAB = 'Claims'
 var RAW_TAB = 'Raw'
+var REVIEW_TAB = 'Review'
+var REVIEW_HEADERS = [
+  'job_id',
+  'tag',
+  'label',
+  'section',
+  'source_span',
+  'confidence',
+  'status',
+  'resolved_value',
+  'decided_at',
+  'created_at',
+]
 
 function getJobsSpreadsheet() {
   return SpreadsheetApp.openById(getConfig('JOBS_SHEET_ID'))
@@ -282,4 +295,96 @@ function reclaimStuckJobs() {
 function appendRaw(eventType, rawBody) {
   var sheet = getJobsSpreadsheet().getSheetByName(RAW_TAB)
   sheet.appendRow([new Date().toISOString(), eventType, rawBody])
+}
+
+// ---------------------------------------------------------------------------
+// Review UI prototype (option A — native Apps Script HtmlService, see
+// docs/specs/012-adjuster-review-webapp.md). Unlike Jobs/Claims/Raw, the
+// Review tab did not exist on any spreadsheet provisioned before this
+// prototype, so it is created on first use rather than assumed present.
+// ---------------------------------------------------------------------------
+
+function getReviewSheet() {
+  var spreadsheet = getJobsSpreadsheet()
+  var sheet = spreadsheet.getSheetByName(REVIEW_TAB)
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(REVIEW_TAB)
+    sheet.appendRow(REVIEW_HEADERS)
+  }
+  return sheet
+}
+
+function getReviewItemsForJob(jobId) {
+  var data = getSheetRows(getReviewSheet())
+  return data.rows.filter(function (row) {
+    return row.job_id === jobId
+  })
+}
+
+function listJobsNeedingReview() {
+  var sheet = getJobsSpreadsheet().getSheetByName(JOBS_TAB)
+  var data = getSheetRows(sheet)
+  return data.rows.filter(function (row) {
+    return row.status === 'needs_review'
+  })
+}
+
+// Upserts one row per (job_id, tag), the same key spec 012 designed against a
+// Supabase unique constraint, reapplied here against a Sheet tab instead of
+// Postgres since this prototype keeps everything inside Apps Script. A
+// re-ingest (e.g. a job re-extracted after a failed run) refreshes the field
+// metadata but never overwrites a decision a human already made — status,
+// resolved_value, and decided_at are left untouched on an existing row.
+function upsertReviewItems(jobId, items) {
+  var sheet = getReviewSheet()
+  var data = getSheetRows(sheet)
+  var now = new Date().toISOString()
+
+  items.forEach(function (item) {
+    var existing = data.rows.filter(function (row) {
+      return row.job_id === jobId && row.tag === item.tag
+    })[0]
+
+    var metadata = {
+      job_id: jobId,
+      tag: item.tag,
+      label: item.label,
+      section: item.section,
+      source_span: item.source_span || '',
+      confidence: item.confidence || '',
+    }
+
+    if (existing) {
+      writeRowFields(sheet, data.headers, existing._rowIndex, metadata)
+      return
+    }
+
+    var merged = Object.assign({}, metadata, {
+      status: 'pending',
+      resolved_value: '',
+      decided_at: '',
+      created_at: now,
+    })
+    var newRow = data.headers.map(function (header) {
+      return header in merged ? merged[header] : ''
+    })
+    sheet.appendRow(newRow)
+    data.rows.push(Object.assign({}, merged, { _rowIndex: sheet.getLastRow() }))
+  })
+}
+
+function updateReviewItemDecision(jobId, tag, status, resolvedValue) {
+  var sheet = getReviewSheet()
+  var data = getSheetRows(sheet)
+  var existing = data.rows.filter(function (row) {
+    return row.job_id === jobId && row.tag === tag
+  })[0]
+
+  if (!existing) throw new Error('No review item for job_id=' + jobId + ' tag=' + tag)
+
+  writeRowFields(sheet, data.headers, existing._rowIndex, {
+    status: status,
+    resolved_value: resolvedValue || '',
+    decided_at: new Date().toISOString(),
+  })
 }

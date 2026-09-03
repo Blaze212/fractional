@@ -12,6 +12,7 @@ function runPipelineTick() {
   try {
     reclaimStuckJobs()
     ensureTranscriptionColumns()
+    ensureReviewColumns()
     processOldestPendingJob()
     logEvent('runner.tick_end', { ms: Date.now() - startedAt })
   } catch (err) {
@@ -30,6 +31,17 @@ function runPipelineTick() {
 
 function ensureTranscriptionColumns() {
   var added = ensureJobsColumns(JOBS_TRANSCRIPTION_COLUMNS)
+  if (added.length > 0) logEvent('runner.jobs_columns_added', { columns: added.join(',') })
+}
+
+// Review UI prototype (option A, see docs/specs/012). validated_json holds the
+// full validated field map from the last extraction, so finalizeJobReview (see
+// reviewUi.js) can re-run generateDoc with the adjuster's decisions overlaid
+// without re-extracting or re-validating.
+var JOBS_REVIEW_COLUMNS = ['validated_json']
+
+function ensureReviewColumns() {
+  var added = ensureJobsColumns(JOBS_REVIEW_COLUMNS)
   if (added.length > 0) logEvent('runner.jobs_columns_added', { columns: added.join(',') })
 }
 
@@ -195,7 +207,7 @@ function runExtractionStage(job) {
 
   upsertJob(job.capture_id, { status: 'generating', model: extraction.model })
 
-  var result = renderDraftFromExtraction({
+  var renderOptions = {
     job: job,
     claim: claim,
     tagSchema: tagSchema,
@@ -203,12 +215,45 @@ function runExtractionStage(job) {
     calendarFields: hints.calendarFields,
     fields: extraction.fields,
     unplacedNotes: extraction.unplaced_notes || [],
-  })
+  }
+
+  var prepared = computeValidatedFields(renderOptions)
+  var reviewItems = buildReviewItems(job.capture_id, prepared.validated, tagSchema)
+
+  // Review UI prototype (option A, see docs/specs/012): a job with anything
+  // review-eligible (validate.js's own [NEEDS INPUT]/medium-confidence
+  // predicate — see buildReviewItems) parks here instead of generating a doc
+  // straight away. reviewUi.js's finalizeJobReview() picks it back up once
+  // the adjuster has decided every item.
+  if (reviewItems.length > 0) {
+    upsertReviewItems(job.capture_id, reviewItems)
+    upsertJob(job.capture_id, {
+      status: 'needs_review',
+      validated_json: JSON.stringify(prepared.validated),
+      lease_until: '',
+      error: '',
+    })
+    logEvent('runner.job_needs_review', {
+      capture_id: job.capture_id,
+      review_item_count: reviewItems.length,
+    })
+    return
+  }
+
+  var latestJob = getJobByCaptureId(job.capture_id) || job
+  finalizeDraftGeneration(latestJob, claim, prepared.validated, tagSchema, prepared.unplacedNotes)
+}
+
+// Shared by the no-review-needed path above and reviewUi.js's
+// finalizeJobReview(), so "generate the doc and mark the job done" has one
+// implementation regardless of which path produced the final validated map.
+function finalizeDraftGeneration(job, claim, validated, tagSchema, unplacedNotes, docOptions) {
+  var result = generateDoc(job, claim, validated, tagSchema, unplacedNotes, docOptions)
 
   if (result.status === 'failed') {
     logEvent('runner.docgen_failed', { capture_id: job.capture_id, error: result.error })
     failJob(getJobByCaptureId(job.capture_id) || job, result.error)
-    return
+    return result
   }
 
   logEvent('runner.job_done', {
@@ -224,6 +269,81 @@ function runExtractionStage(job) {
     lease_until: '',
     error: '',
   })
+
+  return result
+}
+
+// The review-eligibility predicate is docgen.js's own: resolveTagsForDoc
+// renders a [NEEDS INPUT] marker or a yellow "needs review" highlight for
+// exactly these fields (see its own comment). Filtering on source_span
+// presence instead would silently drop the most common NEEDS INPUT case (a
+// field the adjuster never mentioned, which carries no span at all) from the
+// review UI — see spec 012 Phase 1.
+function buildReviewItems(jobId, validated, tagSchema) {
+  var items = []
+
+  Object.keys(tagSchema || {}).forEach(function (tag) {
+    var field = validated[tag]
+    if (!field) return
+    if (field.valid && field.confidence !== 'medium') return
+
+    var schema = tagSchema[tag]
+    items.push({
+      tag: tag,
+      label: schema.label || tag,
+      section: schema.section || '',
+      source_span: field.source_span || '',
+      confidence: field.confidence || '',
+    })
+  })
+
+  return items
+}
+
+// The validation half of renderDraftFromExtraction below, split out so the
+// review-gating path above can inspect the validated map before deciding
+// whether to generate a doc at all. renderDraftFromExtraction keeps its own
+// copy inline rather than calling this, so replay.js's contract (always
+// generate immediately) never depends on the review-gating path existing.
+function computeValidatedFields(options) {
+  var job = options.job
+  var tagSchema = options.tagSchema
+
+  var validated = validateFields(options.fields, options.haystack, tagSchema)
+  validated = applyCalendarFallback(validated, options.calendarFields, tagSchema)
+  validated = applyClaimPropertyFallback(validated, options.claim, tagSchema)
+
+  var coverageDrop = dropCoverageRestatement(validated)
+  validated = coverageDrop.validated
+  var unplacedNotes = options.unplacedNotes || []
+  if (coverageDrop.dropped) {
+    unplacedNotes = unplacedNotes.concat(coverageDrop.dropped)
+    logEvent('docgen.coverage_detail_dropped', {
+      capture_id: job.capture_id,
+      dropped: coverageDrop.dropped,
+    })
+  }
+
+  collectOffSuggestionFields(validated, tagSchema).forEach(function (entry) {
+    logEvent('extraction.off_suggestion', {
+      capture_id: job.capture_id,
+      tag: entry.tag,
+      value: entry.value,
+      source: entry.source,
+    })
+  })
+
+  logEvent('runner.validated', {
+    capture_id: job.capture_id,
+    valid: Object.keys(validated).filter(function (t) {
+      return validated[t].valid
+    }).length,
+    needs_input: Object.keys(validated).filter(function (t) {
+      return !validated[t].valid
+    }).length,
+  })
+
+  return { validated: validated, unplacedNotes: unplacedNotes }
 }
 
 function findClaimForJob(job) {
