@@ -165,6 +165,26 @@ describe('resolveTagsForDoc', () => {
     expect(resolved.coverage_supporting_detail).toMatchObject({ text: '' })
   })
 
+  it("renders a field's emptyText fallback instead of a blank gap when the schema declares one", () => {
+    const validated = {
+      interior_status: { valid: true, empty: true, label: 'Interior status' },
+    }
+    const schemaWithEmptyText = {
+      interior_status: {
+        label: 'Interior status',
+        type: 'variant',
+        emptyText: 'Inspection found no interior-related damages.',
+        values: [{ key: 'not_affected', text: 'The dwelling interior was not affected.' }],
+      },
+    }
+
+    const { resolved } = resolveTagsForDoc(validated, schemaWithEmptyText)
+
+    expect(resolved.interior_status).toMatchObject({
+      text: 'Inspection found no interior-related damages.',
+    })
+  })
+
   it('flags a required variant branch whose canned text is blank instead of rendering an invisible gap', () => {
     const validated = { mitigation_status: { valid: true, value: 'none', confidence: 'high' } }
 
