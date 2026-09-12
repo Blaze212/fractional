@@ -81,6 +81,12 @@ original "Configuration and secrets" table. The repo copies under
 `apps/adjuster/template/` stay the single source of truth — re-upload the
 Drive files whenever these change.
 
+`phrasebank.json` (spec 023) follows the same upload pattern via
+`loadPhraseBank()`, keyed by an optional `PHRASEBANK_FILE_ID` Script Property.
+Unlike the two above, it's optional: it's a style reference for prompt.js, not
+schema the pipeline needs to run, so an unset property, a missing Drive file,
+or bad JSON all just mean no phrase bank that run rather than a failure.
+
 ## Script Properties for the dual transcription layer
 
 Added by spec 012 (see `docs/adr/007-dual-transcription-and-verbatim-merge.md`).

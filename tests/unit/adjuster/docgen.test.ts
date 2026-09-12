@@ -11,6 +11,7 @@ const {
   countNeedsInput,
   normalizeClause,
   clauseNeedsReject,
+  narrativeNeedsReview,
 } = loadGs('apps/adjuster/src/docgen.js')
 
 const tagSchema = {
@@ -659,6 +660,184 @@ describe('clauseNeedsReject', () => {
   it('rejects an explicit date, since [DATE_LOSS] already prints one', () => {
     expect(clauseNeedsReject('a severe storm on 4/12/2026')).toBe(true)
     expect(clauseNeedsReject('a severe storm in April')).toBe(true)
+  })
+
+  // Spec 023 Phase 5. Both fixtures are c1's real defects (see prose.test.ts).
+  it('rejects a date paraphrase that duplicates [DATE_LOSS] ("on the day of loss")', () => {
+    expect(clauseNeedsReject('a storm passed through the area on the day of loss')).toBe(true)
+  })
+
+  it('rejects "on the date of loss" and "on that day" the same way', () => {
+    expect(clauseNeedsReject('a severe storm on the date of loss')).toBe(true)
+    expect(clauseNeedsReject('a severe storm that struck on that day')).toBe(true)
+  })
+
+  // Code review follow-up (PR #55): the rule is "that day" paraphrases the
+  // date generally, not only the "on that day" form.
+  it('rejects "that day" without a leading "on"', () => {
+    expect(clauseNeedsReject('a storm that occurred that day')).toBe(true)
+  })
+
+  it('rejects a finite verb dropped into the noun-phrase slot (simple past + preposition)', () => {
+    expect(clauseNeedsReject('a storm passed through the area')).toBe(true)
+  })
+
+  it('rejects a finite verb dropped into the noun-phrase slot (auxiliary + participle)', () => {
+    expect(clauseNeedsReject('no subrogation concerns were reported')).toBe(true)
+  })
+
+  it('does not reject a past participle used adjectivally, with no auxiliary', () => {
+    expect(clauseNeedsReject('a wind driven rain event')).toBe(false)
+    expect(clauseNeedsReject('weather related')).toBe(false)
+  })
+
+  // Code review follow-up (PR #55): "related to" is an adjectival participle,
+  // not a finite verb + preposition, and is the accepted example wording in
+  // subrogation_reason and coverage_cause_narrative's own guidance.
+  it('does not reject "related to", the accepted wording for subrogation_reason and coverage_cause_narrative', () => {
+    expect(
+      clauseNeedsReject(
+        'related to a 10 year old plumbing supply line that was not recently repaired',
+      ),
+    ).toBe(false)
+    expect(clauseNeedsReject('related to a burst plumbing line due to freezing')).toBe(false)
+  })
+})
+
+// Spec 023 Phase 4. Fixtures are drawn directly from the two real calls
+// documented in the spec's "Observed defects" section (see prose.test.ts).
+describe('narrativeNeedsReview', () => {
+  it('passes a clean narrative: complete sentence, finite verb, terminal punctuation', () => {
+    expect(
+      narrativeNeedsReview(
+        'We observed two glass panels, approximately 66 inches by 60 inches, damaged on the front elevation.',
+      ),
+    ).toBe(false)
+  })
+
+  it('flags a noun pile with no finite verb', () => {
+    expect(narrativeNeedsReview('eight wind damage shingles')).toBe(true)
+  })
+
+  it('flags text with no terminal punctuation', () => {
+    expect(narrativeNeedsReview('We observed damage to the fascia')).toBe(true)
+  })
+
+  it('flags a narrative starting with a lowercase letter', () => {
+    expect(narrativeNeedsReview('the roof was inspected and found undamaged.')).toBe(true)
+  })
+
+  it('flags a dictation filler token', () => {
+    expect(narrativeNeedsReview('Okay so we observed water damage to the ceiling.')).toBe(true)
+  })
+
+  it('flags a spelled-out number above ten alongside a digit in the same field', () => {
+    expect(narrativeNeedsReview('We observed eleven shingles missing and 3 vents damaged.')).toBe(
+      true,
+    )
+  })
+
+  it('does not flag a spelled-out number when no digit appears in the same field', () => {
+    expect(narrativeNeedsReview('We observed eleven shingles missing from the slope.')).toBe(false)
+  })
+
+  it('does not flag a lone no-damage sentence with nothing contradicting it', () => {
+    expect(
+      narrativeNeedsReview('We observed no storm-related damages on the left elevation.'),
+    ).toBe(false)
+  })
+
+  it('flags a no-damage opening that is contradicted by a finding later in the same field (c1 left_elevation_status)', () => {
+    expect(
+      narrativeNeedsReview(
+        'We observed no storm-related damages on the left elevation. Approximately three or four linear feet of fascia was blown, wind damaged and missing and will need to be replaced. This appeared to be the origin of water leaking into the bathroom.',
+      ),
+    ).toBe(true)
+  })
+
+  // Code review follow-ups on the first version of this lint (see PR #55).
+  it("flags the denial-plus-finding shape even with words between the subject and the verb (prompt.js's own roof_narrative_freeform example)", () => {
+    expect(
+      narrativeNeedsReview(
+        'My inspection of the roof found no storm related damages present. However, we did observe two raised nails on the left extension ridge which could be the water intrusion point.',
+      ),
+    ).toBe(true)
+  })
+
+  it('does not flag a second sentence that merely continues, with no finding contradicting the no-damage opening', () => {
+    expect(
+      narrativeNeedsReview(
+        'We observed no storm-related damage to the right slope. The shingles were in average condition for their age.',
+      ),
+    ).toBe(false)
+  })
+
+  it.each([
+    'The insured arranged their own emergency tarp service prior to our inspection.',
+    'Mitigation equipment remained in place for 4 days before the insured confirmed moisture readings had normalized.',
+  ])(
+    'recognizes ordinary report verbs outside the curated list (phrase bank regression): %s',
+    (phrase) => {
+      expect(narrativeNeedsReview(phrase)).toBe(false)
+    },
+  )
+
+  it('never blanks the text — it only signals review', () => {
+    expect(narrativeNeedsReview('eight wind damage shingles')).toBe(true)
+    // The function itself has no text-mutation path; resolveTagsForDoc below
+    // asserts the rendered entry keeps the original text.
+  })
+
+  it('treats an empty value as not needing review (validate.js routes that to [NEEDS INPUT] separately)', () => {
+    expect(narrativeNeedsReview('')).toBe(false)
+  })
+})
+
+describe('resolveTagsForDoc: narrative lint', () => {
+  const narrativeSchema = {
+    front_slope_status: { label: 'Front slope status', type: 'narrative' },
+  }
+
+  it('flags a defective narrative for review without blanking it', () => {
+    const validated = {
+      front_slope_status: {
+        valid: true,
+        value: 'eight wind damage shingles',
+        confidence: 'high',
+        source_span: 'eight wind damage shingles',
+      },
+    }
+
+    const { resolved } = resolveTagsForDoc(validated, narrativeSchema)
+
+    expect(resolved.front_slope_status.text).toBe('eight wind damage shingles')
+    expect(resolved.front_slope_status.needsReview).toBe(true)
+  })
+
+  it('does not flag a clean narrative', () => {
+    const validated = {
+      front_slope_status: {
+        valid: true,
+        value: 'We observed no storm-related damage to the front slope.',
+        confidence: 'high',
+        source_span: 'front slope looked fine, no damage there',
+      },
+    }
+
+    const { resolved } = resolveTagsForDoc(validated, narrativeSchema)
+
+    expect(resolved.front_slope_status.needsReview).toBe(false)
+  })
+
+  it('does not lint a plain string field, only type: narrative', () => {
+    const stringSchema = { roof_pitch: { label: 'Roof pitch', type: 'string' } }
+    const validated = {
+      roof_pitch: { valid: true, value: 'six twelve', confidence: 'high', source_span: 'x' },
+    }
+
+    const { resolved } = resolveTagsForDoc(validated, stringSchema)
+
+    expect(resolved.roof_pitch.needsReview).toBe(false)
   })
 })
 

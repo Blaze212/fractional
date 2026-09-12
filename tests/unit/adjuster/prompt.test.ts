@@ -160,6 +160,49 @@ describe('buildPrompt', () => {
     expect(system).toMatch(/claim_identity_mismatch\.mismatched to true/)
   })
 
+  // Phase 1 (spec 023): clause fields and narrative fields are stated as two
+  // distinct shapes up front, in the system block, before any per-field rule
+  // relies on the distinction.
+  it('states the clause-versus-narrative taxonomy in the system block', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/two shapes of extracted text/i)
+    expect(system).toMatch(/no finite verb of its own, no trailing period/i)
+    expect(system).toMatch(/complete, grammatical sentences with a subject and a finite verb/i)
+  })
+
+  it('states the narrative register: complete sentences, no filler, no noun piles, digits over spelled numbers', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/no dictation artifacts/i)
+    expect(system).toMatch(/"eight wind-damaged shingles", not "eight wind damage shingles"/i)
+    expect(system).toMatch(/numbers and measurements in digits/i)
+    expect(system).toMatch(/four slopes and the four elevations should not disagree/i)
+  })
+
+  it('forbids a narrative from opening with a stock no-damage sentence and then describing damage', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(
+      /does not open with a stock no-damage sentence and then go on to describe damage/i,
+    )
+  })
+
+  it("says a field naming required content isn't complete without it", () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/not complete without that content/i)
+  })
+
+  it('says narratives are composed from the span, not copied from it', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/a narrative's value is composed by you, not copied/i)
+    expect(system).toMatch(
+      /repeats its source_span nearly word for word is usually a sign it was copied/i,
+    )
+  })
+
   it('defines a medium confidence tier that still fills the field but flags it for review', () => {
     const { system } = buildPrompt({ transcript: 'anything', templateSpec })
 
@@ -218,6 +261,111 @@ describe('field-specific guidance', () => {
     expect(user).toMatch(/unplaced_notes/i)
   })
 
+  // Phase 2 (spec 023): worked transcript-to-output examples for the fields
+  // that produced the worst prose in the two real-call fixtures (see
+  // prose.test.ts) — a rule alone had already failed for these.
+  it('shows origin_narrative a bad transcript-shaped answer against a good noun-phrase one', () => {
+    const spec = { origin_narrative: { label: 'Cause of loss', type: 'narrative' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('a storm passed through the area on the day of loss')
+    expect(user).toContain('a storm in the area')
+    // Regression (PR #55 code review): the good example must not invent
+    // facts the transcript never stated — the source_span rule this same
+    // system prompt states elsewhere forbids exactly that.
+    expect(user).not.toMatch(/severe wind and rain/i)
+  })
+
+  it('shows subrogation_reason a bad finite-verb answer against a good noun-phrase one', () => {
+    const spec = { subrogation_reason: { label: 'Subrogation reason clause', type: 'narrative' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('no subrogation concerns were reported')
+    expect(user).toContain('an absence of any identified subrogation potential')
+  })
+
+  it('tells roof_covering_type to include the head noun so it does not collide with roof_age_years digits', () => {
+    const spec = { roof_covering_type: { label: 'x', type: 'string' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('30 year laminate shingles')
+    expect(user).toMatch(/not "thirty-year laminate"/i)
+    // Regression (PR #55 code review): the template supplies no article
+    // before this value (enums.json's roof_status "shingle" text was
+    // "are a {{roof_covering_type}}", which put "a" before the plural
+    // "shingles" value this guidance recommends) — the guidance must say so,
+    // not just recommend a plural value that still doesn't agree.
+    expect(user).toContain('The shingles on the roof are ___ that are approximately')
+    expect(user).toMatch(/template supplies no article/i)
+  })
+
+  it('shows dwelling_stories and dwelling_type the defect their bare values cause together', () => {
+    const spec = {
+      dwelling_stories: { label: 'x', type: 'string' },
+      dwelling_type: { label: 'x', type: 'string' },
+    }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toMatch(/"1 story", not "1"/i)
+    expect(user).toMatch(/write "single family", not "single-family home"/i)
+  })
+
+  it('gives front_slope_status a finding example and a no-damage example, both complete sentences', () => {
+    const spec = { front_slope_status: { label: 'x', type: 'narrative' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('We observed eight wind-damaged shingles missing from the front slope.')
+    expect(user).toContain('We observed no storm-related damage to the front slope.')
+  })
+
+  it('gives front_elevation_status one coherent paragraph instead of a denial that contradicts itself', () => {
+    const spec = { front_elevation_status: { label: 'x', type: 'narrative' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toMatch(
+      /one coherent paragraph, never a denial followed by a contradicting finding/i,
+    )
+    expect(user).toContain(
+      'We observed approximately 3 to 4 linear feet of fascia on the front elevation',
+    )
+    // Regression: this example must stay about the front elevation — an
+    // example under front_elevation_status that describes the left elevation
+    // can teach the extractor to place left-elevation evidence in the front
+    // field (the field's own guidance says to sort by cardinal direction).
+    expect(user).not.toMatch(/on the left elevation/i)
+    // Regression: the example's own output must use digits, since it sits
+    // right below the "digits over spelled numbers" register rule — an
+    // example that violates the rule it's illustrating teaches the wrong
+    // thing by showing it.
+    expect(user).not.toMatch(/three to four linear feet/i)
+  })
+
+  it('gives front_elevation_status a digits example that states a count once', () => {
+    const spec = { front_elevation_status: { label: 'x', type: 'narrative' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain(
+      'We observed two glass panels, approximately 66 inches by 60 inches, damaged on the front elevation.',
+    )
+  })
+
+  it('tells overhead_profit_narrative a determination alone is incomplete without its reason', () => {
+    const spec = { overhead_profit_narrative: { label: 'x', type: 'narrative' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toMatch(/a determination alone is not a complete answer without its reason/i)
+    expect(user).toContain('Overhead and profit do not apply.')
+    expect(user).toContain('given the single-trade scope of the roofing repair')
+  })
+
   // Phase 3: a full-sentence answer to a clause field gets rejected at render
   // time (see docgen.js's clauseNeedsReject) rather than printed as a broken
   // sentence, so the prompt reinforces the one-clause contract for every
@@ -267,7 +415,7 @@ describe('field-specific guidance', () => {
     ['occupancy_status', 'The home is currently occupied by ___.'],
     ['dwelling_type', 'The dwelling is a [stories], ___ structure.'],
     ['foundation_type', 'It was built in [year] on a ___ foundation.'],
-    ['roof_covering_type', 'The shingles on the roof are a ___'],
+    ['roof_covering_type', 'The shingles on the roof are ___'],
     ['roof_condition', 'The shingles are in ___ condition for their age.'],
     ['roof_pitch', 'The slopes on the roof are pitched at ___.'],
   ])('names the grammatical slot %s fills', (tag, fixedSentenceFragment) => {

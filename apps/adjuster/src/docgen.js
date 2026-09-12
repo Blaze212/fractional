@@ -121,10 +121,11 @@ function resolveTagsForDoc(validated, tagSchema, claim) {
         }
       }
     } else {
+      var text = String(field.value)
       entry = {
         isVariant: false,
-        text: String(field.value),
-        needsReview: needsReview,
+        text: text,
+        needsReview: needsReview || (schema.type === 'narrative' && narrativeNeedsReview(text)),
         sourceSpan: field.source_span,
         label: schema.label,
       }
@@ -208,13 +209,88 @@ var CLAUSE_TRAILING_PUNCTUATION_PATTERN = /[!?]$/
 var CLAUSE_DATE_PATTERN = /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/
 var CLAUSE_MONTH_PATTERN =
   /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i
+// [DATE_LOSS] already prints the date once — a clause that paraphrases "the
+// day of loss" instead of naming an explicit date prints the date concept a
+// second time, the same defect CLAUSE_DATE_PATTERN/CLAUSE_MONTH_PATTERN catch
+// for an explicit date.
+var CLAUSE_DATE_PARAPHRASE_PATTERN = /\bon (?:the day|the date) of loss\b|\bthat day\b/i
+// A clause is a noun phrase dropped into a fixed template sentence, not a
+// sentence with its own subject and verb. This does not try to parse English
+// generally — it catches the two shapes that showed up in real drafts: an
+// auxiliary/copula directly followed by a past participle ("were reported"),
+// and a simple past-tense verb directly followed by a preposition ("passed
+// through"). A past participle used adjectivally with no auxiliary ("wind
+// driven", "weather related") is exactly what a clause should look like and
+// is left alone — "to" is deliberately not one of the prepositions in the
+// second alternative, since "related to" is exactly that adjectival shape and
+// is the accepted example wording in subrogation_reason and
+// coverage_cause_narrative's own guidance ("related to a burst plumbing line
+// due to freezing"); including it rejected those clauses into [NEEDS INPUT].
+var CLAUSE_FINITE_VERB_PATTERN =
+  /\b(?:am|is|are|was|were|has|have|had|did|does|do)\s+\w+(?:ed|en)\b|\b\w+ed\s+(?:through|in|into|onto|beneath|under|over|at|from|during|across)\b/i
 
 function clauseNeedsReject(text) {
   return (
     CLAUSE_SENTENCE_BOUNDARY_PATTERN.test(text) ||
     CLAUSE_TRAILING_PUNCTUATION_PATTERN.test(text) ||
     CLAUSE_DATE_PATTERN.test(text) ||
-    CLAUSE_MONTH_PATTERN.test(text)
+    CLAUSE_MONTH_PATTERN.test(text) ||
+    CLAUSE_DATE_PARAPHRASE_PATTERN.test(text) ||
+    CLAUSE_FINITE_VERB_PATTERN.test(text)
+  )
+}
+
+// A narrative field (schema.type === 'narrative', form !== 'clause') is prose,
+// not a fragment, and the prompt-only register rules (see prompt.js's Phase 1
+// system block) catch most defects but not all of them — this mirrors
+// clauseNeedsReject's position in the pipeline as a mechanical backstop. Unlike
+// a rejected clause, a clumsy narrative still carries the facts, so this only
+// sets needsReview (rendered via markForReview, same as a medium-confidence
+// field) rather than blanking anything.
+// The curated list catches the report-voice verbs actually seen in drafts and
+// the phrase bank; the trailing alternative is a generic fallback for any
+// other regular verb ("arranged", "remained") so ordinary report vocabulary
+// outside this list doesn't get misread as "no verb". A noun pile with no
+// verb at all ("eight wind damage shingles") still has neither a listed verb
+// nor an -ed/-ing word, so it still fails this check; a fragment that merely
+// contains an incidental participle ("wind-damaged shingles") with no other
+// verb still gets caught by the terminal-punctuation check below.
+var NARRATIVE_FINITE_VERB_PATTERN =
+  /\b(?:am|is|are|was|were|has|have|had|do|does|did|will|would|can|could|shall|should|observed|found|documented|performed|responded|confirmed|stated|resulted|reported|inspected|identified|shows?|indicates?|requires?|needs?|remains?|continues?|noted|appears?|applies|completed)\b|\b\w{3,}(?:ed|ing)\b/i
+var NARRATIVE_FILLER_PATTERN = /\b(?:okay so|uh|um|let'?s see|you know|like i said)\b/i
+var NARRATIVE_NUMBER_WORD_PATTERN =
+  /\b(?:eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)\b/i
+// Non-greedy prefix scan rather than a fixed lead-in list: prompt.js's own
+// roof_narrative_freeform example ("My inspection of the roof found no storm
+// related damages present.") puts words between the subject and the verb
+// that a fixed "inspection (found|documented)" lead-in would miss entirely.
+var NARRATIVE_NO_DAMAGE_OPENING_PATTERN =
+  /^.{0,60}?\bno\s+(?:storm[- ]related\s+|event[- ]related\s+|further\s+)?damages?\b/i
+// A second sentence after a no-damage opener isn't automatically a
+// contradiction ("We observed no storm-related damage to the right slope.
+// The shingles were in average condition for their age." is coherent) — only
+// flag it when that remainder actually names a finding.
+var NARRATIVE_DAMAGE_FINDING_PATTERN =
+  /\b(?:damage[sd]?|missing|blown|cracked|displaced|broken|torn|exposed|leak(?:ing|ed)?|replace[sd]?|intrusion)\b/i
+
+function narrativeContradictsNoDamageOpening(trimmed) {
+  if (!NARRATIVE_NO_DAMAGE_OPENING_PATTERN.test(trimmed)) return false
+
+  var afterFirstSentence = trimmed.match(/^[^.!?]*[.!?]\s+(\S.*)$/)
+  return !!afterFirstSentence && NARRATIVE_DAMAGE_FINDING_PATTERN.test(afterFirstSentence[1])
+}
+
+function narrativeNeedsReview(text) {
+  var trimmed = String(text || '').trim()
+  if (!trimmed) return false
+
+  return (
+    !NARRATIVE_FINITE_VERB_PATTERN.test(trimmed) ||
+    !/[.!?]$/.test(trimmed) ||
+    /^[a-z]/.test(trimmed) ||
+    NARRATIVE_FILLER_PATTERN.test(trimmed) ||
+    (NARRATIVE_NUMBER_WORD_PATTERN.test(trimmed) && /\d/.test(trimmed)) ||
+    narrativeContradictsNoDamageOpening(trimmed)
   )
 }
 

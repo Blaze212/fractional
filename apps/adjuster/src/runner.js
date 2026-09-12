@@ -329,7 +329,7 @@ function runFieldExtraction(job, claim, tagSchema, input, hints) {
     claim: claim,
     templateSpec: tagSchema,
     glossary: loadGlossary(),
-    phraseBank: [],
+    phraseBank: loadPhraseBank(),
     liveExtraction: hints.liveExtraction,
     adjusterName: getOptionalConfig('ADJUSTER_NAME', 'Brandon'),
   })
