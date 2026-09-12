@@ -1,0 +1,41 @@
+{
+  "captureId": "fixture-hail-roof",
+  "callStartedAt": "2026-06-20T14:31:00Z",
+  "sources": {
+    "elevenlabs": "sources/elevenlabs.txt",
+    "qwen": "sources/qwen.txt",
+    "dograh": "sources/dograh.txt"
+  },
+  "precedence": ["elevenlabs", "qwen", "dograh"],
+  "claim": {
+    "claim_id": "FIXTURE-0001",
+    "insured_last_name": "Okonkwo",
+    "address_line1": "118 Larkspur Court",
+    "city": "Fairhaven",
+    "carrier": "Northbridge Mutual",
+    "claim_number": "FX-4471820",
+    "appt_end": "2026-06-20T15:00:00Z",
+    "property_year_built": 1994,
+    "property_bedrooms": 4,
+    "calendar_fields": "{\"bedroom_count\": \"4\"}"
+  },
+  "claims": [
+    {
+      "claim_id": "FIXTURE-0001",
+      "insured_last_name": "Okonkwo",
+      "address_line1": "118 Larkspur Court",
+      "city": "Fairhaven",
+      "carrier": "Northbridge Mutual",
+      "claim_number": "FX-4471820",
+      "appt_end": "2026-06-20T15:00:00Z",
+      "property_year_built": 1994,
+      "property_bedrooms": 4,
+      "calendar_fields": "{\"bedroom_count\": \"4\"}"
+    }
+  ],
+  "liveFields": {
+    "mortgage_status": "has_mortgage"
+  },
+  "tagSchema": "tagSchema.json",
+  "glossary": "glossary.json"
+}

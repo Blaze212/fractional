@@ -146,30 +146,35 @@ function runTranscriptionStage(job) {
 // fall back to an LLM pass that tolerates misheard names/addresses the exact
 // scoring in matcher.js can't. A failed LLM call is logged and the
 // deterministic (possibly "none") result stands rather than failing the job.
+//
+// The matching decisions all live in core; what is left here is the try, and it
+// wraps the config assembly too. getConfig throws on a missing script property,
+// and a missing property has always degraded this to "the deterministic result
+// stands" in exactly the way a failed vendor call does — building the config
+// outside the try would turn it into a failed job.
 function resolveClaimMatch(job, claims) {
   var match = matchClaim(job.call_started_at, job.transcript, claims)
+  if (!coreNeedsLlmClaimMatch(match)) return match
 
-  if (match.match_method === 'none' || match.match_method === 'ambiguous') {
-    try {
-      var llmMatch = matchClaimWithLlm(job.call_started_at, job.transcript, claims)
-      logEvent('runner.llm_match_attempted', {
-        capture_id: job.capture_id,
-        deterministic_method: match.match_method,
-        llm_claim_id: llmMatch.claim_id || '',
-        llm_confidence: llmMatch.match_confidence,
-      })
-      if (llmMatch.claim_id) match = llmMatch
-    } catch (err) {
-      var describedMatchError = describeError(err)
-      logEvent('runner.llm_match_failed', {
-        capture_id: job.capture_id,
-        error: describedMatchError.error,
-        stack: describedMatchError.stack,
-      })
-    }
+  try {
+    return coreResolveLlmMatch({
+      captureId: job.capture_id,
+      callStartedAt: job.call_started_at,
+      transcript: job.transcript,
+      claims: claims,
+      fallback: match,
+      config: buildOpenRouterConfig(),
+      deps: buildCoreDeps(),
+    })
+  } catch (err) {
+    var describedMatchError = describeError(err)
+    logEvent('runner.llm_match_failed', {
+      capture_id: job.capture_id,
+      error: describedMatchError.error,
+      stack: describedMatchError.stack,
+    })
+    return match
   }
-
-  return match
 }
 
 // Stage B. Its input changed — the master transcript when stage A produced an
@@ -227,67 +232,36 @@ function runExtractionStage(job) {
 }
 
 function findClaimForJob(job) {
-  if (!job || !job.claim_id) return null
-
-  return (
-    getClaims().filter(function (c) {
-      return c.claim_id === job.claim_id
-    })[0] || null
-  )
+  return job ? coreFindClaim(getClaims(), job.claim_id) : null
 }
 
-// The cross-check hints handed to the extractor. Both Dograh's Notetaker export
-// (see webhook.js's handleDograhNotetaker) and Retell's post-call analysis (see
-// handleRetellCallAnalyzed) hand back a per-field value captured live during the
-// call, with no verbatim span into the transcript — without a cross-check pass
-// every field outside the small enum/variant set (validateLiveFields' only
-// checkable case) would be forced to NEEDS INPUT regardless of what the platform
-// actually captured. Feeding it into the OpenRouter pass as a hint (see
-// prompt.js's formatLiveExtraction) lets the model re-derive every field from the
-// transcript itself, with a real source_span, using the platform's export only to
-// know what to listen for. calendar_fields (see calendarSync.js) is the same kind
-// of hint sourced from the scheduling note instead of the call — the live export
-// wins on overlap since it was captured live during this specific call.
-//
-// calendarFields rides along in the return because it is needed twice: once as a
-// prompt hint, once as validation's fallback source (applyCalendarFallback).
+// Sheet and job-row reads only; the hint-building decisions are core's (see
+// coreBuildExtractionHints). live_fields is only ever populated by a platform
+// that produces a live export, so a job from anywhere else contributes nothing.
 function buildExtractionHints(job, claim) {
   var hasLiveExport = job.source === 'dograh' || job.source === 'retell'
-  var liveFields = hasLiveExport ? JSON.parse(job.live_fields || '{}') : {}
-  var calendarFields = parseCalendarFields(claim)
-  var liveExtraction =
-    Object.keys(liveFields).length > 0 || Object.keys(calendarFields).length > 0
-      ? Object.assign({}, calendarFields, liveFields)
-      : null
 
-  return { calendarFields: calendarFields, liveExtraction: liveExtraction }
+  return coreBuildExtractionHints({
+    liveFields: hasLiveExport ? JSON.parse(job.live_fields || '{}') : {},
+    calendarFields: parseCalendarFields(claim),
+  })
 }
 
-// The one paid step in the pipeline's second stage. Writes extraction.json to the
-// call folder on the way out so the rendering half can be replayed for free
-// afterwards — see replay.js for why that artifact exists.
+// The one paid step in the pipeline's second stage. Core makes the call; this
+// writes extraction.json to the call folder on the way out so the rendering
+// half can be replayed for free afterwards — see replay.js for why that
+// artifact exists.
 function runFieldExtraction(job, claim, tagSchema, input, hints) {
-  var extraction = extractFields({
-    apiKey: getConfig('OPENROUTER_API_KEY'),
-    model: getConfig('OPENROUTER_MODEL'),
-    fallbacks: getConfigList('OPENROUTER_FALLBACKS', []),
+  var extraction = coreExtract({
     captureId: job.capture_id,
     transcript: input.transcript,
     transcriptSource: input.source,
     claim: claim,
-    templateSpec: tagSchema,
+    tagSchema: tagSchema,
     glossary: loadGlossary(),
-    phraseBank: [],
     liveExtraction: hints.liveExtraction,
-    adjusterName: getOptionalConfig('ADJUSTER_NAME', 'Brandon'),
-  })
-
-  logEvent('runner.extracted', {
-    capture_id: job.capture_id,
-    model: extraction.model,
-    field_count: Object.keys(extraction.fields || {}).length,
-    unplaced_notes: (extraction.unplaced_notes || []).length,
-    live_extraction_fields: hints.liveExtraction ? Object.keys(hints.liveExtraction).length : 0,
+    config: buildExtractionConfig(),
+    deps: buildCoreDeps(),
   })
 
   writeExtractionArtifact(job, claim, input, extraction)
@@ -295,57 +269,23 @@ function runFieldExtraction(job, claim, tagSchema, input, hints) {
   return extraction
 }
 
-// Validation and rendering, shared by the live pipeline and by replay.js's entry
-// points. A replayed draft has to travel the exact path a live job travels — a
-// replay that drifts from production verifies nothing — so the sequence is
-// written down once, here, rather than reproduced at each caller.
-//
-// Backstops in order: applyCalendarFallback fills the fixed set of property facts
-// the transcript is unlikely to state from the scheduler's invite note, then
-// applyClaimPropertyFallback fills the same facts from the public-records lookup
-// on the Claims row. Calendar first, so a hand-typed invite value always wins.
-// dropCoverageRestatement runs last, once coverage_determination and
-// coverage_cause_narrative have both settled, since it checks the supporting
-// detail against them.
+// Validation and rendering, shared by the live pipeline and by replay.js's
+// entry points. Validation itself — the span check, the calendar and claim
+// backstops, the coverage-restatement drop, and the order they run in — is
+// core's (see coreValidate). What is left here is handing core's result to
+// Google Docs.
 function renderDraftFromExtraction(options) {
   var job = options.job
-  var tagSchema = options.tagSchema
 
-  var validated = validateFields(options.fields, options.haystack, tagSchema)
-  validated = applyCalendarFallback(validated, options.calendarFields, tagSchema)
-  validated = applyClaimPropertyFallback(validated, options.claim, tagSchema)
-
-  var coverageDrop = dropCoverageRestatement(validated)
-  validated = coverageDrop.validated
-  var unplacedNotes = options.unplacedNotes || []
-  if (coverageDrop.dropped) {
-    unplacedNotes = unplacedNotes.concat(coverageDrop.dropped)
-    logEvent('docgen.coverage_detail_dropped', {
-      capture_id: job.capture_id,
-      dropped: coverageDrop.dropped,
-    })
-  }
-
-  // Vocabulary signal for the seven suggestions fields (see validate.js's
-  // Architecture-decision comment): an off-list value still validates and
-  // renders, this only makes it visible for periodic review.
-  collectOffSuggestionFields(validated, tagSchema).forEach(function (entry) {
-    logEvent('extraction.off_suggestion', {
-      capture_id: job.capture_id,
-      tag: entry.tag,
-      value: entry.value,
-      source: entry.source,
-    })
-  })
-
-  logEvent('runner.validated', {
-    capture_id: job.capture_id,
-    valid: Object.keys(validated).filter(function (t) {
-      return validated[t].valid
-    }).length,
-    needs_input: Object.keys(validated).filter(function (t) {
-      return !validated[t].valid
-    }).length,
+  var validation = coreValidate({
+    captureId: job.capture_id,
+    fields: options.fields,
+    haystack: options.haystack,
+    tagSchema: options.tagSchema,
+    claim: options.claim,
+    calendarFields: options.calendarFields,
+    unplacedNotes: options.unplacedNotes || [],
+    deps: buildCoreDeps(),
   })
 
   var latestJob = getJobByCaptureId(job.capture_id) || job
@@ -353,28 +293,15 @@ function renderDraftFromExtraction(options) {
   return generateDoc(
     latestJob,
     options.claim,
-    validated,
-    tagSchema,
-    unplacedNotes,
+    validation.validated,
+    options.tagSchema,
+    validation.unplacedNotes,
     options.docOptions,
   )
 }
 
-// A hand-edited Claims row could carry malformed JSON in this cell — that
-// should degrade to "no calendar hint" for this job, not fail the whole
-// pipeline over a cross-check field that was never load-bearing.
 function parseCalendarFields(claim) {
-  if (!claim || !claim.calendar_fields) return {}
-
-  try {
-    return JSON.parse(claim.calendar_fields)
-  } catch (err) {
-    logEvent('runner.calendar_fields_unparseable', {
-      claim_id: claim.claim_id,
-      error: String(err),
-    })
-    return {}
-  }
+  return coreParseCalendarFields(claim, buildCoreDeps())
 }
 
 function failJob(job, errorMessage) {

@@ -1,0 +1,93 @@
+{
+  "contacted_party_name": {
+    "label": "Contacted party",
+    "type": "string",
+    "section": "Assignment",
+    "required": true
+  },
+  "present_at_inspection": {
+    "label": "Present at inspection",
+    "type": "narrative",
+    "section": "Assignment",
+    "required": true
+  },
+  "mortgage_status": {
+    "label": "Mortgage status",
+    "type": "variant",
+    "section": "Mortgage",
+    "required": true,
+    "values": [
+      {
+        "key": "has_mortgage",
+        "label": "Has a mortgage",
+        "text": "I confirmed with [XM8_INSURED_NAME] that their mortgage is through [XM8_MORTGAGEE1]."
+      },
+      {
+        "key": "no_mortgage",
+        "label": "No mortgage",
+        "text": "There is not a mortgage on the property."
+      }
+    ]
+  },
+  "origin_narrative": {
+    "label": "Cause of loss",
+    "type": "narrative",
+    "form": "clause",
+    "section": "Origin",
+    "required": true
+  },
+  "roof_covering_type": {
+    "label": "Roof covering",
+    "type": "string",
+    "section": "Roof",
+    "required": false,
+    "suggestions": [
+      "three tab asphalt shingle",
+      "architectural asphalt shingle",
+      "standing seam metal"
+    ]
+  },
+  "coverage_determination": {
+    "label": "Coverage determination",
+    "type": "variant",
+    "section": "Coverage",
+    "required": true,
+    "values": [
+      {
+        "key": "covered",
+        "label": "Covered",
+        "text": "which is covered under the insured's policy"
+      },
+      {
+        "key": "unknown",
+        "label": "Undetermined",
+        "text": "coverage is undetermined at this time"
+      }
+    ]
+  },
+  "coverage_cause_narrative": {
+    "label": "Coverage cause clause",
+    "type": "narrative",
+    "form": "clause",
+    "section": "Coverage",
+    "required": true
+  },
+  "coverage_supporting_detail": {
+    "label": "Coverage supporting detail",
+    "type": "narrative",
+    "section": "Coverage",
+    "required": false
+  },
+  "year_built": {
+    "label": "Year built",
+    "type": "string",
+    "section": "Property",
+    "required": true
+  },
+  "bedroom_count": {
+    "label": "Bedrooms",
+    "type": "string",
+    "section": "Property",
+    "required": true
+  }
+}

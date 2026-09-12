@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { loadGs } from './loadGs'
 
-const { matchClaim } = loadGs('apps/adjuster/src/matcher.js')
+const { matchClaim } = loadGs('apps/adjuster/src/core/matcher.js')
 
 function claim(overrides: Record<string, unknown> = {}) {
   return {

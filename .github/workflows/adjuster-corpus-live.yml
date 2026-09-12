@@ -1,0 +1,61 @@
+name: Adjuster Corpus (live)
+
+# Deliberately not on push or pull_request. This job makes real OpenRouter
+# calls — one merge and one extraction per fixture — so running it on every
+# push would cost money per push, produce a nondeterministic diff, and break
+# the invariant that the default suite cannot dial a vendor. The recorded-
+# response version of the same fixtures runs in `pnpm test` on every push (see
+# tests/unit/adjuster/corpus.test.ts).
+#
+# Run this by hand from the Actions tab before merging a prompt, model, or
+# extraction change, to see its blast radius field by field. The weekly run
+# catches drift in a model nobody touched.
+on:
+  workflow_dispatch:
+    inputs:
+      fixture:
+        description: 'Single fixture name (blank runs the whole corpus)'
+        required: false
+        type: string
+      fail_on_diff:
+        description: 'Fail the job when any field moved'
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    # Mondays, 07:00 UTC.
+    - cron: '0 7 * * 1'
+
+jobs:
+  corpus-live:
+    name: Run the corpus against real models
+    runs-on: ubuntu-latest
+    environment:
+      name: Production
+    permissions:
+      contents: read
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+      MASTER_TRANSCRIPT_MODEL: ${{ vars.MASTER_TRANSCRIPT_MODEL }}
+      OPENROUTER_FALLBACKS: ${{ vars.OPENROUTER_FALLBACKS }}
+      ADJUSTER_NAME: ${{ vars.ADJUSTER_NAME }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # No install step: the corpus runner and the core it loads have zero
+      # dependencies, so there is nothing to resolve.
+      - name: Run the corpus live
+        run: |
+          node scripts/adjuster-corpus-live.mjs \
+            ${{ inputs.fixture && format('--fixture {0}', inputs.fixture) || '' }} \
+            ${{ inputs.fail_on_diff && '--fail-on-diff' || '' }} \
+            | tee corpus-live.md
+
+      - name: Publish the diff to the job summary
+        if: always()
+        run: cat corpus-live.md >> "$GITHUB_STEP_SUMMARY"

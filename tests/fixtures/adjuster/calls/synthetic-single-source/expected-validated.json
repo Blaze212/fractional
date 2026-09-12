@@ -1,0 +1,66 @@
+{
+  "contacted_party_name": {
+    "valid": false,
+    "empty": false,
+    "label": "Contacted party"
+  },
+  "present_at_inspection": {
+    "valid": true,
+    "label": "Present at inspection",
+    "value": "No one; exterior only inspection",
+    "source_span": "Nobody was home so I did an exterior only inspection",
+    "confidence": "high"
+  },
+  "mortgage_status": {
+    "valid": true,
+    "label": "Mortgage status",
+    "value": "no_mortgage",
+    "source_span": "There is no mortgage on the property",
+    "confidence": "high"
+  },
+  "origin_narrative": {
+    "valid": true,
+    "label": "Cause of loss",
+    "value": "a burst supply line under the kitchen sink from the freeze last week",
+    "source_span": "a burst supply line under the kitchen sink from the freeze last week",
+    "confidence": "high"
+  },
+  "roof_covering_type": {
+    "valid": true,
+    "label": "Roof covering",
+    "value": "standing seam metal",
+    "source_span": "The roof is standing seam metal",
+    "confidence": "high"
+  },
+  "coverage_determination": {
+    "valid": true,
+    "label": "Coverage determination",
+    "value": "unknown",
+    "source_span": "I could not determine coverage today",
+    "confidence": "high"
+  },
+  "coverage_cause_narrative": {
+    "valid": true,
+    "label": "Coverage cause clause",
+    "value": "related to a burst supply line due to freezing",
+    "source_span": "a burst supply line under the kitchen sink from the freeze",
+    "confidence": "medium"
+  },
+  "coverage_supporting_detail": {
+    "valid": true,
+    "label": "Coverage supporting detail",
+    "value": "The policy status was still being confirmed by the carrier.",
+    "source_span": "the policy status was still being confirmed by the carrier",
+    "confidence": "high"
+  },
+  "year_built": {
+    "valid": false,
+    "empty": false,
+    "label": "Year built"
+  },
+  "bedroom_count": {
+    "valid": false,
+    "empty": false,
+    "label": "Bedrooms"
+  }
+}

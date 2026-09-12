@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { loadGs } from './loadGs'
 
 const { buildPrompt, formatFieldGuidance, formatLiveExtraction } = loadGs(
-  'apps/adjuster/src/prompt.js',
+  'apps/adjuster/src/core/prompt.js',
 )
 
 const templateSpec = {

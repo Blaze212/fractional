@@ -2,28 +2,41 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { loadGs } from './loadGs'
 
-const { buildExtractionSchema } = loadGs('apps/adjuster/src/llm/openrouter.js')
+const FILES = ['apps/adjuster/src/core/deps.js', 'apps/adjuster/src/core/openrouter.js']
 
+const { buildExtractionSchema } = loadGs(FILES)
+
+/**
+ * Everything the file under test reaches outside itself now arrives as
+ * `deps`, so the harness builds one instead of stubbing Apps Script globals.
+ * `sent` records the request core handed to deps.fetch, which is what the
+ * payload assertions below read.
+ */
 function harness(fetchResponses: Array<{ status: number; body: string }>) {
   const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
   const serverLogged: Array<{ event: string; fields: Record<string, unknown> }> = []
+  const sent: Array<Record<string, any>> = []
+  const slept: number[] = []
   let call = 0
 
-  const sandbox = loadGs('apps/adjuster/src/llm/openrouter.js', {
-    logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
-    logServerOnly: (event: string, fields: Record<string, unknown>) =>
-      serverLogged.push({ event, fields }),
-    UrlFetchApp: {
-      fetch: () => {
-        const res = fetchResponses[Math.min(call, fetchResponses.length - 1)]
-        call += 1
-        return { getResponseCode: () => res.status, getContentText: () => res.body }
-      },
+  const deps = {
+    fetch: (request: Record<string, any>) => {
+      sent.push(request)
+      const res = fetchResponses[Math.min(call, fetchResponses.length - 1)]
+      call += 1
+      return { status: res.status, body: res.body, headers: {} }
     },
-    Utilities: { sleep: () => {} },
-  })
+    logger: {
+      logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
+      logServerOnly: (event: string, fields: Record<string, unknown>) =>
+        serverLogged.push({ event, fields }),
+    },
+    sleep: (ms: number) => slept.push(ms),
+  }
 
-  return { sandbox, logged, serverLogged }
+  const sandbox = loadGs(FILES)
+
+  return { sandbox, deps, logged, serverLogged, sent, slept }
 }
 
 const SPEC = {
@@ -79,7 +92,7 @@ describe('buildExtractionSchema', () => {
 
 describe('provider routing', () => {
   it('requires endpoints that support the requested parameters', () => {
-    const src = readFileSync('apps/adjuster/src/llm/openrouter.js', 'utf-8')
+    const src = readFileSync('apps/adjuster/src/core/openrouter.js', 'utf-8')
 
     expect(src).toContain('require_parameters: true')
   })
@@ -93,11 +106,12 @@ describe('callOpenRouter logging', () => {
   })
 
   it('logs the full response body and transcript to the server log (Apps Script), not the sheet', () => {
-    const { sandbox, logged, serverLogged } = harness([{ status: 200, body: OK_BODY }])
+    const { sandbox, deps, logged, serverLogged } = harness([{ status: 200, body: OK_BODY }])
 
     sandbox.callOpenRouter({
       apiKey: 'key',
       model: 'gpt-5.4',
+      deps,
       captureId: 'capture-1',
       transcript: 'roof is 3-tab, twelve years old',
       messages: [],
@@ -121,11 +135,12 @@ describe('callOpenRouter logging', () => {
   })
 
   it('never logs the API key', () => {
-    const { sandbox, logged, serverLogged } = harness([{ status: 200, body: OK_BODY }])
+    const { sandbox, deps, logged, serverLogged } = harness([{ status: 200, body: OK_BODY }])
 
     sandbox.callOpenRouter({
       apiKey: 'super-secret-key',
       model: 'gpt-5.4',
+      deps,
       captureId: 'capture-1',
       transcript: 'x',
       messages: [],
@@ -137,7 +152,7 @@ describe('callOpenRouter logging', () => {
   })
 
   it('logs each retry attempt separately, including the failing response body', () => {
-    const { sandbox, serverLogged } = harness([
+    const { sandbox, deps, serverLogged } = harness([
       { status: 500, body: '{"error":"upstream down"}' },
       { status: 200, body: OK_BODY },
     ])
@@ -145,6 +160,7 @@ describe('callOpenRouter logging', () => {
     sandbox.callOpenRouter({
       apiKey: 'key',
       model: 'gpt-5.4',
+      deps,
       captureId: 'capture-1',
       transcript: 'x',
       messages: [],
@@ -159,12 +175,13 @@ describe('callOpenRouter logging', () => {
 
   it('still caps the server log at a generous backstop, not the sheet-sized 45k margin', () => {
     const hugeBody = JSON.stringify({ note: 'x'.repeat(300000) })
-    const { sandbox, serverLogged } = harness([{ status: 200, body: hugeBody }])
+    const { sandbox, deps, serverLogged } = harness([{ status: 200, body: hugeBody }])
 
     expect(() =>
       sandbox.callOpenRouter({
         apiKey: 'key',
         model: 'gpt-5.4',
+        deps,
         captureId: 'capture-1',
         transcript: 'y'.repeat(300000),
         messages: [],
@@ -185,30 +202,28 @@ describe('callOpenRouterWebSearch', () => {
   })
 
   it('appends :online to the model and sends no response_format', () => {
-    const { sandbox } = harness([{ status: 200, body: OK_BODY }])
-    let sent: Record<string, any> = {}
-    sandbox.UrlFetchApp.fetch = (_url: string, options: { payload: string }) => {
-      sent = JSON.parse(options.payload)
-      return { getResponseCode: () => 200, getContentText: () => OK_BODY }
-    }
+    const { sandbox, deps, sent } = harness([{ status: 200, body: OK_BODY }])
 
     sandbox.callOpenRouterWebSearch({
       apiKey: 'key',
       model: 'openai/gpt-5.4-mini',
+      deps,
       messages: [{ role: 'user', content: 'Property address: 1 Main St' }],
     })
 
-    expect(sent.model).toBe('openai/gpt-5.4-mini:online')
-    expect(sent.response_format).toBeUndefined()
-    expect(sent.provider).toBeUndefined()
+    const payload = JSON.parse(sent[0].payload)
+    expect(payload.model).toBe('openai/gpt-5.4-mini:online')
+    expect(payload.response_format).toBeUndefined()
+    expect(payload.provider).toBeUndefined()
   })
 
   it('returns the raw message content for the caller to parse', () => {
-    const { sandbox } = harness([{ status: 200, body: OK_BODY }])
+    const { sandbox, deps } = harness([{ status: 200, body: OK_BODY }])
 
     const result = sandbox.callOpenRouterWebSearch({
       apiKey: 'key',
       model: 'openai/gpt-5.4-mini',
+      deps,
       messages: [],
     })
 
@@ -217,19 +232,24 @@ describe('callOpenRouterWebSearch', () => {
   })
 
   it('retries a 5xx once before succeeding, same as callOpenRouter', () => {
-    const { sandbox, serverLogged } = harness([
+    const { sandbox, deps, serverLogged } = harness([
       { status: 503, body: '{"error":"upstream down"}' },
       { status: 200, body: OK_BODY },
     ])
 
-    sandbox.callOpenRouterWebSearch({ apiKey: 'key', model: 'openai/gpt-5.4-mini', messages: [] })
+    sandbox.callOpenRouterWebSearch({
+      apiKey: 'key',
+      model: 'openai/gpt-5.4-mini',
+      deps,
+      messages: [],
+    })
 
     const entries = serverLogged.filter((l) => l.event === 'openrouter_web_search.response')
     expect(entries.map((e) => e.fields.attempt)).toEqual([1, 2])
   })
 
   it('throws after retries are exhausted rather than returning a bad result', () => {
-    const { sandbox } = harness([
+    const { sandbox, deps } = harness([
       { status: 500, body: 'x' },
       { status: 500, body: 'x' },
       { status: 500, body: 'x' },
@@ -239,17 +259,19 @@ describe('callOpenRouterWebSearch', () => {
       sandbox.callOpenRouterWebSearch({
         apiKey: 'key',
         model: 'openai/gpt-5.4-mini',
+        deps,
         messages: [],
       }),
     ).toThrow(/OpenRouter web search request failed/)
   })
 
   it('never logs the API key', () => {
-    const { sandbox, logged, serverLogged } = harness([{ status: 200, body: OK_BODY }])
+    const { sandbox, deps, logged, serverLogged } = harness([{ status: 200, body: OK_BODY }])
 
     sandbox.callOpenRouterWebSearch({
       apiKey: 'super-secret-key',
       model: 'openai/gpt-5.4-mini',
+      deps,
       messages: [],
     })
 
@@ -266,10 +288,15 @@ describe('callOpenRouter generalization', () => {
     ],
   })
 
-  function call(sandbox: Record<string, any>, extra: Record<string, unknown> = {}) {
+  function call(
+    sandbox: Record<string, any>,
+    deps: Record<string, unknown>,
+    extra: Record<string, unknown> = {},
+  ) {
     return sandbox.callOpenRouter({
       apiKey: 'k',
       model: 'test-model',
+      deps,
       captureId: 'dograh-1',
       messages: [{ role: 'user', content: 'x' }],
       jsonSchema: { type: 'object' },
@@ -278,42 +305,94 @@ describe('callOpenRouter generalization', () => {
   }
 
   it('defaults to the extraction schema name and the openrouter log label', () => {
-    const { sandbox, logged, serverLogged } = harness([{ status: 200, body }])
-    let sent: Record<string, any> = {}
-    sandbox.UrlFetchApp.fetch = (_url: string, options: { payload: string }) => {
-      sent = JSON.parse(options.payload)
-      return { getResponseCode: () => 200, getContentText: () => body }
-    }
+    const { sandbox, deps, sent, logged, serverLogged } = harness([{ status: 200, body }])
 
-    call(sandbox)
+    call(sandbox, deps)
 
-    expect(sent.response_format.json_schema.name).toBe('extraction')
+    expect(JSON.parse(sent[0].payload).response_format.json_schema.name).toBe('extraction')
     expect(serverLogged[0].event).toBe('openrouter.response')
     expect(logged[0].event).toBe('openrouter.response_summary')
   })
 
   it('routes another caller under its own schema name and log label', () => {
-    const { sandbox, logged, serverLogged } = harness([{ status: 200, body }])
-    let sent: Record<string, any> = {}
-    sandbox.UrlFetchApp.fetch = (_url: string, options: { payload: string }) => {
-      sent = JSON.parse(options.payload)
-      return { getResponseCode: () => 200, getContentText: () => body }
-    }
+    const { sandbox, deps, sent, logged, serverLogged } = harness([{ status: 200, body }])
 
-    call(sandbox, { schemaName: 'master_transcript', logLabel: 'master_transcript' })
+    call(sandbox, deps, { schemaName: 'master_transcript', logLabel: 'master_transcript' })
 
-    expect(sent.response_format.json_schema.name).toBe('master_transcript')
-    expect(sent.response_format.json_schema.strict).toBe(true)
+    const schema = JSON.parse(sent[0].payload).response_format.json_schema
+    expect(schema.name).toBe('master_transcript')
+    expect(schema.strict).toBe(true)
     expect(serverLogged[0].event).toBe('master_transcript.response')
     expect(logged[0].event).toBe('master_transcript.response_summary')
   })
 
   it('hands the parsed body back verbatim for a non-extraction schema', () => {
-    const { sandbox } = harness([{ status: 200, body }])
+    const { sandbox, deps } = harness([{ status: 200, body }])
 
-    const result = call(sandbox, { schemaName: 'master_transcript' })
+    const result = call(sandbox, deps, { schemaName: 'master_transcript' })
 
     expect(result.content.turns).toEqual([{ speaker: 'agent', text: 'hi' }])
     expect(result.model).toBe('test-model')
+  })
+})
+
+// The injection point itself, asserted rather than assumed: a call that lost
+// its HTTP client must be an error at the boundary, not a silent skip that
+// returns an empty extraction reading as a bad call.
+describe('injected dependencies', () => {
+  const OK_BODY = JSON.stringify({
+    model: 'm',
+    choices: [{ message: { content: JSON.stringify({ fields: {}, unplaced_notes: [] }) } }],
+  })
+
+  it('throws when no deps.fetch is supplied', () => {
+    const { sandbox } = harness([{ status: 200, body: OK_BODY }])
+
+    expect(() =>
+      sandbox.callOpenRouter({ apiKey: 'k', model: 'm', messages: [], jsonSchema: {} }),
+    ).toThrow(/deps\.fetch is required/)
+  })
+
+  it('lets a failing injected fetch surface rather than swallowing it', () => {
+    const { sandbox } = harness([{ status: 200, body: OK_BODY }])
+    const deps = {
+      fetch: () => {
+        throw new Error('socket hang up')
+      },
+    }
+
+    expect(() =>
+      sandbox.callOpenRouter({ apiKey: 'k', model: 'm', deps, messages: [], jsonSchema: {} }),
+    ).toThrow(/socket hang up/)
+  })
+
+  it('backs off through deps.sleep between retries, never a runtime global', () => {
+    const { sandbox, deps, slept } = harness([
+      { status: 500, body: 'down' },
+      { status: 500, body: 'down' },
+      { status: 200, body: OK_BODY },
+    ])
+
+    sandbox.callOpenRouter({ apiKey: 'k', model: 'm', deps, messages: [], jsonSchema: {} })
+
+    expect(slept).toEqual([5000, 15000])
+  })
+
+  it('logs through deps.logger, so a core file never reaches log.js directly', () => {
+    const { sandbox, deps, logged, serverLogged } = harness([{ status: 200, body: OK_BODY }])
+
+    sandbox.callOpenRouter({ apiKey: 'k', model: 'm', deps, messages: [], jsonSchema: {} })
+
+    expect(logged.map((l) => l.event)).toEqual(['openrouter.response_summary'])
+    expect(serverLogged.map((l) => l.event)).toEqual(['openrouter.response'])
+  })
+
+  it('tolerates a deps with no logger at all', () => {
+    const { sandbox } = harness([{ status: 200, body: OK_BODY }])
+    const deps = { fetch: () => ({ status: 200, body: OK_BODY, headers: {} }) }
+
+    expect(() =>
+      sandbox.callOpenRouter({ apiKey: 'k', model: 'm', deps, messages: [], jsonSchema: {} }),
+    ).not.toThrow()
   })
 })

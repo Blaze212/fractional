@@ -129,6 +129,7 @@ function buildMasterTranscript(input) {
     apiKey: input.apiKey,
     model: input.model,
     fallbacks: input.fallbacks || [],
+    deps: input.deps,
     captureId: input.captureId,
     // What the log carries for this call is the merge inputs, not one transcript.
     transcript: prompt.user,
@@ -145,7 +146,11 @@ function buildMasterTranscript(input) {
 
   return {
     turns: normalizeTurns(content.turns),
-    contested_passages: capContestedPassages(content.contested_passages, input.captureId),
+    contested_passages: capContestedPassages(
+      content.contested_passages,
+      input.captureId,
+      input.deps,
+    ),
     model: response.model,
     usage: response.usage,
   }
@@ -155,10 +160,14 @@ function buildMasterTranscript(input) {
 // produced no turns at all; otherwise the caller reads `accepted` to decide
 // whether the master or a raw fallback feeds extraction.
 function buildGatedMasterTranscript(input) {
+  var deps = input.deps
   var merge = buildMasterTranscript(input)
 
   if (!merge.turns.length) {
-    logEvent('master_transcript.empty', { capture_id: input.captureId, model: merge.model })
+    coreLogEvent(deps, 'master_transcript.empty', {
+      capture_id: input.captureId,
+      model: merge.model,
+    })
     return null
   }
 
@@ -171,7 +180,7 @@ function buildGatedMasterTranscript(input) {
     // constraint once will likely ignore it again, and every fallback target is
     // a raw ASR transcript, so the span guarantee holds unconditionally on this
     // path. The rejected master still gets written to the call folder.
-    logEvent('master_transcript.verbatim_violation', {
+    coreLogEvent(deps, 'master_transcript.verbatim_violation', {
       capture_id: input.captureId,
       coverage: coverage.coverage,
       shingles: coverage.total,
@@ -179,7 +188,7 @@ function buildGatedMasterTranscript(input) {
       failing_shingles: coverage.failing.join(' | ').slice(0, 1000),
     })
   } else if (coverage.coverage < MASTER_TRANSCRIPT_COVERAGE_ACCEPT) {
-    logEvent('master_transcript.low_coverage', {
+    coreLogEvent(deps, 'master_transcript.low_coverage', {
       capture_id: input.captureId,
       coverage: coverage.coverage,
       shingles: coverage.total,
@@ -210,11 +219,11 @@ function normalizeTurns(turns) {
     })
 }
 
-function capContestedPassages(passages, captureId) {
+function capContestedPassages(passages, captureId, deps) {
   var all = (passages || []).map(String)
   if (all.length <= MASTER_TRANSCRIPT_MAX_CONTESTED) return all
 
-  logEvent('master_transcript.contested_truncated', {
+  coreLogEvent(deps, 'master_transcript.contested_truncated', {
     capture_id: captureId || '',
     reported: all.length,
     kept: MASTER_TRANSCRIPT_MAX_CONTESTED,
