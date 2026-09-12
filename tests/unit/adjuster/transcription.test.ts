@@ -263,10 +263,6 @@ describe('selectFallbackTranscript', () => {
 })
 
 describe('transcribeInParallel', () => {
-  function asrHarness(fetchAll: (requests: unknown[]) => unknown[], fetch = () => null) {
-    return harness({ UrlFetchApp: { fetchAll: vi.fn(fetchAll), fetch: vi.fn(fetch) } })
-  }
-
   const elevenBody = JSON.stringify({
     text: 'the roof is a six twelve',
     words: [
@@ -282,6 +278,42 @@ describe('transcribeInParallel', () => {
     usage: { seconds: 610, cost: 0.02 },
   })
 
+  /**
+   * ElevenLabs is phase A and goes out on its own UrlFetchApp.fetch; the Qwen
+   * slices are phase B and go out together through fetchAll. `fetch` is routed
+   * by URL so a Qwen retry can never eat an ElevenLabs response, and vice versa.
+   */
+  function asrHarness({
+    qwen = [response(200, qwenBody)],
+    eleven = [response(200, elevenBody)],
+    qwenDirect = [],
+  }: {
+    qwen?: unknown[] | (() => unknown[])
+    eleven?: unknown[]
+    qwenDirect?: unknown[]
+  } = {}) {
+    const elevenQueue = [...eleven]
+    const qwenQueue = [...qwenDirect]
+
+    return harness({
+      UrlFetchApp: {
+        fetchAll: vi.fn(typeof qwen === 'function' ? qwen : () => qwen),
+        fetch: vi.fn((url: string) =>
+          String(url).includes('elevenlabs') ? elevenQueue.shift() : qwenQueue.shift(),
+        ),
+      },
+    })
+  }
+
+  function batchedRequests(sandbox: Record<string, any>) {
+    const mock = sandbox.UrlFetchApp.fetchAll as ReturnType<typeof vi.fn>
+    return mock.mock.calls.length ? mock.mock.calls[0][0] : []
+  }
+
+  function elevenRequest(sandbox: Record<string, any>) {
+    return (sandbox.UrlFetchApp.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1]
+  }
+
   function run(sandbox: Record<string, any>) {
     return sandbox.transcribeInParallel({
       captureId: 'dograh-1',
@@ -293,31 +325,72 @@ describe('transcribeInParallel', () => {
     })
   }
 
-  it('issues both ASR calls in a single fetchAll with two request objects', () => {
-    const { sandbox } = asrHarness(() => [response(200, elevenBody), response(200, qwenBody)])
+  it('sends ElevenLabs on its own fetch and batches the Qwen slices through fetchAll', () => {
+    const { sandbox } = asrHarness()
 
     const result = run(sandbox)
 
-    const fetchAll = sandbox.UrlFetchApp.fetchAll as ReturnType<typeof vi.fn>
-    expect(fetchAll).toHaveBeenCalledTimes(1)
-    const requests = fetchAll.mock.calls[0][0]
-    expect(requests).toHaveLength(2)
-    expect(requests[0].url).toContain('api.elevenlabs.io')
-    expect(requests[0].headers['xi-api-key']).toBe('xi-key')
-    const form = bodyText(requests[0].payload)
-    expect(requests[0].contentType).toMatch(/^multipart\/form-data; boundary=/)
+    expect(sandbox.UrlFetchApp.fetch).toHaveBeenCalledTimes(1)
+    const eleven = elevenRequest(sandbox)
+    expect(eleven.url).toContain('api.elevenlabs.io')
+    expect(eleven.headers['xi-api-key']).toBe('xi-key')
+    expect(eleven.contentType).toMatch(/^multipart\/form-data; boundary=/)
+    const form = bodyText(eleven.payload)
     expect(form).toContain('name="model_id"\r\n\r\nscribe_v2')
     expect(form).toContain('name="diarize"\r\n\r\ntrue')
     expect(form).toContain('name="file"; filename="audio.wav"')
-    expect(requests[1].url).toContain('openrouter.ai/api/v1/audio/transcriptions')
-    expect(JSON.parse(requests[1].payload).provider.order).toEqual(['alibaba'])
-    expect(result.fetch_mode).toBe('fetch_all')
+
+    const batched = batchedRequests(sandbox)
+    expect(batched).toHaveLength(1)
+    expect(batched[0].url).toContain('openrouter.ai/api/v1/audio/transcriptions')
+    expect(JSON.parse(batched[0].payload).provider.order).toEqual(['alibaba'])
+
+    expect(result.fetch_mode).toBe('elevenlabs+qwen:fetch_all')
     expect(result.elevenlabs.text).toBe('the roof is a six twelve')
     expect(result.qwen.text).toBe('the roof is a 6/12')
   })
 
+  it('finishes the ElevenLabs request before it reads the blob for Qwen', () => {
+    // This ordering is the whole memory fix. The multipart body is a byte array
+    // as long as the recording, and it has to be unreachable before the Qwen
+    // pass allocates its own copy of the audio — batching the two into one
+    // fetchAll is what put a ten-minute call over the V8 heap.
+    const order: string[] = []
+    const wav = makeWav({ seconds: 1 })
+    const { sandbox } = harness({
+      UrlFetchApp: {
+        fetchAll: vi.fn(() => {
+          order.push('fetchAll')
+          return [response(200, qwenBody)]
+        }),
+        fetch: vi.fn(() => {
+          order.push('fetch:elevenlabs')
+          return response(200, elevenBody)
+        }),
+      },
+    })
+
+    sandbox.transcribeInParallel({
+      captureId: 'dograh-1',
+      audioBlob: {
+        getBytes: () => {
+          order.push('getBytes')
+          return wav
+        },
+        getName: () => 'audio.wav',
+        getContentType: () => 'audio/wav',
+      },
+      format: 'wav',
+      keyterms: [],
+      elevenLabsKey: 'xi-key',
+      openRouterKey: 'or-key',
+    })
+
+    expect(order).toEqual(['getBytes', 'fetch:elevenlabs', 'getBytes', 'fetchAll'])
+  })
+
   it('turns the diarized words array into speaker turns', () => {
-    const { sandbox } = asrHarness(() => [response(200, elevenBody), response(200, qwenBody)])
+    const { sandbox } = asrHarness()
 
     const result = run(sandbox)
 
@@ -328,12 +401,10 @@ describe('transcribeInParallel', () => {
   })
 
   it.each([
-    ['elevenlabs', 0],
-    ['qwen', 1],
-  ])('leaves %s empty when its call fails without touching the other', (dead, index) => {
-    const responses = [response(200, elevenBody), response(200, qwenBody)]
-    responses[index] = response(400, 'nope')
-    const { sandbox } = asrHarness(() => responses)
+    ['elevenlabs', { eleven: [response(400, 'nope')] }],
+    ['qwen', { qwen: [response(400, 'nope')] }],
+  ])('leaves %s empty when its call fails without touching the other', (dead, broken) => {
+    const { sandbox } = asrHarness(broken)
 
     const result = run(sandbox)
     const alive = dead === 'elevenlabs' ? 'qwen' : 'elevenlabs'
@@ -344,13 +415,11 @@ describe('transcribeInParallel', () => {
   })
 
   it.each([
-    ['elevenlabs', 0],
-    ['qwen', 1],
-  ])("logs %s's error body so a 400 is debuggable after the fact", (dead, index) => {
+    ['elevenlabs', 'eleven'],
+    ['qwen', 'qwen'],
+  ])("logs %s's error body so a 400 is debuggable after the fact", (dead, key) => {
     const detail = JSON.stringify({ detail: [{ loc: ['body', 'file'], msg: 'audio too short' }] })
-    const responses = [response(200, elevenBody), response(200, qwenBody)]
-    responses[index] = response(400, detail)
-    const { sandbox, logged } = asrHarness(() => responses)
+    const { sandbox, logged } = asrHarness({ [key]: [response(400, detail)] })
 
     run(sandbox)
 
@@ -365,10 +434,7 @@ describe('transcribeInParallel', () => {
   })
 
   it('caps a runaway error body rather than logging it whole', () => {
-    const { sandbox, logged } = asrHarness(() => [
-      response(200, elevenBody),
-      response(400, 'x'.repeat(5000)),
-    ])
+    const { sandbox, logged } = asrHarness({ qwen: [response(400, 'x'.repeat(5000))] })
 
     run(sandbox)
 
@@ -379,7 +445,7 @@ describe('transcribeInParallel', () => {
   })
 
   it('sends one keyterms form field per term, never a JSON array in one field', () => {
-    const { sandbox } = asrHarness(() => [response(200, elevenBody), response(200, qwenBody)])
+    const { sandbox } = asrHarness()
 
     sandbox.transcribeInParallel({
       captureId: 'dograh-1',
@@ -390,8 +456,7 @@ describe('transcribeInParallel', () => {
       openRouterKey: 'or-key',
     })
 
-    const requests = (sandbox.UrlFetchApp.fetchAll as ReturnType<typeof vi.fn>).mock.calls[0][0]
-    const form = bodyText(requests[0].payload)
+    const form = bodyText(elevenRequest(sandbox).payload)
 
     expect(form).toContain('name="keyterms"\r\n\r\nHenderson')
     expect(form).toContain('name="keyterms"\r\n\r\ndrip edge')
@@ -401,10 +466,11 @@ describe('transcribeInParallel', () => {
   })
 
   it('splits long audio into one Qwen request per slice and rejoins the text', () => {
-    const bodies = ['first part', 'second part', 'third part'].map((text) =>
-      response(200, JSON.stringify({ text })),
-    )
-    const { sandbox, logged } = asrHarness(() => [response(200, elevenBody), ...bodies])
+    const { sandbox, logged } = asrHarness({
+      qwen: ['first part', 'second part', 'third part'].map((text) =>
+        response(200, JSON.stringify({ text })),
+      ),
+    })
 
     const result = sandbox.transcribeInParallel({
       captureId: 'dograh-1',
@@ -415,8 +481,15 @@ describe('transcribeInParallel', () => {
       openRouterKey: 'or-key',
     })
 
-    const requests = (sandbox.UrlFetchApp.fetchAll as ReturnType<typeof vi.fn>).mock.calls[0][0]
-    expect(requests).toHaveLength(4) // 1 ElevenLabs + 3 Qwen slices
+    // Only the slices are batched — the ElevenLabs body is never in here.
+    const batched = batchedRequests(sandbox)
+    expect(batched).toHaveLength(3)
+    // base64Encode is stubbed to 'b64-<length>', so each payload names the size
+    // of the slice it was cut from: 300s, 300s and the 100s remainder, each
+    // carrying its own 44-byte header. Proof the spans were cut one at a time.
+    expect(batched.map((r: { payload: string }) => JSON.parse(r.payload).input_audio.data)).toEqual(
+      ['b64-60044', 'b64-60044', 'b64-20044'],
+    )
     expect(result.qwen.text).toBe('first part second part third part')
     expect(result.qwen.ok).toBe(true)
 
@@ -426,12 +499,13 @@ describe('transcribeInParallel', () => {
   })
 
   it('fails the whole source when one slice fails, rather than leaving a hole', () => {
-    const { sandbox, logged } = asrHarness(() => [
-      response(200, elevenBody),
-      response(200, JSON.stringify({ text: 'first part' })),
-      response(400, 'slice two exploded'),
-      response(200, JSON.stringify({ text: 'third part' })),
-    ])
+    const { sandbox, logged } = asrHarness({
+      qwen: [
+        response(200, JSON.stringify({ text: 'first part' })),
+        response(400, 'slice two exploded'),
+        response(200, JSON.stringify({ text: 'third part' })),
+      ],
+    })
 
     const result = sandbox.transcribeInParallel({
       captureId: 'dograh-1',
@@ -451,31 +525,40 @@ describe('transcribeInParallel', () => {
     expect(finished?.fields.error).toBe('slice two exploded')
   })
 
-  it('retries a single source once on a 429 rather than failing it outright', () => {
-    const { sandbox } = asrHarness(
-      () => [response(429, 'slow down'), response(200, qwenBody)],
-      () => response(200, elevenBody) as never,
-    )
+  it('retries a Qwen slice once on a 429 rather than failing the source', () => {
+    const { sandbox } = asrHarness({
+      qwen: [response(429, 'slow down')],
+      qwenDirect: [response(200, qwenBody)],
+    })
 
     const result = run(sandbox)
 
-    expect(sandbox.UrlFetchApp.fetch).toHaveBeenCalledTimes(1)
+    expect(result.qwen.text).toBe('the roof is a 6/12')
+    expect(sandbox.UrlFetchApp.fetch).toHaveBeenCalledTimes(2) // ElevenLabs, then the retry
+  })
+
+  it('retries ElevenLabs once on a 429 rather than failing it outright', () => {
+    const { sandbox } = asrHarness({
+      eleven: [response(429, 'slow down'), response(200, elevenBody)],
+    })
+
+    const result = run(sandbox)
+
     expect(result.elevenlabs.text).toBe('the roof is a six twelve')
+    expect(sandbox.UrlFetchApp.fetch).toHaveBeenCalledTimes(2)
   })
 
   it('falls back to sequential fetches when fetchAll itself throws', () => {
-    const bodies = [elevenBody, qwenBody]
-    let call = 0
-    const { sandbox, logged } = asrHarness(
-      () => {
+    const { sandbox, logged } = asrHarness({
+      qwen: () => {
         throw new Error('transport blew up')
       },
-      (() => response(200, bodies[call++])) as never,
-    )
+      qwenDirect: [response(200, qwenBody)],
+    })
 
     const result = run(sandbox)
 
-    expect(result.fetch_mode).toBe('sequential')
+    expect(result.fetch_mode).toBe('elevenlabs+qwen:sequential')
     expect(result.elevenlabs.text).toBe('the roof is a six twelve')
     expect(result.qwen.text).toBe('the roof is a 6/12')
     expect(logged.map((l) => l.event)).toContain('transcription.fetch_all_failed')
@@ -484,9 +567,7 @@ describe('transcribeInParallel', () => {
   it('skips Qwen and says so when audio is over the cap and cannot be split', () => {
     // Not a WAV, so there is no way to cut it down to Alibaba's 10 MB.
     const opaque = new Array(11 * 1024 * 1024).fill(7)
-    const { sandbox, logged } = harness({
-      UrlFetchApp: { fetchAll: vi.fn(() => [response(200, elevenBody)]), fetch: vi.fn() },
-    })
+    const { sandbox, logged } = asrHarness()
 
     const result = sandbox.transcribeInParallel({
       captureId: 'dograh-1',
@@ -497,9 +578,11 @@ describe('transcribeInParallel', () => {
       openRouterKey: 'or-key',
     })
 
-    const requests = (sandbox.UrlFetchApp.fetchAll as ReturnType<typeof vi.fn>).mock.calls[0][0]
-    expect(requests).toHaveLength(1)
+    // Nothing to batch, so fetchAll is never reached at all.
+    expect(sandbox.UrlFetchApp.fetchAll).not.toHaveBeenCalled()
+    expect(sandbox.UrlFetchApp.fetch).toHaveBeenCalledTimes(1)
     expect(result.qwen).toBeUndefined()
+    expect(result.fetch_mode).toBe('elevenlabs')
     const skipped = logged.find((l) => l.event === 'transcription.audio_too_large')
     expect(skipped?.fields.splittable).toBe(false)
   })
@@ -564,26 +647,31 @@ describe('probeWav / sliceWav', () => {
   })
 })
 
-describe('splitForQwen', () => {
-  it('sends short audio whole', () => {
+describe('planQwenSpans', () => {
+  it('sends short audio whole, as one uncut span', () => {
     const { sandbox } = harness()
     const wav = makeWav({ seconds: 60, sampleRate: 100 })
 
-    expect(sandbox.splitForQwen(wav, sandbox.probeWav(wav))).toHaveLength(1)
+    expect(sandbox.planQwenSpans(wav, sandbox.probeWav(wav))).toEqual([null])
   })
 
   it("cuts past Alibaba's 300-second cap", () => {
     const { sandbox } = harness()
     const wav = makeWav({ seconds: 700, sampleRate: 100 })
 
-    // 700s at 300s per slice: 300 + 300 + 100.
-    expect(sandbox.splitForQwen(wav, sandbox.probeWav(wav))).toHaveLength(3)
+    // 700s at 300s per slice: 300 + 300 + 100. Spans, not slices — the bytes are
+    // cut one at a time by the caller so two full copies never coexist.
+    expect(sandbox.planQwenSpans(wav, sandbox.probeWav(wav))).toEqual([
+      [0, 300],
+      [300, 600],
+      [600, 700],
+    ])
   })
 
   it('gives up on unsplittable audio that is over the byte cap', () => {
     const { sandbox } = harness()
 
-    expect(sandbox.splitForQwen(new Array(11 * 1024 * 1024).fill(7), null)).toEqual([])
+    expect(sandbox.planQwenSpans(new Array(11 * 1024 * 1024).fill(7), null)).toEqual([])
   })
 })
 
@@ -808,11 +896,17 @@ describe('runTranscriptionPass', () => {
     const root = fakeFolder('root', 'root-1')
     const audio = { getName: () => 'audio.wav', getBlob: () => wavBlob(makeWav({ seconds: 1 })) }
 
-    const responses: unknown[] = []
-    if (options.eleven === null) responses.push(response(500, 'down'))
-    else responses.push(response(200, JSON.stringify({ text: options.eleven ?? ELEVEN_TEXT })))
-    if (options.qwen === null) responses.push(response(500, 'down'))
-    else responses.push(response(200, JSON.stringify({ text: options.qwen ?? QWEN_TEXT })))
+    // ElevenLabs is phase A on its own fetch; Qwen is phase B through fetchAll.
+    // Both stubs answer every time rather than draining a queue, so a 500 that
+    // earns a retry gets the same answer twice instead of running dry.
+    const elevenResponse =
+      options.eleven === null
+        ? response(500, 'down')
+        : response(200, JSON.stringify({ text: options.eleven ?? ELEVEN_TEXT }))
+    const qwenResponse =
+      options.qwen === null
+        ? response(500, 'down')
+        : response(200, JSON.stringify({ text: options.qwen ?? QWEN_TEXT }))
 
     const built = harness({
       properties: {
@@ -826,7 +920,11 @@ describe('runTranscriptionPass', () => {
         getFolderById: (id: string) => (id === 'call-1' ? folder : root),
         getFileById: () => audio,
       },
-      UrlFetchApp: { fetchAll: () => responses, fetch: () => null },
+      UrlFetchApp: {
+        fetchAll: () => [qwenResponse],
+        fetch: (url: string) =>
+          String(url).includes('elevenlabs') ? elevenResponse : qwenResponse,
+      },
       Utilities: {
         base64Encode: (bytes: number[]) => 'b64-' + bytes.length,
         newBlob: (text: string) => ({ getBytes: () => bytesOf(text) }),

@@ -64,17 +64,17 @@ globals:
 | `llm/masterTranscript.js` | dual-ASR merge, verbatim coverage check, span haystack    |
 | `llm/openrouter.js`       | request/response handling for OpenRouter                  |
 
-**Files that split.** `transcription.js` (1107 lines) is the only real surgery. Its pure half moves;
+**Files that split.** `transcription.js` (1139 lines) is the only real surgery. Its pure half moves;
 its Drive half stays.
 
-| Moves to `core/`                                                                                    | Stays as adapter                                                                                 |
-| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `buildKeyterms`, `sanitizeKeyterm`                                                                  | `getOrCreateCallFolder`, `getExistingCallFolder`, `buildCallFolderName`                          |
-| `buildElevenLabsRequest`, `buildMultipartBody`, `buildQwenRequest`                                  | `writeCallArtifact`, `nextArtifactName`, `readCallArtifact`                                      |
-| `probeWav`, `sliceWav`, `buildWavHeader`, `splitForQwen`, `qwenChunkSeconds` and their byte helpers | `readManifest`, `writeManifest`, `appendManifestRun`                                             |
-| `parseElevenLabsResponse`, `parseQwenResponse`, `renderDiarizedTurns`, `combineChunks`              | `writeRawTranscripts`                                                                            |
-| `selectFallbackTranscript`, `availableSources`, `describeSourcesForManifest`                        | `runTranscriptionPass`, `retranscribeJob` (orchestration, reads/writes Drive and the Jobs sheet) |
-| `resolveSourceResponse`, `isRetryableStatus`, `mergeIfPossible`'s decision logic                    | `encodeAudioBase64` (Utilities), `fetchAllWithFallback`, `safeFetch` (UrlFetchApp)               |
+| Moves to `core/`                                                                                     | Stays as adapter                                                                                 |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `buildKeyterms`, `sanitizeKeyterm`                                                                   | `getOrCreateCallFolder`, `getExistingCallFolder`, `buildCallFolderName`                          |
+| `buildElevenLabsRequest`, `buildMultipartBody`, `buildQwenRequest`                                   | `writeCallArtifact`, `nextArtifactName`, `readCallArtifact`                                      |
+| `probeWav`, `sliceWav`, `buildWavHeader`, `planQwenSpans`, `qwenChunkSeconds` and their byte helpers | `readManifest`, `writeManifest`, `appendManifestRun`                                             |
+| `parseElevenLabsResponse`, `parseQwenResponse`, `renderDiarizedTurns`, `combineChunks`               | `writeRawTranscripts`                                                                            |
+| `selectFallbackTranscript`, `availableSources`, `describeSourcesForManifest`                         | `runTranscriptionPass`, `retranscribeJob` (orchestration, reads/writes Drive and the Jobs sheet) |
+| `resolveSourceResponse`, `isRetryableStatus`, `mergeIfPossible`'s decision logic                     | `encodeAudioBase64` (Utilities), `fetchAllWithFallback`, `safeFetch` (UrlFetchApp)               |
 
 `util.js` (`tryJsonParse`, `stitchAIGatherMessages`) is already global-free but its main consumer is
 `webhook.js`. Leave it where it is; it can move later at no cost if a core parser wants it.
