@@ -180,6 +180,19 @@ decision this extends.
   finding, the c1 origin clause renders "due to a storm passed through".
 - No source changes.
 
+**Implementation note (2026-09-12):** the PR that shipped this spec only
+committed `c1-extraction.json` / `c2-extraction.json` — trimmed to the
+defect-relevant fields quoted in this spec's "Observed defects" section,
+not the full extraction — and did not commit master transcripts, since the
+real call artifacts (audio, full transcripts, full extraction.json) live on
+Drive and were not available to that session. This means the re-extraction
+verification below (`reExtractFromArtifacts`) cannot run from a plain
+checkout: it needs the real Drive artifacts for `retell-call_4e034d77224863af06b4fc2577c`
+and `retell-call_256aa200fdd679f4b7d680cb968`, present only in the
+production Drive folder, not in this repo. Treat that verification as a
+manual, post-merge step against production artifacts rather than something
+CI or a local checkout can run.
+
 ### Phase 1 — The prompt states the register and the taxonomy
 
 In `prompt.js`'s system block, before the per-field guidance:
@@ -275,6 +288,11 @@ pass; the salvage note still carries the extracted text.
 Phases 1 to 3: one OpenRouter call against the transcript already saved, no ASR,
 no master merge, no phone call. Phases 4 and 5 verify for free through
 `regenerateDraftFromArtifacts()`, since they operate on the rendering half.
+
+This requires the real Drive artifacts for c1 and c2 (audio, transcripts,
+`extraction.json`) in the production "Adjuster MVP" Drive folder — see the
+Phase 0 implementation note above. It is a manual step against production,
+not something a checkout of this repo or CI can run on its own.
 
 Re-extract c1 and c2 after Phases 1 to 3 and diff the field values against the
 saved artifacts. The defect list in this spec is the checklist.

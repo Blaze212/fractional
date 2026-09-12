@@ -117,4 +117,21 @@ describe('phrasebank.json', () => {
       expect(typeof phrase).toBe('string')
     })
   })
+
+  // Code review follow-up (PR #55): the phrase bank is injected into the
+  // prompt as a style reference (see prompt.js's formatPhraseBank), so a
+  // spelled-out count here would model exactly the number-format drift
+  // Phase 1's "digits over spelled numbers" rule is meant to prevent.
+  // "several" is a vague quantifier, not a specific count, and stays a word.
+  it('writes countable numbers as digits, matching the register rule it is a reference for', () => {
+    const phraseBank = JSON.parse(
+      readFileSync(path.resolve(process.cwd(), 'apps/adjuster/template/phrasebank.json'), 'utf-8'),
+    )
+    const spelledOutCountPattern =
+      /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/i
+
+    phraseBank.forEach((phrase: string) => {
+      expect(phrase).not.toMatch(spelledOutCountPattern)
+    })
+  })
 })

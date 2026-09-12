@@ -213,7 +213,7 @@ var CLAUSE_MONTH_PATTERN =
 // day of loss" instead of naming an explicit date prints the date concept a
 // second time, the same defect CLAUSE_DATE_PATTERN/CLAUSE_MONTH_PATTERN catch
 // for an explicit date.
-var CLAUSE_DATE_PARAPHRASE_PATTERN = /\bon (?:the day|the date) of loss\b|\bon that day\b/i
+var CLAUSE_DATE_PARAPHRASE_PATTERN = /\bon (?:the day|the date) of loss\b|\bthat day\b/i
 // A clause is a noun phrase dropped into a fixed template sentence, not a
 // sentence with its own subject and verb. This does not try to parse English
 // generally — it catches the two shapes that showed up in real drafts: an
@@ -243,13 +243,38 @@ function clauseNeedsReject(text) {
 // a rejected clause, a clumsy narrative still carries the facts, so this only
 // sets needsReview (rendered via markForReview, same as a medium-confidence
 // field) rather than blanking anything.
+// The curated list catches the report-voice verbs actually seen in drafts and
+// the phrase bank; the trailing alternative is a generic fallback for any
+// other regular verb ("arranged", "remained") so ordinary report vocabulary
+// outside this list doesn't get misread as "no verb". A noun pile with no
+// verb at all ("eight wind damage shingles") still has neither a listed verb
+// nor an -ed/-ing word, so it still fails this check; a fragment that merely
+// contains an incidental participle ("wind-damaged shingles") with no other
+// verb still gets caught by the terminal-punctuation check below.
 var NARRATIVE_FINITE_VERB_PATTERN =
-  /\b(?:am|is|are|was|were|has|have|had|do|does|did|will|would|can|could|shall|should|observed|found|documented|performed|responded|confirmed|stated|resulted|reported|inspected|identified|shows?|indicates?|requires?|needs?|remains?|continues?|noted|appears?|applies|completed)\b/i
+  /\b(?:am|is|are|was|were|has|have|had|do|does|did|will|would|can|could|shall|should|observed|found|documented|performed|responded|confirmed|stated|resulted|reported|inspected|identified|shows?|indicates?|requires?|needs?|remains?|continues?|noted|appears?|applies|completed)\b|\b\w{3,}(?:ed|ing)\b/i
 var NARRATIVE_FILLER_PATTERN = /\b(?:okay so|uh|um|let'?s see|you know|like i said)\b/i
 var NARRATIVE_NUMBER_WORD_PATTERN =
   /\b(?:eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)\b/i
+// Non-greedy prefix scan rather than a fixed lead-in list: prompt.js's own
+// roof_narrative_freeform example ("My inspection of the roof found no storm
+// related damages present.") puts words between the subject and the verb
+// that a fixed "inspection (found|documented)" lead-in would miss entirely.
 var NARRATIVE_NO_DAMAGE_OPENING_PATTERN =
-  /^(?:we observed |there (?:is|was|were) |inspection (?:found|documented) )?no\s+(?:storm[- ]related\s+|event[- ]related\s+|further\s+)?damages?\b/i
+  /^.{0,60}?\bno\s+(?:storm[- ]related\s+|event[- ]related\s+|further\s+)?damages?\b/i
+// A second sentence after a no-damage opener isn't automatically a
+// contradiction ("We observed no storm-related damage to the right slope.
+// The shingles were in average condition for their age." is coherent) — only
+// flag it when that remainder actually names a finding.
+var NARRATIVE_DAMAGE_FINDING_PATTERN =
+  /\b(?:damage[sd]?|missing|blown|cracked|displaced|broken|torn|exposed|leak(?:ing|ed)?|replace[sd]?|intrusion)\b/i
+
+function narrativeContradictsNoDamageOpening(trimmed) {
+  if (!NARRATIVE_NO_DAMAGE_OPENING_PATTERN.test(trimmed)) return false
+
+  var afterFirstSentence = trimmed.match(/^[^.!?]*[.!?]\s+(\S.*)$/)
+  return !!afterFirstSentence && NARRATIVE_DAMAGE_FINDING_PATTERN.test(afterFirstSentence[1])
+}
 
 function narrativeNeedsReview(text) {
   var trimmed = String(text || '').trim()
@@ -261,7 +286,7 @@ function narrativeNeedsReview(text) {
     /^[a-z]/.test(trimmed) ||
     NARRATIVE_FILLER_PATTERN.test(trimmed) ||
     (NARRATIVE_NUMBER_WORD_PATTERN.test(trimmed) && /\d/.test(trimmed)) ||
-    (NARRATIVE_NO_DAMAGE_OPENING_PATTERN.test(trimmed) && /[.!?]\s+\S/.test(trimmed))
+    narrativeContradictsNoDamageOpening(trimmed)
   )
 }
 

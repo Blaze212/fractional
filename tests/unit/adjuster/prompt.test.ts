@@ -309,8 +309,18 @@ describe('field-specific guidance', () => {
       /one coherent paragraph, never a denial followed by a contradicting finding/i,
     )
     expect(user).toContain(
-      'We observed approximately three to four linear feet of fascia on the left elevation',
+      'We observed approximately 3 to 4 linear feet of fascia on the front elevation',
     )
+    // Regression: this example must stay about the front elevation — an
+    // example under front_elevation_status that describes the left elevation
+    // can teach the extractor to place left-elevation evidence in the front
+    // field (the field's own guidance says to sort by cardinal direction).
+    expect(user).not.toMatch(/on the left elevation/i)
+    // Regression: the example's own output must use digits, since it sits
+    // right below the "digits over spelled numbers" register rule — an
+    // example that violates the rule it's illustrating teaches the wrong
+    // thing by showing it.
+    expect(user).not.toMatch(/three to four linear feet/i)
   })
 
   it('gives front_elevation_status a digits example that states a count once', () => {

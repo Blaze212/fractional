@@ -672,6 +672,12 @@ describe('clauseNeedsReject', () => {
     expect(clauseNeedsReject('a severe storm that struck on that day')).toBe(true)
   })
 
+  // Code review follow-up (PR #55): the rule is "that day" paraphrases the
+  // date generally, not only the "on that day" form.
+  it('rejects "that day" without a leading "on"', () => {
+    expect(clauseNeedsReject('a storm that occurred that day')).toBe(true)
+  })
+
   it('rejects a finite verb dropped into the noun-phrase slot (simple past + preposition)', () => {
     expect(clauseNeedsReject('a storm passed through the area')).toBe(true)
   })
@@ -736,6 +742,33 @@ describe('narrativeNeedsReview', () => {
       ),
     ).toBe(true)
   })
+
+  // Code review follow-ups on the first version of this lint (see PR #55).
+  it("flags the denial-plus-finding shape even with words between the subject and the verb (prompt.js's own roof_narrative_freeform example)", () => {
+    expect(
+      narrativeNeedsReview(
+        'My inspection of the roof found no storm related damages present. However, we did observe two raised nails on the left extension ridge which could be the water intrusion point.',
+      ),
+    ).toBe(true)
+  })
+
+  it('does not flag a second sentence that merely continues, with no finding contradicting the no-damage opening', () => {
+    expect(
+      narrativeNeedsReview(
+        'We observed no storm-related damage to the right slope. The shingles were in average condition for their age.',
+      ),
+    ).toBe(false)
+  })
+
+  it.each([
+    'The insured arranged their own emergency tarp service prior to our inspection.',
+    'Mitigation equipment remained in place for 4 days before the insured confirmed moisture readings had normalized.',
+  ])(
+    'recognizes ordinary report verbs outside the curated list (phrase bank regression): %s',
+    (phrase) => {
+      expect(narrativeNeedsReview(phrase)).toBe(false)
+    },
+  )
 
   it('never blanks the text — it only signals review', () => {
     expect(narrativeNeedsReview('eight wind damage shingles')).toBe(true)
