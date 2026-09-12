@@ -146,12 +146,26 @@ function runTranscriptionStage(job) {
 // fall back to an LLM pass that tolerates misheard names/addresses the exact
 // scoring in matcher.js can't. A failed LLM call is logged and the
 // deterministic (possibly "none") result stands rather than failing the job.
+//
+// Both matchers read adjusterTurnsOf(job.transcript), never the raw transcript
+// — see docs/specs/022. An agent's read-back suggestion is real text in
+// job.transcript but is never evidence for a match, so it never reaches either
+// matcher at all.
 function resolveClaimMatch(job, claims) {
-  var match = matchClaim(job.call_started_at, job.transcript, claims)
+  var adjusterTranscript = adjusterTurnsOf(job.transcript)
+
+  logEvent('runner.match_input', {
+    capture_id: job.capture_id,
+    label_vocabulary: detectLabelVocabulary(job.transcript),
+    full_chars: String(job.transcript || '').length,
+    adjuster_chars: adjusterTranscript.length,
+  })
+
+  var match = matchClaim(job.call_started_at, adjusterTranscript, claims)
 
   if (match.match_method === 'none' || match.match_method === 'ambiguous') {
     try {
-      var llmMatch = matchClaimWithLlm(job.call_started_at, job.transcript, claims)
+      var llmMatch = matchClaimWithLlm(job.call_started_at, adjusterTranscript, claims)
       logEvent('runner.llm_match_attempted', {
         capture_id: job.capture_id,
         deterministic_method: match.match_method,

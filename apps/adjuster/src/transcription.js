@@ -46,6 +46,72 @@ var SOURCE_PRECEDENCE = ['elevenlabs', 'qwen', 'dograh']
 // entirely and rides the floor: whatever transcript already lives on the job.
 var VOICE_PLATFORM_SOURCES = ['dograh', 'retell']
 
+// ---------------------------------------------------------------------------
+// Adjuster-only projection — see docs/specs/022 and docs/adr/009.
+//
+// Matching has no notion of who spoke: it indexOfs claim identity values into
+// one flat string, so an agent's read-back suggestion ("Are you calling about
+// the property on Maple Street for RAY?") scores exactly like the adjuster
+// having said it himself. adjusterTurnsOf() strips every recognized agent line
+// before the transcript ever reaches matcher.js or llmMatcher.js, so a
+// suggestion the adjuster rejected can never become evidence for it.
+//
+// Three label vocabularies exist across the pipeline and are recognized by the
+// leading token of each line, case-sensitively so they never collide:
+//   - Retell's own call.transcript ('Agent:' / 'User:')
+//   - The master transcript this module's merge produces ('agent:' / 'adjuster:')
+//   - Dograh's Notetaker export, via stitchAIGatherMessages() in util.js ('Q:' / 'A:')
+var TRANSCRIPT_LABEL_VOCABULARIES = [
+  { name: 'retell', agent: /^Agent:\s*/, adjuster: /^User:\s*/ },
+  { name: 'master', agent: /^agent:\s*/, adjuster: /^adjuster:\s*/ },
+  { name: 'dograh-notetaker', agent: /^Q:\s*/, adjuster: /^A:\s*/ },
+]
+
+// Returns the name of the recognized label vocabulary, or '' when the text
+// carries none — a monologue with no agent turns to remove (a manual test
+// injection, a raw ElevenLabs/Qwen fallback with no speaker structure at all).
+function detectLabelVocabulary(text) {
+  var lines = String(text || '').split('\n')
+
+  for (var i = 0; i < TRANSCRIPT_LABEL_VOCABULARIES.length; i++) {
+    var vocab = TRANSCRIPT_LABEL_VOCABULARIES[i]
+    var recognized = lines.some(function (line) {
+      return vocab.agent.test(line) || vocab.adjuster.test(line)
+    })
+    if (recognized) return vocab.name
+  }
+
+  return ''
+}
+
+// The projection never returns empty for a non-empty input: a transcript whose
+// vocabulary isn't recognized is passed through unchanged (nothing to remove),
+// and so is one that turns out to be entirely agent lines once a vocabulary is
+// detected (an empty projection would be a silent regression to match_method:
+// 'none' on every call, which is worse than reading the agent's words).
+function adjusterTurnsOf(text) {
+  var input = String(text || '')
+  if (!input) return input
+
+  var vocabName = detectLabelVocabulary(input)
+  if (!vocabName) return input
+
+  var vocab = TRANSCRIPT_LABEL_VOCABULARIES.filter(function (v) {
+    return v.name === vocabName
+  })[0]
+
+  var adjusterLines = input
+    .split('\n')
+    .filter(function (line) {
+      return vocab.adjuster.test(line)
+    })
+    .map(function (line) {
+      return line.replace(vocab.adjuster, '')
+    })
+
+  return adjusterLines.length ? adjusterLines.join('\n') : input
+}
+
 // ElevenLabs' documented keyterm rules. MAX_CHARS is 49 because the limit is
 // "less than 50 characters", not "at most 50" — a term of exactly 50 is refused.
 var KEYTERM_MAX_TERMS = 1000

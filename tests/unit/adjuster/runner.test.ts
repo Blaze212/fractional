@@ -51,6 +51,11 @@ function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
     },
 
     getClaims: () => [{ claim_id: 'claim-1', insured_last_name: 'Henderson' }],
+    // Identity by default — see docs/specs/022. Tests that care whether
+    // resolveClaimMatch() actually threads the projection through override
+    // this to a marker function instead of asserting against job.transcript.
+    adjusterTurnsOf: (transcript: string) => transcript,
+    detectLabelVocabulary: () => '',
     matchClaim: () => ({ claim_id: 'claim-1', match_method: 'exact', match_confidence: 'high' }),
     matchClaimWithLlm: () => ({ claim_id: '', match_method: 'none', match_confidence: 'low' }),
     loadEnums: () => TAG_SCHEMA,
@@ -233,6 +238,48 @@ describe('stage A', () => {
     expect(transcriptionCalls[0].claim).toEqual({
       claim_id: 'claim-1',
       insured_last_name: 'Henderson',
+    })
+  })
+
+  it('matches against the adjuster-only projection, never the raw transcript (spec 022)', () => {
+    const matchClaimCalls: unknown[] = []
+    const matchClaimWithLlmCalls: unknown[] = []
+    const { sandbox } = harness([dograhJob({ transcript: 'Agent: guess\nUser: real answer' })], {
+      adjusterTurnsOf: (transcript: string) => 'PROJECTED(' + transcript + ')',
+      detectLabelVocabulary: () => 'retell',
+      matchClaim: (_startedAt: string, transcript: string) => {
+        matchClaimCalls.push(transcript)
+        return { claim_id: '', match_method: 'none', match_confidence: 'none' }
+      },
+      matchClaimWithLlm: (_startedAt: string, transcript: string) => {
+        matchClaimWithLlmCalls.push(transcript)
+        return { claim_id: '', match_method: 'none', match_confidence: 'none' }
+      },
+    })
+
+    sandbox.processOldestPendingJob()
+
+    expect(matchClaimCalls).toEqual(['PROJECTED(Agent: guess\nUser: real answer)'])
+    expect(matchClaimWithLlmCalls).toEqual(['PROJECTED(Agent: guess\nUser: real answer)'])
+  })
+
+  it('logs the match input with the detected vocabulary and both char counts', () => {
+    const { sandbox, logged } = harness(
+      [dograhJob({ transcript: 'Agent: hi\nUser: hello there' })],
+      {
+        adjusterTurnsOf: () => 'hello there',
+        detectLabelVocabulary: () => 'retell',
+      },
+    )
+
+    sandbox.processOldestPendingJob()
+
+    const matchInput = logged.find((l) => l.event === 'runner.match_input')
+    expect(matchInput?.fields).toEqual({
+      capture_id: 'dograh-1',
+      label_vocabulary: 'retell',
+      full_chars: 'Agent: hi\nUser: hello there'.length,
+      adjuster_chars: 'hello there'.length,
     })
   })
 

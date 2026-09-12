@@ -218,6 +218,79 @@ describe('buildKeyterms', () => {
   })
 })
 
+// docs/specs/022 — the projection matching reads instead of the raw
+// transcript. Recognizes each label vocabulary that appears somewhere in the
+// pipeline (see the header comment above TRANSCRIPT_LABEL_VOCABULARIES) and
+// keeps only the adjuster's own lines.
+describe('adjusterTurnsOf', () => {
+  it('drops the agent turns from a Retell raw transcript', () => {
+    const { sandbox } = harness()
+
+    const result = sandbox.adjusterTurnsOf(
+      'Agent: Are you calling about Maple Street for RAY?\nUser: No.\nUser: 1003 Venus Street.',
+    )
+
+    expect(result).toBe('No.\n1003 Venus Street.')
+  })
+
+  it('drops the agent turns from a master transcript', () => {
+    const { sandbox } = harness()
+
+    const result = sandbox.adjusterTurnsOf(
+      'agent: Are you calling about Maple Street for RAY?\nadjuster: No.\nadjuster: 1003 Venus Street.',
+    )
+
+    expect(result).toBe('No.\n1003 Venus Street.')
+  })
+
+  it('drops the agent turns from a Dograh Notetaker export', () => {
+    const { sandbox } = harness()
+
+    const result = sandbox.adjusterTurnsOf('Q: What is the address?\nA: 1003 Venus Street.')
+
+    expect(result).toBe('1003 Venus Street.')
+  })
+
+  it('passes an unlabeled monologue through unchanged', () => {
+    const { sandbox } = harness()
+
+    const result = sandbox.adjusterTurnsOf('Roof is a 3-tab asphalt shingle, twelve years old.')
+
+    expect(result).toBe('Roof is a 3-tab asphalt shingle, twelve years old.')
+  })
+
+  it('passes the input through unchanged rather than returning empty when every line is an agent turn', () => {
+    const { sandbox } = harness()
+    const allAgent = 'Agent: Hello.\nAgent: Are you still there?'
+
+    const result = sandbox.adjusterTurnsOf(allAgent)
+
+    expect(result).toBe(allAgent)
+  })
+
+  it('passes an empty transcript through unchanged', () => {
+    const { sandbox } = harness()
+
+    expect(sandbox.adjusterTurnsOf('')).toBe('')
+  })
+})
+
+describe('detectLabelVocabulary', () => {
+  it('names each recognized vocabulary', () => {
+    const { sandbox } = harness()
+
+    expect(sandbox.detectLabelVocabulary('Agent: hi\nUser: hi')).toBe('retell')
+    expect(sandbox.detectLabelVocabulary('agent: hi\nadjuster: hi')).toBe('master')
+    expect(sandbox.detectLabelVocabulary('Q: hi\nA: hi')).toBe('dograh-notetaker')
+  })
+
+  it('returns empty string for a transcript with no recognized labels', () => {
+    const { sandbox } = harness()
+
+    expect(sandbox.detectLabelVocabulary('Roof is a 3-tab asphalt shingle.')).toBe('')
+  })
+})
+
 describe('selectFallbackTranscript', () => {
   const cases: Array<[string, Record<string, { text: string }>, string]> = [
     [
