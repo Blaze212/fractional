@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { loadGs } from './loadGs'
+import {
+  C1_RAW,
+  C2_RAW,
+  C3_RAW,
+  MATCH_INTEGRITY_CALL_STARTED_AT,
+  matchIntegrityClaims,
+} from './fixtures/matchIntegrity'
 
 const { matchClaim } = loadGs('apps/adjuster/src/matcher.js')
 
@@ -143,5 +150,35 @@ describe('address normalisation', () => {
     const result = matchClaim(NEXT_DAY, 'Out at 10503 Waters Dr.', [claim({ claim_number: '' })])
 
     expect(result.claim_id).toBe('claim-1')
+  })
+})
+
+// docs/specs/022 — matchClaim() has no notion of who spoke, so it reads an
+// agent's proposed identity exactly like the adjuster's own words. These pin
+// today's behavior against the spec's real and reconstructed call fixtures
+// (see fixtures/matchIntegrity.ts); c1's assertion inverts once Phase 1 wires
+// resolveClaimMatch() to hand this function an adjuster-only transcript.
+describe('spec-022 fixtures — matchClaim reads the raw transcript today', () => {
+  it('c1: the read-back guess the adjuster rejected still wins, at high confidence (the bug)', () => {
+    const result = matchClaim(MATCH_INTEGRITY_CALL_STARTED_AT, C1_RAW, matchIntegrityClaims())
+
+    expect(result.claim_id).toBe('ray-1')
+    expect(result.match_method).toBe('identity')
+    expect(result.match_confidence).toBe('high')
+  })
+
+  it('c2: an address the adjuster gave himself matches on address alone, at low confidence', () => {
+    const result = matchClaim(MATCH_INTEGRITY_CALL_STARTED_AT, C2_RAW, matchIntegrityClaims())
+
+    expect(result.claim_id).toBe('harris-1')
+    expect(result.match_method).toBe('identity')
+    expect(result.match_confidence).toBe('low')
+  })
+
+  it('c3: no identity signal at all returns none', () => {
+    const result = matchClaim(MATCH_INTEGRITY_CALL_STARTED_AT, C3_RAW, matchIntegrityClaims())
+
+    expect(result.claim_id).toBeNull()
+    expect(result.match_method).toBe('none')
   })
 })
