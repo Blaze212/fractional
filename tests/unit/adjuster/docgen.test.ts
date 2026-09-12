@@ -11,6 +11,7 @@ const {
   countNeedsInput,
   normalizeClause,
   clauseNeedsReject,
+  narrativeNeedsReview,
 } = loadGs('apps/adjuster/src/docgen.js')
 
 const tagSchema = {
@@ -659,6 +660,116 @@ describe('clauseNeedsReject', () => {
   it('rejects an explicit date, since [DATE_LOSS] already prints one', () => {
     expect(clauseNeedsReject('a severe storm on 4/12/2026')).toBe(true)
     expect(clauseNeedsReject('a severe storm in April')).toBe(true)
+  })
+})
+
+// Spec 023 Phase 4. Fixtures are drawn directly from the two real calls
+// documented in the spec's "Observed defects" section (see prose.test.ts).
+describe('narrativeNeedsReview', () => {
+  it('passes a clean narrative: complete sentence, finite verb, terminal punctuation', () => {
+    expect(
+      narrativeNeedsReview(
+        'We observed two glass panels, approximately 66 inches by 60 inches, damaged on the front elevation.',
+      ),
+    ).toBe(false)
+  })
+
+  it('flags a noun pile with no finite verb', () => {
+    expect(narrativeNeedsReview('eight wind damage shingles')).toBe(true)
+  })
+
+  it('flags text with no terminal punctuation', () => {
+    expect(narrativeNeedsReview('We observed damage to the fascia')).toBe(true)
+  })
+
+  it('flags a narrative starting with a lowercase letter', () => {
+    expect(narrativeNeedsReview('the roof was inspected and found undamaged.')).toBe(true)
+  })
+
+  it('flags a dictation filler token', () => {
+    expect(narrativeNeedsReview('Okay so we observed water damage to the ceiling.')).toBe(true)
+  })
+
+  it('flags a spelled-out number above ten alongside a digit in the same field', () => {
+    expect(narrativeNeedsReview('We observed eleven shingles missing and 3 vents damaged.')).toBe(
+      true,
+    )
+  })
+
+  it('does not flag a spelled-out number when no digit appears in the same field', () => {
+    expect(narrativeNeedsReview('We observed eleven shingles missing from the slope.')).toBe(false)
+  })
+
+  it('does not flag a lone no-damage sentence with nothing contradicting it', () => {
+    expect(
+      narrativeNeedsReview('We observed no storm-related damages on the left elevation.'),
+    ).toBe(false)
+  })
+
+  it('flags a no-damage opening that is contradicted by a finding later in the same field (c1 left_elevation_status)', () => {
+    expect(
+      narrativeNeedsReview(
+        'We observed no storm-related damages on the left elevation. Approximately three or four linear feet of fascia was blown, wind damaged and missing and will need to be replaced. This appeared to be the origin of water leaking into the bathroom.',
+      ),
+    ).toBe(true)
+  })
+
+  it('never blanks the text — it only signals review', () => {
+    expect(narrativeNeedsReview('eight wind damage shingles')).toBe(true)
+    // The function itself has no text-mutation path; resolveTagsForDoc below
+    // asserts the rendered entry keeps the original text.
+  })
+
+  it('treats an empty value as not needing review (validate.js routes that to [NEEDS INPUT] separately)', () => {
+    expect(narrativeNeedsReview('')).toBe(false)
+  })
+})
+
+describe('resolveTagsForDoc: narrative lint', () => {
+  const narrativeSchema = {
+    front_slope_status: { label: 'Front slope status', type: 'narrative' },
+  }
+
+  it('flags a defective narrative for review without blanking it', () => {
+    const validated = {
+      front_slope_status: {
+        valid: true,
+        value: 'eight wind damage shingles',
+        confidence: 'high',
+        source_span: 'eight wind damage shingles',
+      },
+    }
+
+    const { resolved } = resolveTagsForDoc(validated, narrativeSchema)
+
+    expect(resolved.front_slope_status.text).toBe('eight wind damage shingles')
+    expect(resolved.front_slope_status.needsReview).toBe(true)
+  })
+
+  it('does not flag a clean narrative', () => {
+    const validated = {
+      front_slope_status: {
+        valid: true,
+        value: 'We observed no storm-related damage to the front slope.',
+        confidence: 'high',
+        source_span: 'front slope looked fine, no damage there',
+      },
+    }
+
+    const { resolved } = resolveTagsForDoc(validated, narrativeSchema)
+
+    expect(resolved.front_slope_status.needsReview).toBe(false)
+  })
+
+  it('does not lint a plain string field, only type: narrative', () => {
+    const stringSchema = { roof_pitch: { label: 'Roof pitch', type: 'string' } }
+    const validated = {
+      roof_pitch: { valid: true, value: 'six twelve', confidence: 'high', source_span: 'x' },
+    }
+
+    const { resolved } = resolveTagsForDoc(validated, stringSchema)
+
+    expect(resolved.roof_pitch.needsReview).toBe(false)
   })
 })
 

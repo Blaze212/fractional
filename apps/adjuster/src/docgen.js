@@ -121,10 +121,11 @@ function resolveTagsForDoc(validated, tagSchema, claim) {
         }
       }
     } else {
+      var text = String(field.value)
       entry = {
         isVariant: false,
-        text: String(field.value),
-        needsReview: needsReview,
+        text: text,
+        needsReview: needsReview || (schema.type === 'narrative' && narrativeNeedsReview(text)),
         sourceSpan: field.source_span,
         label: schema.label,
       }
@@ -215,6 +216,35 @@ function clauseNeedsReject(text) {
     CLAUSE_TRAILING_PUNCTUATION_PATTERN.test(text) ||
     CLAUSE_DATE_PATTERN.test(text) ||
     CLAUSE_MONTH_PATTERN.test(text)
+  )
+}
+
+// A narrative field (schema.type === 'narrative', form !== 'clause') is prose,
+// not a fragment, and the prompt-only register rules (see prompt.js's Phase 1
+// system block) catch most defects but not all of them — this mirrors
+// clauseNeedsReject's position in the pipeline as a mechanical backstop. Unlike
+// a rejected clause, a clumsy narrative still carries the facts, so this only
+// sets needsReview (rendered via markForReview, same as a medium-confidence
+// field) rather than blanking anything.
+var NARRATIVE_FINITE_VERB_PATTERN =
+  /\b(?:am|is|are|was|were|has|have|had|do|does|did|will|would|can|could|shall|should|observed|found|documented|performed|responded|confirmed|stated|resulted|reported|inspected|identified|shows?|indicates?|requires?|needs?|remains?|continues?|noted|appears?|applies|completed)\b/i
+var NARRATIVE_FILLER_PATTERN = /\b(?:okay so|uh|um|let'?s see|you know|like i said)\b/i
+var NARRATIVE_NUMBER_WORD_PATTERN =
+  /\b(?:eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)\b/i
+var NARRATIVE_NO_DAMAGE_OPENING_PATTERN =
+  /^(?:we observed |there (?:is|was|were) |inspection (?:found|documented) )?no\s+(?:storm[- ]related\s+|event[- ]related\s+|further\s+)?damages?\b/i
+
+function narrativeNeedsReview(text) {
+  var trimmed = String(text || '').trim()
+  if (!trimmed) return false
+
+  return (
+    !NARRATIVE_FINITE_VERB_PATTERN.test(trimmed) ||
+    !/[.!?]$/.test(trimmed) ||
+    /^[a-z]/.test(trimmed) ||
+    NARRATIVE_FILLER_PATTERN.test(trimmed) ||
+    (NARRATIVE_NUMBER_WORD_PATTERN.test(trimmed) && /\d/.test(trimmed)) ||
+    (NARRATIVE_NO_DAMAGE_OPENING_PATTERN.test(trimmed) && /[.!?]\s+\S/.test(trimmed))
   )
 }
 
