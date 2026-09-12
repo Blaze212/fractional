@@ -5,6 +5,7 @@ const FILES = [
   'apps/adjuster/src/transcription.js',
   'apps/adjuster/src/prompt.js',
   'apps/adjuster/src/llm/masterTranscript.js',
+  'apps/adjuster/src/validate.js',
 ]
 
 function harness(overrides: Record<string, unknown> = {}) {
@@ -442,17 +443,17 @@ describe('buildGatedMasterTranscript', () => {
 })
 
 describe('buildSpanHaystack', () => {
-  it('strips the speaker labels the merge model added and keeps turns on their own lines', () => {
+  it('drops agent turns entirely and strips the label from the ones it keeps', () => {
     const { sandbox } = harness()
 
     const haystack = sandbox.buildSpanHaystack(
       'adjuster: the roof is a six twelve\nagent: and the elevations?\nadjuster: front had hail',
     )
 
-    expect(haystack).toBe('the roof is a six twelve\nand the elevations?\nfront had hail')
+    expect(haystack).toBe('the roof is a six twelve\nfront had hail')
   })
 
-  it('leaves a span straddling two turns unfindable, which is the safe direction', () => {
+  it('leaves a span straddling two adjuster turns unfindable, which is the safe direction', () => {
     const { sandbox } = harness()
 
     const haystack = sandbox.buildSpanHaystack(
@@ -461,5 +462,49 @@ describe('buildSpanHaystack', () => {
 
     expect(haystack.indexOf('six twelve front had hail')).toBe(-1)
     expect(haystack.indexOf('the roof is a six twelve')).toBeGreaterThan(-1)
+  })
+
+  // docs/specs/022 phase 4 — an agent turn is real machine-transcribed text and
+  // would otherwise be a valid verbatim source_span; the whole point of this
+  // function is that it never can be one.
+  it('makes an agent-only passage entirely unfindable', () => {
+    const { sandbox } = harness()
+
+    const haystack = sandbox.buildSpanHaystack(
+      'adjuster: No.\nagent: Are you calling about the property on Maple Street in Locust for RAY?',
+    )
+
+    expect(haystack).toBe('No.')
+    expect(haystack.indexOf('Maple Street')).toBe(-1)
+  })
+
+  it('returns empty for a transcript that is entirely agent turns', () => {
+    const { sandbox } = harness()
+
+    const haystack = sandbox.buildSpanHaystack('agent: hello\nagent: are you there?')
+
+    expect(haystack).toBe('')
+  })
+
+  it('fails validateFields for a source_span drawn from an agent turn', () => {
+    const { sandbox } = harness()
+
+    const haystack = sandbox.buildSpanHaystack(
+      'adjuster: No.\nagent: Are you calling about the property on Maple Street in Locust for RAY?',
+    )
+
+    const validated = sandbox.validateFields(
+      {
+        insured_last_name: {
+          value: 'Ray',
+          source_span: 'for RAY',
+          confidence: 'high',
+        },
+      },
+      haystack,
+      { insured_last_name: { label: 'Insured last name', type: 'string' } },
+    )
+
+    expect(validated.insured_last_name.valid).toBe(false)
   })
 })

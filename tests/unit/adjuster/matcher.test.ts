@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { loadGs } from './loadGs'
+import {
+  C1_RAW,
+  C2_RAW,
+  C3_RAW,
+  MATCH_INTEGRITY_CALL_STARTED_AT,
+  matchIntegrityClaims,
+} from './fixtures/matchIntegrity'
 
-const { matchClaim } = loadGs('apps/adjuster/src/matcher.js')
+const { matchClaim, adjusterTurnsOf } = loadGs([
+  'apps/adjuster/src/matcher.js',
+  'apps/adjuster/src/transcription.js',
+])
 
 function claim(overrides: Record<string, unknown> = {}) {
   return {
@@ -143,5 +153,48 @@ describe('address normalisation', () => {
     const result = matchClaim(NEXT_DAY, 'Out at 10503 Waters Dr.', [claim({ claim_number: '' })])
 
     expect(result.claim_id).toBe('claim-1')
+  })
+})
+
+// docs/specs/022 — matchClaim() has no notion of who spoke, so on the raw
+// transcript it reads an agent's proposed identity exactly like the
+// adjuster's own words (see the regression proof below matchClaim() was
+// fed directly in phase 0). Phase 1 fixes this at the call site, not in
+// matchClaim() itself: resolveClaimMatch() (runner.js) now hands it
+// adjusterTurnsOf(job.transcript) instead of the raw transcript, so these
+// tests exercise that same projection.
+describe('spec-022 fixtures — matching an adjuster-only transcript', () => {
+  it('c1: with the agent turns removed, the rejected guess has nothing left to match on', () => {
+    const result = matchClaim(
+      MATCH_INTEGRITY_CALL_STARTED_AT,
+      adjusterTurnsOf(C1_RAW),
+      matchIntegrityClaims(),
+    )
+
+    expect(result.claim_id).toBeNull()
+    expect(result.match_method).toBe('none')
+  })
+
+  it('c2: an address the adjuster gave himself still matches on address alone, at low confidence', () => {
+    const result = matchClaim(
+      MATCH_INTEGRITY_CALL_STARTED_AT,
+      adjusterTurnsOf(C2_RAW),
+      matchIntegrityClaims(),
+    )
+
+    expect(result.claim_id).toBe('harris-1')
+    expect(result.match_method).toBe('identity')
+    expect(result.match_confidence).toBe('low')
+  })
+
+  it('c3: no identity signal at all returns none, same as before the projection', () => {
+    const result = matchClaim(
+      MATCH_INTEGRITY_CALL_STARTED_AT,
+      adjusterTurnsOf(C3_RAW),
+      matchIntegrityClaims(),
+    )
+
+    expect(result.claim_id).toBeNull()
+    expect(result.match_method).toBe('none')
   })
 })

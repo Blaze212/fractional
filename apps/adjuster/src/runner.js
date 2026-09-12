@@ -146,15 +146,31 @@ function runTranscriptionStage(job) {
 // fall back to an LLM pass that tolerates misheard names/addresses the exact
 // scoring in matcher.js can't. A failed LLM call is logged and the
 // deterministic (possibly "none") result stands rather than failing the job.
+//
+// Both matchers read adjusterTurnsOf(job.transcript), never the raw transcript
+// — see docs/specs/022. An agent's read-back suggestion is real text in
+// job.transcript but is never evidence for a match, so it never reaches either
+// matcher at all.
 function resolveClaimMatch(job, claims) {
-  var match = matchClaim(job.call_started_at, job.transcript, claims)
+  var adjusterTranscript = adjusterTurnsOf(job.transcript)
 
-  if (match.match_method === 'none' || match.match_method === 'ambiguous') {
+  logEvent('runner.match_input', {
+    capture_id: job.capture_id,
+    label_vocabulary: detectLabelVocabulary(job.transcript),
+    full_chars: String(job.transcript || '').length,
+    adjuster_chars: adjusterTranscript.length,
+  })
+
+  var match = matchClaim(job.call_started_at, adjusterTranscript, claims)
+  var triggerReason = llmAdjudicationTrigger(match)
+
+  if (triggerReason) {
     try {
-      var llmMatch = matchClaimWithLlm(job.call_started_at, job.transcript, claims)
+      var llmMatch = matchClaimWithLlm(job.call_started_at, adjusterTranscript, claims)
       logEvent('runner.llm_match_attempted', {
         capture_id: job.capture_id,
         deterministic_method: match.match_method,
+        trigger_reason: triggerReason,
         llm_claim_id: llmMatch.claim_id || '',
         llm_confidence: llmMatch.match_confidence,
       })
@@ -170,6 +186,26 @@ function resolveClaimMatch(job, claims) {
   }
 
   return match
+}
+
+// docs/specs/022 phase 3 — the same shape a rejected read-back suggestion
+// produces (an address with no claim number or insured name behind it) is
+// also the shape a *correct* address-only mention produces, so a deterministic
+// win resting on address alone is sent to the LLM for a second opinion rather
+// than trusted outright. matchClaim() always returns candidates sorted
+// descending by score (see matcher.js), so candidates[0] is the winner whose
+// signals this checks.
+function llmAdjudicationTrigger(match) {
+  if (match.match_method === 'none' || match.match_method === 'ambiguous') {
+    return match.match_method
+  }
+
+  var winner = match.candidates && match.candidates[0]
+  if (winner && !winner.signals.claim_number && !winner.signals.insured_last_name) {
+    return 'address_only'
+  }
+
+  return ''
 }
 
 // Stage B. Its input changed — the master transcript when stage A produced an
@@ -192,6 +228,22 @@ function runExtractionStage(job) {
   })
 
   var extraction = runFieldExtraction(job, claim, tagSchema, input, hints)
+
+  // docs/specs/022 phase 4 — the extractor itself noticed the transcript names
+  // a different identity than the matched claim (see buildPrompt()'s
+  // claim-context precondition). A wrong-claim draft is the worst failure this
+  // product has, so a detected mismatch routes to human review instead of
+  // generating a document nobody can trust next to the ones that can be.
+  var identityMismatch = extraction.content && extraction.content.claim_identity_mismatch
+  if (identityMismatch && identityMismatch.mismatched) {
+    logEvent('runner.claim_identity_mismatch', {
+      capture_id: job.capture_id,
+      claim_id: (claim && claim.claim_id) || '',
+      reason: identityMismatch.reason || '',
+    })
+    upsertJob(job.capture_id, { status: 'needs_review', lease_until: '', error: '' })
+    return
+  }
 
   upsertJob(job.capture_id, { status: 'generating', model: extraction.model })
 

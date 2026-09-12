@@ -51,6 +51,11 @@ function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
     },
 
     getClaims: () => [{ claim_id: 'claim-1', insured_last_name: 'Henderson' }],
+    // Identity by default — see docs/specs/022. Tests that care whether
+    // resolveClaimMatch() actually threads the projection through override
+    // this to a marker function instead of asserting against job.transcript.
+    adjusterTurnsOf: (transcript: string) => transcript,
+    detectLabelVocabulary: () => '',
     matchClaim: () => ({ claim_id: 'claim-1', match_method: 'exact', match_confidence: 'high' }),
     matchClaimWithLlm: () => ({ claim_id: '', match_method: 'none', match_confidence: 'low' }),
     loadEnums: () => TAG_SCHEMA,
@@ -237,6 +242,141 @@ describe('stage A', () => {
     })
   })
 
+  it('matches against the adjuster-only projection, never the raw transcript (spec 022)', () => {
+    const matchClaimCalls: unknown[] = []
+    const matchClaimWithLlmCalls: unknown[] = []
+    const { sandbox } = harness([dograhJob({ transcript: 'Agent: guess\nUser: real answer' })], {
+      adjusterTurnsOf: (transcript: string) => 'PROJECTED(' + transcript + ')',
+      detectLabelVocabulary: () => 'retell',
+      matchClaim: (_startedAt: string, transcript: string) => {
+        matchClaimCalls.push(transcript)
+        return { claim_id: '', match_method: 'none', match_confidence: 'none' }
+      },
+      matchClaimWithLlm: (_startedAt: string, transcript: string) => {
+        matchClaimWithLlmCalls.push(transcript)
+        return { claim_id: '', match_method: 'none', match_confidence: 'none' }
+      },
+    })
+
+    sandbox.processOldestPendingJob()
+
+    expect(matchClaimCalls).toEqual(['PROJECTED(Agent: guess\nUser: real answer)'])
+    expect(matchClaimWithLlmCalls).toEqual(['PROJECTED(Agent: guess\nUser: real answer)'])
+  })
+
+  it('logs the match input with the detected vocabulary and both char counts', () => {
+    const { sandbox, logged } = harness(
+      [dograhJob({ transcript: 'Agent: hi\nUser: hello there' })],
+      {
+        adjusterTurnsOf: () => 'hello there',
+        detectLabelVocabulary: () => 'retell',
+      },
+    )
+
+    sandbox.processOldestPendingJob()
+
+    const matchInput = logged.find((l) => l.event === 'runner.match_input')
+    expect(matchInput?.fields).toEqual({
+      capture_id: 'dograh-1',
+      label_vocabulary: 'retell',
+      full_chars: 'Agent: hi\nUser: hello there'.length,
+      adjuster_chars: 'hello there'.length,
+    })
+  })
+
+  // docs/specs/022 phase 3 — a deterministic win resting on address alone is
+  // exactly the shape a rejected read-back suggestion produces, so it goes to
+  // the LLM for a second opinion even though matchClaim() was confident enough
+  // to return a method other than 'none'/'ambiguous'.
+  describe('address-only deterministic wins go to adjudication', () => {
+    it('sends an address-only win to the LLM and logs why', () => {
+      const { sandbox, logged, jobs } = harness([dograhJob()], {
+        matchClaim: () => ({
+          claim_id: 'claim-1',
+          match_method: 'identity',
+          match_confidence: 'low',
+          candidates: [
+            {
+              claim_id: 'claim-1',
+              score: 60,
+              signals: { street_number: true, street_name: true, city: true },
+            },
+          ],
+        }),
+        matchClaimWithLlm: () => ({
+          claim_id: 'claim-1',
+          match_method: 'llm',
+          match_confidence: 'high',
+        }),
+      })
+
+      sandbox.processOldestPendingJob()
+
+      const attempted = logged.find((l) => l.event === 'runner.llm_match_attempted')
+      expect(attempted?.fields.trigger_reason).toBe('address_only')
+      expect(jobs.get('dograh-1')?.match_method).toBe('llm')
+    })
+
+    it('leaves an address-only win in place when the LLM has nothing to add (c2 survives adjudication)', () => {
+      const { sandbox, jobs } = harness([dograhJob()], {
+        matchClaim: () => ({
+          claim_id: 'claim-1',
+          match_method: 'identity',
+          match_confidence: 'low',
+          candidates: [
+            {
+              claim_id: 'claim-1',
+              score: 60,
+              signals: { street_number: true, street_name: true, city: true },
+            },
+          ],
+        }),
+        matchClaimWithLlm: () => ({ claim_id: '', match_method: 'none', match_confidence: 'none' }),
+      })
+
+      sandbox.processOldestPendingJob()
+
+      expect(jobs.get('dograh-1')?.match_method).toBe('identity')
+      expect(jobs.get('dograh-1')?.claim_id).toBe('claim-1')
+    })
+
+    it('does not send a claim-number win to the LLM', () => {
+      const { sandbox, logged } = harness([dograhJob()], {
+        matchClaim: () => ({
+          claim_id: 'claim-1',
+          match_method: 'claim-number',
+          match_confidence: 'high',
+          candidates: [{ claim_id: 'claim-1', score: 100, signals: { claim_number: true } }],
+        }),
+      })
+
+      sandbox.processOldestPendingJob()
+
+      expect(logged.find((l) => l.event === 'runner.llm_match_attempted')).toBeUndefined()
+    })
+
+    it('does not send an insured-name-based win to the LLM', () => {
+      const { sandbox, logged } = harness([dograhJob()], {
+        matchClaim: () => ({
+          claim_id: 'claim-1',
+          match_method: 'identity',
+          match_confidence: 'high',
+          candidates: [
+            {
+              claim_id: 'claim-1',
+              score: 75,
+              signals: { insured_last_name: true, street_name: true, city: true },
+            },
+          ],
+        }),
+      })
+
+      sandbox.processOldestPendingJob()
+
+      expect(logged.find((l) => l.event === 'runner.llm_match_attempted')).toBeUndefined()
+    })
+  })
+
   it('falls back to the LLM matcher when deterministic matching cannot confirm a claim', () => {
     const { sandbox, jobs, logged } = harness([dograhJob()], {
       matchClaim: () => ({ claim_id: '', match_method: 'none', match_confidence: 'low' }),
@@ -394,6 +534,62 @@ describe('stage B', () => {
 
     expect(events(logged)).toContain('runner.docgen_failed')
     expect(jobs.get('dograh-1')?.status).toBe('pending')
+  })
+
+  // docs/specs/022 phase 4 — an extractor-detected identity mismatch routes to
+  // human review instead of generating a draft nobody can trust.
+  describe('claim identity mismatch', () => {
+    it('routes to needs_review and never calls generateDoc when the extractor flags a mismatch', () => {
+      const generateDocCalls: unknown[] = []
+      const { sandbox, jobs, logged } = harness(
+        [dograhJob({ status: 'transcribed', claim_id: 'claim-1' })],
+        {
+          extractFields: () => ({
+            fields: {},
+            unplaced_notes: [
+              'Transcript names Arnold at 1003 Venus Street, not the matched claim.',
+            ],
+            model: 'test-model',
+            content: {
+              claim_identity_mismatch: {
+                mismatched: true,
+                reason: 'Transcript names Arnold; claim context names Ray.',
+              },
+            },
+          }),
+          generateDoc: (...args: unknown[]) => {
+            generateDocCalls.push(args)
+            return { status: 'done', docUrl: 'https://doc', needsInputCount: 0 }
+          },
+        },
+      )
+
+      sandbox.processOldestPendingJob()
+
+      expect(generateDocCalls).toHaveLength(0)
+      expect(jobs.get('dograh-1')).toMatchObject({ status: 'needs_review' })
+      expect(jobs.get('dograh-1')?.doc_url).toBeUndefined()
+      const mismatchEvent = logged.find((l) => l.event === 'runner.claim_identity_mismatch')
+      expect(mismatchEvent?.fields.reason).toBe('Transcript names Arnold; claim context names Ray.')
+    })
+
+    it('generates the draft as usual when the extractor reports no mismatch', () => {
+      const { sandbox, jobs } = harness(
+        [dograhJob({ status: 'transcribed', claim_id: 'claim-1' })],
+        {
+          extractFields: () => ({
+            fields: {},
+            unplaced_notes: [],
+            model: 'test-model',
+            content: { claim_identity_mismatch: { mismatched: false, reason: '' } },
+          }),
+        },
+      )
+
+      sandbox.processOldestPendingJob()
+
+      expect(jobs.get('dograh-1')?.status).toBe('done')
+    })
   })
 })
 

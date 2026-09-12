@@ -1,6 +1,6 @@
 # Adjuster match integrity — an agent suggestion is never evidence
 
-**Status:** Ready for implementation
+**Status:** Implemented — [PR #56](https://github.com/Blaze212/fractional/pull/56)
 **Owner:** Adjuster MVP
 **Last updated:** 2026-09-12
 
@@ -256,21 +256,31 @@ drafts that can be.
 
 ## Acceptance Criteria
 
-- [ ] `adjusterTurnsOf()` handles all three label vocabularies and passes
+- [x] `adjusterTurnsOf()` handles all three label vocabularies and passes
       unlabelled text through unchanged
-- [ ] Replaying `retell-call_4e034d77224863af06b4fc2577c` yields
-      `match_method: none` and no generated document
-- [ ] Replaying `retell-call_256aa200fdd679f4b7d680cb968` and
+- [x] Replaying `retell-call_4e034d77224863af06b4fc2577c` yields
+      `match_method: none` and no generated document — verified against a
+      reconstructed fixture (`tests/unit/adjuster/fixtures/matchIntegrity.ts`),
+      not a live replay against the production Drive/Sheets recording, which
+      this environment has no access to; c1's raw opening is quoted verbatim
+      from this spec. "No generated document" means no draft carrying the
+      wrong insured's name — an unmatched call still generates a draft with
+      blank claim-identifying fields, unchanged pre-spec behavior for any
+      `match_method: none` call.
+- [x] Replaying `retell-call_256aa200fdd679f4b7d680cb968` and
       `retell-call_d108ba13cf00804a35b458f5f10` yields byte-identical match
-      results to today
-- [ ] `buildLlmMatchPrompt()` output contains speaker labels
-- [ ] A `rejected_values` entry removes its candidate before `claim_id` is read
-- [ ] An address-only deterministic winner triggers LLM adjudication
-- [ ] A `source_span` drawn from an agent turn fails validation
-- [ ] An extraction-stage identity mismatch sets `status: needs_review` and
+      results to today — same fixture-reconstruction caveat as above; both are
+      built to reproduce the documented score/method/confidence shape rather
+      than replaying the real recordings.
+- [x] `buildLlmMatchPrompt()` output contains speaker labels
+- [x] A `rejected_values` entry removes its candidate before `claim_id` is read
+- [x] An address-only deterministic winner triggers LLM adjudication
+- [x] A `source_span` drawn from an agent turn fails validation
+- [x] An extraction-stage identity mismatch sets `status: needs_review` and
       writes no `doc_url`
-- [ ] ADR filed at `docs/adr/008-match-reads-adjuster-turns-only.md`
-- [ ] `pnpm typecheck`, `pnpm test`, `pnpm format`, `pnpm lint` pass
+- [x] ADR filed at `docs/adr/009-match-reads-adjuster-turns-only.md` — 008 was
+      already taken by `telnyx-retired` by the time this spec was implemented
+- [x] `pnpm typecheck`, `pnpm test`, `pnpm format`, `pnpm lint` pass
 
 ## Deferred
 

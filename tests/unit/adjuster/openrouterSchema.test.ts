@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { loadGs } from './loadGs'
 
-const { buildExtractionSchema } = loadGs('apps/adjuster/src/llm/openrouter.js')
+const { buildExtractionSchema, buildExtractionSchemaWithIdentityCheck } = loadGs(
+  'apps/adjuster/src/llm/openrouter.js',
+)
 
 function harness(fetchResponses: Array<{ status: number; body: string }>) {
   const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
@@ -74,6 +76,32 @@ describe('buildExtractionSchema', () => {
       'medium',
       'low',
     ])
+  })
+})
+
+// docs/specs/022 phase 4 — extraction's schema, extended with a checkable
+// claim_identity_mismatch fact.
+describe('buildExtractionSchemaWithIdentityCheck', () => {
+  it('adds a closed claim_identity_mismatch object alongside fields and unplaced_notes', () => {
+    const schema = buildExtractionSchemaWithIdentityCheck(SPEC)
+
+    expect(schema.properties.claim_identity_mismatch).toEqual({
+      type: 'object',
+      properties: {
+        mismatched: { type: 'boolean' },
+        reason: { type: 'string' },
+      },
+      required: ['mismatched', 'reason'],
+      additionalProperties: false,
+    })
+    expect(schema.required).toEqual(['fields', 'unplaced_notes', 'claim_identity_mismatch'])
+  })
+
+  it('leaves buildExtractionSchema itself untouched, for callers that do not want the flag', () => {
+    const plain = buildExtractionSchema(SPEC)
+
+    expect(plain.properties.claim_identity_mismatch).toBeUndefined()
+    expect(plain.required).toEqual(['fields', 'unplaced_notes'])
   })
 })
 
