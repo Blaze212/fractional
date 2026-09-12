@@ -690,6 +690,18 @@ describe('clauseNeedsReject', () => {
     expect(clauseNeedsReject('a wind driven rain event')).toBe(false)
     expect(clauseNeedsReject('weather related')).toBe(false)
   })
+
+  // Code review follow-up (PR #55): "related to" is an adjectival participle,
+  // not a finite verb + preposition, and is the accepted example wording in
+  // subrogation_reason and coverage_cause_narrative's own guidance.
+  it('does not reject "related to", the accepted wording for subrogation_reason and coverage_cause_narrative', () => {
+    expect(
+      clauseNeedsReject(
+        'related to a 10 year old plumbing supply line that was not recently repaired',
+      ),
+    ).toBe(false)
+    expect(clauseNeedsReject('related to a burst plumbing line due to freezing')).toBe(false)
+  })
 })
 
 // Spec 023 Phase 4. Fixtures are drawn directly from the two real calls

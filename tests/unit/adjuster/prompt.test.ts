@@ -258,7 +258,11 @@ describe('field-specific guidance', () => {
     const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
 
     expect(user).toContain('a storm passed through the area on the day of loss')
-    expect(user).toContain('a severe wind and rain storm')
+    expect(user).toContain('a storm in the area')
+    // Regression (PR #55 code review): the good example must not invent
+    // facts the transcript never stated — the source_span rule this same
+    // system prompt states elsewhere forbids exactly that.
+    expect(user).not.toMatch(/severe wind and rain/i)
   })
 
   it('shows subrogation_reason a bad finite-verb answer against a good noun-phrase one', () => {
@@ -277,6 +281,13 @@ describe('field-specific guidance', () => {
 
     expect(user).toContain('30 year laminate shingles')
     expect(user).toMatch(/not "thirty-year laminate"/i)
+    // Regression (PR #55 code review): the template supplies no article
+    // before this value (enums.json's roof_status "shingle" text was
+    // "are a {{roof_covering_type}}", which put "a" before the plural
+    // "shingles" value this guidance recommends) — the guidance must say so,
+    // not just recommend a plural value that still doesn't agree.
+    expect(user).toContain('The shingles on the roof are ___ that are approximately')
+    expect(user).toMatch(/template supplies no article/i)
   })
 
   it('shows dwelling_stories and dwelling_type the defect their bare values cause together', () => {
@@ -392,7 +403,7 @@ describe('field-specific guidance', () => {
     ['occupancy_status', 'The home is currently occupied by ___.'],
     ['dwelling_type', 'The dwelling is a [stories], ___ structure.'],
     ['foundation_type', 'It was built in [year] on a ___ foundation.'],
-    ['roof_covering_type', 'The shingles on the roof are a ___'],
+    ['roof_covering_type', 'The shingles on the roof are ___'],
     ['roof_condition', 'The shingles are in ___ condition for their age.'],
     ['roof_pitch', 'The slopes on the roof are pitched at ___.'],
   ])('names the grammatical slot %s fills', (tag, fixedSentenceFragment) => {

@@ -221,9 +221,13 @@ var CLAUSE_DATE_PARAPHRASE_PATTERN = /\bon (?:the day|the date) of loss\b|\bthat
 // and a simple past-tense verb directly followed by a preposition ("passed
 // through"). A past participle used adjectivally with no auxiliary ("wind
 // driven", "weather related") is exactly what a clause should look like and
-// is left alone.
+// is left alone — "to" is deliberately not one of the prepositions in the
+// second alternative, since "related to" is exactly that adjectival shape and
+// is the accepted example wording in subrogation_reason and
+// coverage_cause_narrative's own guidance ("related to a burst plumbing line
+// due to freezing"); including it rejected those clauses into [NEEDS INPUT].
 var CLAUSE_FINITE_VERB_PATTERN =
-  /\b(?:am|is|are|was|were|has|have|had|did|does|do)\s+\w+(?:ed|en)\b|\b\w+ed\s+(?:through|in|into|onto|beneath|under|over|at|to|from|during|across)\b/i
+  /\b(?:am|is|are|was|were|has|have|had|did|does|do)\s+\w+(?:ed|en)\b|\b\w+ed\s+(?:through|in|into|onto|beneath|under|over|at|from|during|across)\b/i
 
 function clauseNeedsReject(text) {
   return (

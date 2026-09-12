@@ -163,7 +163,7 @@
       {
         "key": "shingle",
         "label": "Affected, shingle roof",
-        "text": "The shingles on the roof are a {{roof_covering_type}} that are approximately {{roof_age_years}} years old. The shingles are in {{roof_condition}} condition for their age. There is one layer of shingles with no drip edge present. The slopes on the roof are pitched at {{roof_pitch}}."
+        "text": "The shingles on the roof are {{roof_covering_type}} that are approximately {{roof_age_years}} years old. The shingles are in {{roof_condition}} condition for their age. There is one layer of shingles with no drip edge present. The slopes on the roof are pitched at {{roof_pitch}}."
       },
       {
         "key": "other_material",

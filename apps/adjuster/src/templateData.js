@@ -28,21 +28,25 @@ function loadPhraseBank() {
   }
 }
 
-// One-time migration (2026-09-02): pushes the repo's template/enums.json
-// content onto the live ENUMS_FILE_ID Drive file after spec 020's phases 3, 5,
-// and 6 — form: "clause" on the four clause fields, seven enum fields loosened
-// to suggestions, and mitigation_status's "none" branch gaining a canned
-// sentence in place of empty text (its MITIGATION: heading moved into
-// template.flattened.txt/the live Doc, see the acceptance criteria) — plus
-// interior_status gaining an emptyText fallback so an untouched Interior
-// section renders "Inspection found no interior-related damages." instead of
-// a blank line under the heading. enums.json only carries one sync function
-// at a time (see templateData.test.ts); this is the one all three phases'
-// schema edits and the interior_status fix landed in. Run once from the
-// editor, then delete this function — it is a point-in-time snapshot, not
-// something that stays in sync on its own. The JSON below is a verbatim copy
-// of template/enums.json; tests/unit/adjuster/templateData.test.ts fails if
-// the two ever drift.
+// One-time migration (2026-09-02, updated 2026-09-12 for spec 023): pushes
+// the repo's template/enums.json content onto the live ENUMS_FILE_ID Drive
+// file after spec 020's phases 3, 5, and 6 — form: "clause" on the four
+// clause fields, seven enum fields loosened to suggestions, and
+// mitigation_status's "none" branch gaining a canned sentence in place of
+// empty text (its MITIGATION: heading moved into template.flattened.txt/the
+// live Doc, see the acceptance criteria) — plus interior_status gaining an
+// emptyText fallback so an untouched Interior section renders "Inspection
+// found no interior-related damages." instead of a blank line under the
+// heading, and (spec 023) the shingle roof_status text dropping the article
+// before {{roof_covering_type}} ("are a {{roof_covering_type}}" ->
+// "are {{roof_covering_type}}") since that value is meant to be a plural
+// noun phrase like "30 year laminate shingles", and "are a ... shingles"
+// doesn't agree in number. enums.json only carries one sync function at a
+// time (see templateData.test.ts); this is the one all four rounds of
+// schema edits landed in. Run once from the editor, then delete this
+// function — it is a point-in-time snapshot, not something that stays in
+// sync on its own. The JSON below is a verbatim copy of template/enums.json;
+// tests/unit/adjuster/templateData.test.ts fails if the two ever drift.
 function syncEnumsFileFromRepo_20260902() {
   var json = `{
   "contacted_party_name": {
@@ -209,7 +213,7 @@ function syncEnumsFileFromRepo_20260902() {
       {
         "key": "shingle",
         "label": "Affected, shingle roof",
-        "text": "The shingles on the roof are a {{roof_covering_type}} that are approximately {{roof_age_years}} years old. The shingles are in {{roof_condition}} condition for their age. There is one layer of shingles with no drip edge present. The slopes on the roof are pitched at {{roof_pitch}}."
+        "text": "The shingles on the roof are {{roof_covering_type}} that are approximately {{roof_age_years}} years old. The shingles are in {{roof_condition}} condition for their age. There is one layer of shingles with no drip edge present. The slopes on the roof are pitched at {{roof_pitch}}."
       },
       {
         "key": "other_material",
