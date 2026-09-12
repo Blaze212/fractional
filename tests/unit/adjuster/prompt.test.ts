@@ -249,6 +249,90 @@ describe('field-specific guidance', () => {
     expect(user).toMatch(/unplaced_notes/i)
   })
 
+  // Phase 2 (spec 023): worked transcript-to-output examples for the fields
+  // that produced the worst prose in the two real-call fixtures (see
+  // prose.test.ts) — a rule alone had already failed for these.
+  it('shows origin_narrative a bad transcript-shaped answer against a good noun-phrase one', () => {
+    const spec = { origin_narrative: { label: 'Cause of loss', type: 'narrative' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('a storm passed through the area on the day of loss')
+    expect(user).toContain('a severe wind and rain storm')
+  })
+
+  it('shows subrogation_reason a bad finite-verb answer against a good noun-phrase one', () => {
+    const spec = { subrogation_reason: { label: 'Subrogation reason clause', type: 'narrative' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('no subrogation concerns were reported')
+    expect(user).toContain('an absence of any identified subrogation potential')
+  })
+
+  it('tells roof_covering_type to include the head noun so it does not collide with roof_age_years digits', () => {
+    const spec = { roof_covering_type: { label: 'x', type: 'string' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('30 year laminate shingles')
+    expect(user).toMatch(/not "thirty-year laminate"/i)
+  })
+
+  it('shows dwelling_stories and dwelling_type the defect their bare values cause together', () => {
+    const spec = {
+      dwelling_stories: { label: 'x', type: 'string' },
+      dwelling_type: { label: 'x', type: 'string' },
+    }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toMatch(/"1 story", not "1"/i)
+    expect(user).toMatch(/write "single family", not "single-family home"/i)
+  })
+
+  it('gives front_slope_status a finding example and a no-damage example, both complete sentences', () => {
+    const spec = { front_slope_status: { label: 'x', type: 'narrative' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain('We observed eight wind-damaged shingles missing from the front slope.')
+    expect(user).toContain('We observed no storm-related damage to the front slope.')
+  })
+
+  it('gives front_elevation_status one coherent paragraph instead of a denial that contradicts itself', () => {
+    const spec = { front_elevation_status: { label: 'x', type: 'narrative' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toMatch(
+      /one coherent paragraph, never a denial followed by a contradicting finding/i,
+    )
+    expect(user).toContain(
+      'We observed approximately three to four linear feet of fascia on the left elevation',
+    )
+  })
+
+  it('gives front_elevation_status a digits example that states a count once', () => {
+    const spec = { front_elevation_status: { label: 'x', type: 'narrative' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toContain(
+      'We observed two glass panels, approximately 66 inches by 60 inches, damaged on the front elevation.',
+    )
+  })
+
+  it('tells overhead_profit_narrative a determination alone is incomplete without its reason', () => {
+    const spec = { overhead_profit_narrative: { label: 'x', type: 'narrative' } }
+
+    const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
+
+    expect(user).toMatch(/a determination alone is not a complete answer without its reason/i)
+    expect(user).toContain('Overhead and profit do not apply.')
+    expect(user).toContain('given the single-trade scope of the roofing repair')
+  })
+
   // Phase 3: a full-sentence answer to a clause field gets rejected at render
   // time (see docgen.js's clauseNeedsReject) rather than printed as a broken
   // sentence, so the prompt reinforces the one-clause contract for every
