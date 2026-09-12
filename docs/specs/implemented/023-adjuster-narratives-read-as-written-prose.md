@@ -1,6 +1,6 @@
 # Adjuster report narratives read as written prose
 
-**Status:** Ready for implementation
+**Status:** Implemented — PR https://github.com/Blaze212/fractional/pull/55
 **Owner:** Adjuster MVP
 **Last updated:** 2026-09-12
 
