@@ -148,6 +148,49 @@ describe('buildPrompt', () => {
     expect(system).toMatch(/correct the spelling of a proper noun/i)
   })
 
+  // Phase 1 (spec 023): clause fields and narrative fields are stated as two
+  // distinct shapes up front, in the system block, before any per-field rule
+  // relies on the distinction.
+  it('states the clause-versus-narrative taxonomy in the system block', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/two shapes of extracted text/i)
+    expect(system).toMatch(/no finite verb of its own, no trailing period/i)
+    expect(system).toMatch(/complete, grammatical sentences with a subject and a finite verb/i)
+  })
+
+  it('states the narrative register: complete sentences, no filler, no noun piles, digits over spelled numbers', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/no dictation artifacts/i)
+    expect(system).toMatch(/"eight wind-damaged shingles", not "eight wind damage shingles"/i)
+    expect(system).toMatch(/numbers and measurements in digits/i)
+    expect(system).toMatch(/four slopes and the four elevations should not disagree/i)
+  })
+
+  it('forbids a narrative from opening with a stock no-damage sentence and then describing damage', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(
+      /does not open with a stock no-damage sentence and then go on to describe damage/i,
+    )
+  })
+
+  it("says a field naming required content isn't complete without it", () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/not complete without that content/i)
+  })
+
+  it('says narratives are composed from the span, not copied from it', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/a narrative's value is composed by you, not copied/i)
+    expect(system).toMatch(
+      /repeats its source_span nearly word for word is usually a sign it was copied/i,
+    )
+  })
+
   it('defines a medium confidence tier that still fills the field but flags it for review', () => {
     const { system } = buildPrompt({ transcript: 'anything', templateSpec })
 
