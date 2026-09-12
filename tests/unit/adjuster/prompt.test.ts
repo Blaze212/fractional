@@ -148,6 +148,18 @@ describe('buildPrompt', () => {
     expect(system).toMatch(/correct the spelling of a proper noun/i)
   })
 
+  // docs/specs/022 phase 4 — the claim context is a hypothesis, not ground
+  // truth, and loses its authority entirely once the adjuster's own words
+  // contradict it.
+  it('treats the claim context as a hypothesis that loses authority on a contradiction', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/hypothesis about which claim this is/i)
+    expect(system).toMatch(/only where the adjuster's own words already corroborate/i)
+    expect(system).toMatch(/loses its authority entirely/i)
+    expect(system).toMatch(/claim_identity_mismatch\.mismatched to true/)
+  })
+
   it('defines a medium confidence tier that still fills the field but flags it for review', () => {
     const { system } = buildPrompt({ transcript: 'anything', templateSpec })
 
@@ -401,6 +413,19 @@ describe('transcript source framing', () => {
     expect(system).toContain('master transcript')
     expect(system).toContain('no wording was authored during reconciliation')
     expect(system).toContain('entirely within a single turn')
+  })
+
+  // docs/specs/022 phase 4 — the master transcript's haystack (buildSpanHaystack)
+  // is adjuster turns only; the prompt states the same rule explicitly rather
+  // than leaving it as an unstated property of the input.
+  it('tells the model a span never comes from the agent (spec 022)', () => {
+    const { system } = buildPrompt({
+      transcript: 'anything',
+      templateSpec,
+      transcriptSource: 'master',
+    })
+
+    expect(system).toMatch(/never from an agent/i)
   })
 
   it.each([

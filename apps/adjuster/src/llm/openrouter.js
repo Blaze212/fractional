@@ -33,10 +33,31 @@ function extractFields(input) {
       { role: 'system', content: prompt.system },
       { role: 'user', content: prompt.user },
     ],
-    jsonSchema: buildExtractionSchema(input.templateSpec),
+    jsonSchema: buildExtractionSchemaWithIdentityCheck(input.templateSpec),
   })
 
   return response
+}
+
+// docs/specs/022 phase 4 — a checkable fact alongside the extracted fields,
+// not just an unplaced_notes sentence: the extractor must say whether it
+// noticed the transcript naming a different identity than the matched claim
+// context (see buildPrompt()'s claim-context precondition in prompt.js), so
+// runner.js can route the job to human review instead of trusting the
+// model's unenforced description of its own confusion.
+function buildExtractionSchemaWithIdentityCheck(templateSpec) {
+  var schema = buildExtractionSchema(templateSpec)
+  schema.properties.claim_identity_mismatch = {
+    type: 'object',
+    properties: {
+      mismatched: { type: 'boolean' },
+      reason: { type: 'string' },
+    },
+    required: ['mismatched', 'reason'],
+    additionalProperties: false,
+  }
+  schema.required = schema.required.concat(['claim_identity_mismatch'])
+  return schema
 }
 
 // schemaName and logLabel exist so the master-transcript merge (see

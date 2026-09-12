@@ -232,14 +232,21 @@ function renderMasterTranscript(turns) {
 }
 
 // validateFields() is handed this rather than the rendered master: a source_span
-// must be evidence the adjuster actually spoke, so the speaker labels the merge
-// model added are not part of the haystack. Turns stay on separate lines, which
-// is what makes a span straddling a turn boundary fail — the safe direction.
+// must be evidence the adjuster actually spoke, so neither the speaker labels
+// the merge model added nor the agent's own turns are part of the haystack —
+// see docs/specs/022 Phase 4. An agent's spoken suggestion is real
+// machine-transcribed text and would otherwise be a valid verbatim
+// source_span; dropping the agent's turns entirely, not just their label,
+// is what makes it unfindable. Turns stay on separate lines, which is what
+// makes a span straddling a turn boundary fail — the safe direction.
 function buildSpanHaystack(masterText) {
   return String(masterText || '')
     .split('\n')
+    .filter(function (line) {
+      return /^adjuster:\s*/.test(line)
+    })
     .map(function (line) {
-      return line.replace(/^(adjuster|agent):\s*/, '')
+      return line.replace(/^adjuster:\s*/, '')
     })
     .join('\n')
 }

@@ -229,6 +229,22 @@ function runExtractionStage(job) {
 
   var extraction = runFieldExtraction(job, claim, tagSchema, input, hints)
 
+  // docs/specs/022 phase 4 — the extractor itself noticed the transcript names
+  // a different identity than the matched claim (see buildPrompt()'s
+  // claim-context precondition). A wrong-claim draft is the worst failure this
+  // product has, so a detected mismatch routes to human review instead of
+  // generating a document nobody can trust next to the ones that can be.
+  var identityMismatch = extraction.content && extraction.content.claim_identity_mismatch
+  if (identityMismatch && identityMismatch.mismatched) {
+    logEvent('runner.claim_identity_mismatch', {
+      capture_id: job.capture_id,
+      claim_id: (claim && claim.claim_id) || '',
+      reason: identityMismatch.reason || '',
+    })
+    upsertJob(job.capture_id, { status: 'needs_review', lease_until: '', error: '' })
+    return
+  }
+
   upsertJob(job.capture_id, { status: 'generating', model: extraction.model })
 
   var result = renderDraftFromExtraction({

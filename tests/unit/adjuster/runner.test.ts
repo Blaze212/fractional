@@ -523,6 +523,62 @@ describe('stage B', () => {
     expect(events(logged)).toContain('runner.docgen_failed')
     expect(jobs.get('dograh-1')?.status).toBe('pending')
   })
+
+  // docs/specs/022 phase 4 — an extractor-detected identity mismatch routes to
+  // human review instead of generating a draft nobody can trust.
+  describe('claim identity mismatch', () => {
+    it('routes to needs_review and never calls generateDoc when the extractor flags a mismatch', () => {
+      const generateDocCalls: unknown[] = []
+      const { sandbox, jobs, logged } = harness(
+        [dograhJob({ status: 'transcribed', claim_id: 'claim-1' })],
+        {
+          extractFields: () => ({
+            fields: {},
+            unplaced_notes: [
+              'Transcript names Arnold at 1003 Venus Street, not the matched claim.',
+            ],
+            model: 'test-model',
+            content: {
+              claim_identity_mismatch: {
+                mismatched: true,
+                reason: 'Transcript names Arnold; claim context names Ray.',
+              },
+            },
+          }),
+          generateDoc: (...args: unknown[]) => {
+            generateDocCalls.push(args)
+            return { status: 'done', docUrl: 'https://doc', needsInputCount: 0 }
+          },
+        },
+      )
+
+      sandbox.processOldestPendingJob()
+
+      expect(generateDocCalls).toHaveLength(0)
+      expect(jobs.get('dograh-1')).toMatchObject({ status: 'needs_review' })
+      expect(jobs.get('dograh-1')?.doc_url).toBeUndefined()
+      const mismatchEvent = logged.find((l) => l.event === 'runner.claim_identity_mismatch')
+      expect(mismatchEvent?.fields.reason).toBe('Transcript names Arnold; claim context names Ray.')
+    })
+
+    it('generates the draft as usual when the extractor reports no mismatch', () => {
+      const { sandbox, jobs } = harness(
+        [dograhJob({ status: 'transcribed', claim_id: 'claim-1' })],
+        {
+          extractFields: () => ({
+            fields: {},
+            unplaced_notes: [],
+            model: 'test-model',
+            content: { claim_identity_mismatch: { mismatched: false, reason: '' } },
+          }),
+        },
+      )
+
+      sandbox.processOldestPendingJob()
+
+      expect(jobs.get('dograh-1')?.status).toBe('done')
+    })
+  })
 })
 
 describe('runPipelineTick', () => {
