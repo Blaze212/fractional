@@ -7,7 +7,9 @@
 // llm/masterTranscript.js.
 //
 // Runtime notes (Apps Script, not Node): there is no Promise and no async, so
-// "in parallel" is UrlFetchApp.fetchAll(requests). scripts/stt-transcribe.mjs
+// "in parallel" is UrlFetchApp.fetchAll(requests) — but only for the Qwen
+// slices; see transcribeInParallel for why ElevenLabs is sent on its own.
+// scripts/stt-transcribe.mjs
 // cannot be imported — the model table and OpenRouter request shape below are
 // ported from it by hand, and that script stays as the local A/B harness.
 
@@ -344,10 +346,12 @@ function buildMultipartBody(boundary, fields, fileFieldName, fileBlob) {
   head.push('')
   head.push('')
 
-  return []
-    .concat(Utilities.newBlob(head.join('\r\n')).getBytes())
-    .concat(fileBlob.getBytes())
-    .concat(Utilities.newBlob('\r\n--' + boundary + '--\r\n').getBytes())
+  // One concat call, not a chain. Every link in a chain allocates another array
+  // as long as the recording, so the old three-link version peaked at three full
+  // copies of the audio. Multi-argument concat allocates the result once.
+  return Utilities.newBlob(head.join('\r\n'))
+    .getBytes()
+    .concat(fileBlob.getBytes(), Utilities.newBlob('\r\n--' + boundary + '--\r\n').getBytes())
 }
 
 function buildQwenRequest(audioBase64, format, apiKey) {
@@ -507,121 +511,149 @@ function qwenChunkSeconds(probe) {
   return Math.max(0, Math.min(QWEN_MAX_SECONDS, byBytes))
 }
 
-// Returns the slices to send, or an empty list when the audio cannot be made to
-// fit — unsplittable because it is not PCM WAV, and over a cap.
-function splitForQwen(bytes, probe) {
+// Returns one [startSec, endSec] pair per request to send, or an empty list when
+// the audio cannot be made to fit — unsplittable because it is not PCM WAV, and
+// over a cap. A single null entry means "send the payload whole, uncut".
+//
+// Spans rather than the slices themselves: cutting every slice up front held a
+// second full copy of the audio alongside the original, and on a ten-minute call
+// that pair alone was most of the heap. The caller cuts one span at a time.
+function planQwenSpans(bytes, probe) {
   var fitsBytes = bytes.length <= QWEN_MAX_BYTES
 
-  if (!probe) return fitsBytes ? [bytes] : []
-  if (fitsBytes && probe.seconds <= QWEN_MAX_SECONDS) return [bytes]
+  if (!probe) return fitsBytes ? [null] : []
+  if (fitsBytes && probe.seconds <= QWEN_MAX_SECONDS) return [null]
 
   var span = qwenChunkSeconds(probe)
   if (span <= 0) return []
 
-  var chunks = []
+  var spans = []
   for (var start = 0; start < probe.seconds; start += span) {
-    chunks.push(sliceWav(bytes, probe, start, Math.min(start + span, probe.seconds)))
+    spans.push([start, Math.min(start + span, probe.seconds)])
   }
 
-  return chunks
+  return spans
 }
 
-// Issues both ASR calls through one fetchAll. Failure is per-source and never
-// fatal: each source independently yields either text or empty, and the caller
-// decides what to do with however many came back.
+// Runs the two ASR sources as two phases rather than one fetchAll. Failure is
+// per-source and never fatal: each source independently yields either text or
+// empty, and the caller decides what to do with however many came back.
+//
+// The phases exist for memory, not for latency. Blob.getBytes() hands back a
+// plain JS array — Apps Script has no typed arrays at the Blob boundary — so one
+// audio byte costs four to eight bytes of V8 heap. Batching every request into a
+// single fetchAll left the ElevenLabs multipart body, a second copy of the
+// bytes, every WAV slice and every base64 payload all reachable at the same
+// instant, and a ten-minute call died with "Out of memory error" before a single
+// request went out. Phase A builds, sends and releases the ElevenLabs body;
+// only then does phase B read the blob again. Peak heap is one phase, not the sum.
 function transcribeInParallel(input) {
   var captureId = input.captureId || ''
-  var keyterms = input.keyterms || []
-  // One entry per HTTP request. Qwen contributes several when the audio has to
-  // be split, so this is a flat plan rather than one request per source.
-  var plan = []
+  var results = {}
+  var modes = []
 
   // A missing key is a configuration state, not a failure: the default mode on
   // first deploy is shadow, and a deploy that has not set ELEVENLABS_API_KEY yet
   if (input.elevenLabsKey) {
-    plan.push({
-      source: 'elevenlabs',
-      request: buildElevenLabsRequest(input.audioBlob, keyterms, input.elevenLabsKey),
-    })
+    results.elevenlabs = fetchElevenLabs(input, captureId)
+    modes.push('elevenlabs')
   } else {
     logEvent('transcription.source_unconfigured', { capture_id: captureId, source: 'elevenlabs' })
   }
 
   if (input.openRouterKey) {
-    planQwenRequests(plan, input, captureId)
+    var qwen = fetchQwen(input, captureId)
+
+    if (qwen) {
+      results.qwen = qwen.result
+      modes.push('qwen:' + qwen.mode)
+    }
   } else {
     logEvent('transcription.source_unconfigured', { capture_id: captureId, source: 'qwen' })
   }
 
-  if (!plan.length) return { fetch_mode: 'none' }
-
-  var startedAt = Date.now()
-  var batch = fetchAllWithFallback(
-    plan.map(function (entry) {
-      return entry.request
-    }),
-    captureId,
-  )
-  // fetchAll issues every request concurrently, so there is one wall clock for
-  // the batch rather than a latency per source. The sequential fallback shares
-  // it too; fetch_mode in the manifest says which of the two you are reading.
-  var latencyMs = Date.now() - startedAt
-
-  var parts = {}
-
-  plan.forEach(function (entry, index) {
-    var result = resolveSourceResponse(entry.source, batch.responses[index])
-
-    if (!result.ok && isRetryableStatus(result.status)) {
-      logEvent('transcription.retry', {
-        capture_id: captureId,
-        source: entry.source,
-        status: result.status,
-      })
-      Utilities.sleep(TRANSCRIPTION_RETRY_BACKOFF_MS)
-      result = resolveSourceResponse(entry.source, safeFetch(entry.request))
-    }
-
-    if (!parts[entry.source]) parts[entry.source] = []
-    parts[entry.source].push(result)
-  })
-
-  var results = {}
-
-  Object.keys(parts).forEach(function (source) {
-    var result = combineChunks(source, parts[source])
-    result.latency_ms = latencyMs
-    results[source] = result
-
-    logEvent('transcription.source_finished', {
-      capture_id: captureId,
-      source: source,
-      ok: result.ok,
-      status: result.status,
-      chars: String(result.text || '').length,
-      chunks: parts[source].length,
-      latency_ms: latencyMs,
-      // The vendor's own words for why it refused. Without this a 400 logs as
-      // ok:false with no reason attached, and the body resolveSourceResponse
-      // captured dies here. A 4xx is not retryable, so this line is the only
-      // record of the failure the call ever produces.
-      error: result.ok ? '' : String(result.error || ''),
-    })
-  })
-
-  results.fetch_mode = batch.mode
+  // fetch_mode still tells the manifest which shape it is reading, but it now
+  // names both phases: 'elevenlabs+qwen:fetch_all' on the healthy path, and
+  // 'qwen:sequential' when fetchAll threw and the slices went out one by one.
+  results.fetch_mode = modes.length ? modes.join('+') : 'none'
   return results
 }
 
-// Qwen's slice of the plan. Everything is base64-encoded up front so a failure
-// to encode drops the source cleanly instead of sending a transcript with a
-// hole where one slice should have been.
-function planQwenRequests(plan, input, captureId) {
+// Phase A. One request, sent alone and unreachable before phase B allocates
+// anything: its multipart body is a byte array as long as the recording itself,
+// which makes it the single largest object the pass ever builds.
+function fetchElevenLabs(input, captureId) {
+  var startedAt = Date.now()
+  var request = buildElevenLabsRequest(input.audioBlob, input.keyterms || [], input.elevenLabsKey)
+  var result = resolveWithRetry('elevenlabs', request, safeFetch(request), captureId)
+
+  result.latency_ms = Date.now() - startedAt
+  logSourceFinished(captureId, result, 1)
+  return result
+}
+
+// Phase B. The slices keep their concurrency: by the time they reach here they
+// are base64 strings, roughly a byte of heap per character rather than the four
+// to eight an array element costs, so holding all of them is affordable.
+function fetchQwen(input, captureId) {
+  var requests = planQwenRequests(input, captureId)
+  if (!requests.length) return null
+
+  var startedAt = Date.now()
+  var batch = fetchAllWithFallback(requests, captureId)
+  // fetchAll issues every slice concurrently, so there is one wall clock for the
+  // batch rather than a latency per slice. The sequential fallback shares it too.
+  var latencyMs = Date.now() - startedAt
+
+  var parts = requests.map(function (request, index) {
+    return resolveWithRetry('qwen', request, batch.responses[index], captureId)
+  })
+
+  var result = combineChunks('qwen', parts)
+  result.latency_ms = latencyMs
+  logSourceFinished(captureId, result, parts.length)
+  return { result: result, mode: batch.mode }
+}
+
+// A 429 or a 5xx earns one more try on its own; anything else stands as it came
+// back. The request object is still held here, so a retry costs no re-encoding.
+function resolveWithRetry(label, request, response, captureId) {
+  var result = resolveSourceResponse(label, response)
+  if (result.ok || !isRetryableStatus(result.status)) return result
+
+  logEvent('transcription.retry', { capture_id: captureId, source: label, status: result.status })
+  Utilities.sleep(TRANSCRIPTION_RETRY_BACKOFF_MS)
+  return resolveSourceResponse(label, safeFetch(request))
+}
+
+function logSourceFinished(captureId, result, chunks) {
+  logEvent('transcription.source_finished', {
+    capture_id: captureId,
+    source: result.source,
+    ok: result.ok,
+    status: result.status,
+    chars: String(result.text || '').length,
+    chunks: chunks,
+    latency_ms: result.latency_ms,
+    // The vendor's own words for why it refused. Without this a 400 logs as
+    // ok:false with no reason attached, and the body resolveSourceResponse
+    // captured dies here. A 4xx is not retryable, so this line is the only
+    // record of the failure the call ever produces.
+    error: result.ok ? '' : String(result.error || ''),
+  })
+}
+
+// Qwen's requests, built one slice at a time: each span is cut, encoded, and
+// dropped before the next is cut, so the pass never holds more than the source
+// bytes plus a single slice. Encoding still happens before anything is sent, so
+// a slice that will not encode drops the whole source cleanly instead of sending
+// a transcript with a hole where one slice should have been.
+function planQwenRequests(input, captureId) {
   var bytes = input.audioBlob.getBytes()
   var probe = probeWav(bytes)
-  var chunks = splitForQwen(bytes, probe)
+  var spans = planQwenSpans(bytes, probe)
 
-  if (!chunks.length) {
+  if (!spans.length) {
     logEvent('transcription.audio_too_large', {
       capture_id: captureId,
       bytes: bytes.length,
@@ -630,34 +662,34 @@ function planQwenRequests(plan, input, captureId) {
       max_seconds: QWEN_MAX_SECONDS,
       splittable: Boolean(probe),
     })
-    return
+    return []
   }
 
-  var encoded = []
+  var requests = []
 
-  for (var i = 0; i < chunks.length; i++) {
-    var base64 = encodeAudioBase64(chunks[i], captureId)
-    if (!base64) return
-    encoded.push(base64)
+  for (var i = 0; i < spans.length; i++) {
+    var span = spans[i]
+    // A null span is the whole payload uncut; otherwise the slice is always WAV
+    // whatever the original container was, because sliceWav writes its own header.
+    var base64 = encodeAudioBase64(
+      span ? sliceWav(bytes, probe, span[0], span[1]) : bytes,
+      captureId,
+    )
+    if (!base64) return []
+
+    requests.push(buildQwenRequest(base64, probe ? 'wav' : input.format, input.openRouterKey))
   }
 
-  if (encoded.length > 1) {
+  if (requests.length > 1) {
     logEvent('transcription.audio_split', {
       capture_id: captureId,
-      chunks: encoded.length,
+      chunks: requests.length,
       seconds: probe.seconds,
       chunk_seconds: qwenChunkSeconds(probe),
     })
   }
 
-  encoded.forEach(function (base64) {
-    plan.push({
-      source: 'qwen',
-      // A slice is always WAV whatever the original container was, because
-      // sliceWav writes its own header.
-      request: buildQwenRequest(base64, probe ? 'wav' : input.format, input.openRouterKey),
-    })
-  })
+  return requests
 }
 
 // A split source collapses back into the single result the rest of the pass
@@ -706,8 +738,8 @@ function encodeAudioBase64(bytes, captureId) {
 }
 
 // fetchAll returns non-2xx as ordinary responses, but a transport error throws
-// for the whole batch — which would let one dead vendor take out the other. Fall
-// back to two sequential calls so each source still gets its own chance.
+// for the whole batch — which would lose every slice because one of them failed
+// to go out. Fall back to sequential fetches so each slice gets its own chance.
 function fetchAllWithFallback(requests, captureId) {
   try {
     return { responses: UrlFetchApp.fetchAll(requests), mode: 'fetch_all' }

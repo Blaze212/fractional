@@ -140,3 +140,59 @@ validation and the field becomes `[NEEDS INPUT]` — the safe direction.
   master. First deploy is `shadow`; revert is a one-property flip.
 - The pass is Dograh-only. Telnyx paths (Record, single-stage AIGather, guided)
   are untouched.
+
+---
+
+## Amendment — 2026-09-12: the two sources are sent in two phases, not one fetchAll
+
+**Status:** Accepted. Amends the concurrency mechanic only; every other decision
+above stands.
+
+A ten-minute Retell call (`retell-call_d108ba13cf00804a35b458f5f10`, 619s of
+24 kHz 16-bit mono WAV — about 30 MB) failed three consecutive runs with
+`Out of memory error`, thrown after `transcription.audio_split` logged and
+before any request left the script.
+
+The cause is a property of the runtime, not of the audio. Apps Script exposes no
+typed arrays at the Blob boundary: `Blob.getBytes()` returns a plain JS `Array`
+of numbers, so one audio byte costs four to eight bytes of V8 heap. Google
+publishes no memory quota for Apps Script — the ceiling is the isolate's own,
+empirically a few hundred MB — and the original code reached it by making every
+payload reachable at the same instant in order to hand them all to one
+`fetchAll`: the ElevenLabs multipart body (a byte array as long as the
+recording, built through a three-link `concat` chain that peaked at three full
+copies), a second independent `getBytes()` read for the Qwen path, every WAV
+slice materialised up front, and every base64 payload. Roughly 89M array
+elements and 84M string characters, live together.
+
+The pass now runs in two phases:
+
+- **Phase A — ElevenLabs alone.** Its multipart body is the single largest
+  object the pass ever builds, so it is built, sent on its own
+  `UrlFetchApp.fetch`, and unreachable before phase B allocates anything. The
+  body is assembled in one multi-argument `concat` rather than a chain.
+- **Phase B — the Qwen slices, still batched.** By the time they reach
+  `fetchAll` they are base64 strings, roughly a byte of heap per character, so
+  holding all of them is affordable and the slices keep their concurrency —
+  which is where splitting actually costs wall clock. `planQwenSpans` returns
+  `[startSec, endSec]` pairs instead of the slices themselves, and each span is
+  cut, encoded and released before the next is cut.
+
+Peak heap is now one phase rather than the sum of both.
+
+What this costs: one extra round trip. The two sources no longer share a wall
+clock, so `latency_ms` is per-source. `fetch_mode` now names both phases —
+`elevenlabs+qwen:fetch_all` on the healthy path, `qwen:sequential` when
+`fetchAll` threw and the slices went out one at a time, `elevenlabs` when the
+audio could not be cut down to Alibaba's caps at all.
+
+**What this does not fix.** Phase A is now the ceiling, and its floor is about
+two copies of the recording in array elements — the source bytes and the
+multipart body have to exist at the same moment. Past roughly 60 MB of audio
+this will fail again. Getting below that floor means keeping the bytes out of JS
+entirely: passing the Blob straight to `UrlFetchApp` as a `payload` object so
+Apps Script builds the multipart body on the Java side, or handing ElevenLabs a
+`cloud_storage_url` instead of an upload. Both are blocked today by the repeated
+`keyterms` form field, which a JS payload object cannot express — the same
+constraint that forced the hand-built body in the first place. Deliberately left
+for its own change rather than coupled to this fix.
