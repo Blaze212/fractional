@@ -196,3 +196,49 @@ Apps Script builds the multipart body on the Java side, or handing ElevenLabs a
 `keyterms` form field, which a JS payload object cannot express — the same
 constraint that forced the hand-built body in the first place. Deliberately left
 for its own change rather than coupled to this fix.
+
+---
+
+## Amendment — 2026-09-12: ElevenLabs is given a URL, not an upload, and never touches the audio bytes
+
+**Status:** Accepted. Amends the ElevenLabs request mechanic only; every other
+decision above stands.
+
+The previous amendment's own prediction held: the same call
+(`retell-call_d108ba13cf00804a35b458f5f10`, ~30 MB) OOM'd again after that fix
+shipped. Phase A's floor was still "about two copies of the recording in array
+elements" — the source bytes and the hand-built multipart body had to exist at
+the same moment — and that floor was already close enough to the isolate's
+ceiling that this call crossed it.
+
+Checking ElevenLabs' actual API turned up the second option the previous
+amendment named but didn't pursue: `source_url` (the current replacement for
+the deprecated `cloud_storage_url`) lets ElevenLabs fetch the recording itself
+from a URL instead of receiving an uploaded body. Paired with `source_url`,
+the request has no file part at all, so it can be sent as plain JSON —
+`keyterms` is a genuine JSON array in that shape, which is also what
+retired the multipart-only constraint that forced the hand-built body in the
+first place. `buildElevenLabsRequest` now takes a URL and never touches
+`Blob.getBytes()`; only Qwen still turns the recording into a JS array, one
+chunked span at a time, per the original ADR.
+
+**The trade-off this accepts.** `source_url` has to be reachable without
+Google auth, and the recording lives in a private Drive folder. The chosen
+mechanism (`withPubliclySharedFile` in transcription.js) sets the specific
+call's file to "anyone with the link", builds the direct-download URL, makes
+the request, and reverts the sharing in a `finally` so the revert runs even if
+the request itself throws. This is a real, if brief, public-exposure window on
+claim audio containing PII (insured names, addresses, claim details) — not a
+scoped or self-expiring grant. A signed, short-TTL Cloud Storage URL would
+close that gap entirely (GCS itself rejects an expired signature, with no
+revert step to depend on), but requires standing up a bucket and signing
+credentials this project does not have today. That was scoped out as its own
+follow-up rather than bundled into this fix; Brandon should know claim audio
+is briefly link-shared per transcription pass until it lands.
+
+**What this does not change.** Qwen's chunking, the merge/verbatim-coverage
+gate, `SOURCE_PRECEDENCE`, and every fallback path are untouched. A Drive
+sharing call that itself throws (an org policy blocking external sharing, for
+example) is caught and logged as `transcription.elevenlabs_share_failed`; the
+pass degrades exactly like an ordinary ElevenLabs fetch failure would, on the
+existing floor of Qwen plus the job's own voice-platform transcript.

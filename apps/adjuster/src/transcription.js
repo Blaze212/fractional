@@ -124,8 +124,9 @@ var CLAIM_KEYTERM_FIELDS = ['insured_last_name', 'address_line1', 'city', 'carri
 // it upstream, where OpenRouter masks the rejection as an opaque "Provider
 // returned 400" with nothing to debug from. So the split happens before the
 // send: audio past either cap is cut into slices that each fit, and the slice
-// transcripts are concatenated in order. ElevenLabs is unaffected — it takes
-// the whole blob as multipart and documents a 5 GB ceiling.
+// transcripts are concatenated in order. ElevenLabs is unaffected — it reads
+// the recording itself from a URL (see buildElevenLabsRequest) rather than
+// receiving an upload, and documents a 2 GB ceiling on that path.
 var QWEN_MAX_SECONDS = 300
 var QWEN_MAX_BYTES = 10 * 1024 * 1024
 var WAV_HEADER_BYTES = 44
@@ -361,63 +362,63 @@ function appendManifestRun(folder, run) {
 // Parallel ASR fan-out
 // ---------------------------------------------------------------------------
 
-// keyterms is an array field: ElevenLabs wants one `keyterms` part per term.
-// UrlFetchApp's payload object cannot express a repeated form field, and the
-// JSON array this used to send in a single part is exactly what produced
-// "All keywords must be less than 50 characters" — the server measured the
-// whole serialized array against its per-term limit. Hence the hand-built body.
-function buildElevenLabsRequest(audioBlob, keyterms, apiKey) {
-  var boundary = 'adjusterform' + Date.now()
-  var fields = [
-    { name: 'model_id', value: TRANSCRIPTION_MODELS.elevenlabs.id },
-    { name: 'language_code', value: 'en' },
-    { name: 'diarize', value: 'true' },
-    { name: 'num_speakers', value: '2' },
-    { name: 'timestamps_granularity', value: 'word' },
-  ]
-
-  ;(keyterms || []).forEach(function (term) {
-    fields.push({ name: 'keyterms', value: term })
-  })
-
+// ElevenLabs fetches the recording itself via `source_url` rather than
+// receiving an uploaded body, so the request is plain JSON — `keyterms` is a
+// real array here, with none of the repeated-form-field problem a multipart
+// upload would have. See docs/adr/007's amendment: the old hand-built
+// multipart body was the thing that turned the recording into a JS byte array
+// at all, and Apps Script has no typed-array form at the Blob boundary, so
+// that array cost several times the recording's own size in V8 heap. This
+// request never touches the audio bytes in this script — see
+// withPubliclySharedFile for how ElevenLabs gets a URL it can reach.
+function buildElevenLabsRequest(sourceUrl, keyterms, apiKey) {
   return {
     url: ELEVENLABS_URL,
     method: 'post',
-    contentType: 'multipart/form-data; boundary=' + boundary,
+    contentType: 'application/json',
     headers: { 'xi-api-key': apiKey },
-    payload: buildMultipartBody(boundary, fields, 'file', audioBlob),
+    payload: JSON.stringify({
+      model_id: TRANSCRIPTION_MODELS.elevenlabs.id,
+      language_code: 'en',
+      diarize: true,
+      num_speakers: 2,
+      timestamps_granularity: 'word',
+      keyterms: keyterms || [],
+      source_url: sourceUrl,
+    }),
     muteHttpExceptions: true,
   }
 }
 
-function buildMultipartBody(boundary, fields, fileFieldName, fileBlob) {
-  var head = []
+// source_url has to be reachable without Google auth, and the recording lives
+// in a private Drive folder — so the file is switched to "anyone with the
+// link" for exactly the span of this call, in `finally` so the switch back
+// happens even if ElevenLabs' request throws. This is a real, if brief,
+// public-exposure window on claim audio (PII), not a scoped or self-expiring
+// token — see docs/adr/007's amendment for why that trade-off was accepted
+// over standing up signed Cloud Storage URLs, and why the revert has to be
+// unconditional rather than a call after the fact that a thrown error would
+// skip. If the initial setSharing call itself throws (an org policy blocking
+// external sharing, for instance) nothing was changed, so there is nothing to
+// revert and the error propagates to the caller as-is.
+function withPubliclySharedFile(file, fn) {
+  var originalAccess = file.getSharingAccess()
+  var originalPermission = file.getSharingPermission()
 
-  fields.forEach(function (field) {
-    head.push('--' + boundary)
-    head.push('Content-Disposition: form-data; name="' + field.name + '"')
-    head.push('')
-    head.push(field.value)
-  })
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW)
 
-  head.push('--' + boundary)
-  head.push(
-    'Content-Disposition: form-data; name="' +
-      fileFieldName +
-      '"; filename="' +
-      (fileBlob.getName() || 'audio.wav') +
-      '"',
-  )
-  head.push('Content-Type: ' + (fileBlob.getContentType() || 'application/octet-stream'))
-  head.push('')
-  head.push('')
+  try {
+    return fn()
+  } finally {
+    file.setSharing(originalAccess, originalPermission)
+  }
+}
 
-  // One concat call, not a chain. Every link in a chain allocates another array
-  // as long as the recording, so the old three-link version peaked at three full
-  // copies of the audio. Multi-argument concat allocates the result once.
-  return Utilities.newBlob(head.join('\r\n'))
-    .getBytes()
-    .concat(fileBlob.getBytes(), Utilities.newBlob('\r\n--' + boundary + '--\r\n').getBytes())
+// Drive's unauthenticated direct-download endpoint — the one URL shape a
+// link-shared file can be fetched from without a Google credential, which is
+// all a third-party vendor can present.
+function driveDirectDownloadUrl(fileId) {
+  return 'https://drive.google.com/uc?export=download&id=' + fileId
 }
 
 function buildQwenRequest(audioBase64, format, apiKey) {
@@ -601,18 +602,19 @@ function planQwenSpans(bytes, probe) {
   return spans
 }
 
-// Runs the two ASR sources as two phases rather than one fetchAll. Failure is
-// per-source and never fatal: each source independently yields either text or
-// empty, and the caller decides what to do with however many came back.
+// Runs the two ASR sources as two independent phases. Failure is per-source
+// and never fatal: each source independently yields either text or empty, and
+// the caller decides what to do with however many came back.
 //
-// The phases exist for memory, not for latency. Blob.getBytes() hands back a
-// plain JS array — Apps Script has no typed arrays at the Blob boundary — so one
-// audio byte costs four to eight bytes of V8 heap. Batching every request into a
-// single fetchAll left the ElevenLabs multipart body, a second copy of the
-// bytes, every WAV slice and every base64 payload all reachable at the same
-// instant, and a ten-minute call died with "Out of memory error" before a single
-// request went out. Phase A builds, sends and releases the ElevenLabs body;
-// only then does phase B read the blob again. Peak heap is one phase, not the sum.
+// ElevenLabs (phase A) sends a JSON request naming a URL for the recording —
+// see buildElevenLabsRequest and withPubliclySharedFile — and never touches
+// the audio bytes in this script at all. Qwen (phase B) is the only side that
+// still turns the recording into a JS array, and only ever one span's worth at
+// a time; see planQwenSpans for why that used to be the whole problem when
+// ElevenLabs' now-removed hand-built multipart body ran in the same instant
+// (docs/adr/007's amendment). Phase A running and failing independently of
+// phase B is about isolation today, not memory: a slow or dead ElevenLabs
+// share/fetch never blocks or corrupts the Qwen pass, and vice versa.
 function transcribeInParallel(input) {
   var captureId = input.captureId || ''
   var results = {}
@@ -645,13 +647,27 @@ function transcribeInParallel(input) {
   return results
 }
 
-// Phase A. One request, sent alone and unreachable before phase B allocates
-// anything: its multipart body is a byte array as long as the recording itself,
-// which makes it the single largest object the pass ever builds.
+// Phase A. A sharing failure (an org policy blocking external sharing, for
+// instance) is caught here rather than left to throw out of the pass — the
+// floor is still the job's own voice-platform transcript, so a dead vendor
+// degrades the run exactly like an ordinary fetch failure would.
 function fetchElevenLabs(input, captureId) {
   var startedAt = Date.now()
-  var request = buildElevenLabsRequest(input.audioBlob, input.keyterms || [], input.elevenLabsKey)
-  var result = resolveWithRetry('elevenlabs', request, safeFetch(request), captureId)
+  var result
+
+  try {
+    result = withPubliclySharedFile(input.audioFile, function () {
+      var sourceUrl = driveDirectDownloadUrl(input.audioFile.getId())
+      var request = buildElevenLabsRequest(sourceUrl, input.keyterms || [], input.elevenLabsKey)
+      return resolveWithRetry('elevenlabs', request, safeFetch(request), captureId)
+    })
+  } catch (err) {
+    logEvent('transcription.elevenlabs_share_failed', {
+      capture_id: captureId,
+      error: String(err),
+    })
+    result = { source: 'elevenlabs', text: '', ok: false, status: 0, error: String(err) }
+  }
 
   result.latency_ms = Date.now() - startedAt
   logSourceFinished(captureId, result, 1)
@@ -968,6 +984,7 @@ function runTranscriptionPass(job, claim) {
 
   var asr = transcribeInParallel({
     captureId: captureId,
+    audioFile: audioFile,
     audioBlob: audioFile.getBlob(),
     format: guessAudioExtension(audioFile.getName(), 'wav'),
     keyterms: keyterms,
