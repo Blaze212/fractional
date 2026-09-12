@@ -283,6 +283,99 @@ describe('stage A', () => {
     })
   })
 
+  // docs/specs/022 phase 3 — a deterministic win resting on address alone is
+  // exactly the shape a rejected read-back suggestion produces, so it goes to
+  // the LLM for a second opinion even though matchClaim() was confident enough
+  // to return a method other than 'none'/'ambiguous'.
+  describe('address-only deterministic wins go to adjudication', () => {
+    it('sends an address-only win to the LLM and logs why', () => {
+      const { sandbox, logged, jobs } = harness([dograhJob()], {
+        matchClaim: () => ({
+          claim_id: 'claim-1',
+          match_method: 'identity',
+          match_confidence: 'low',
+          candidates: [
+            {
+              claim_id: 'claim-1',
+              score: 60,
+              signals: { street_number: true, street_name: true, city: true },
+            },
+          ],
+        }),
+        matchClaimWithLlm: () => ({
+          claim_id: 'claim-1',
+          match_method: 'llm',
+          match_confidence: 'high',
+        }),
+      })
+
+      sandbox.processOldestPendingJob()
+
+      const attempted = logged.find((l) => l.event === 'runner.llm_match_attempted')
+      expect(attempted?.fields.trigger_reason).toBe('address_only')
+      expect(jobs.get('dograh-1')?.match_method).toBe('llm')
+    })
+
+    it('leaves an address-only win in place when the LLM has nothing to add (c2 survives adjudication)', () => {
+      const { sandbox, jobs } = harness([dograhJob()], {
+        matchClaim: () => ({
+          claim_id: 'claim-1',
+          match_method: 'identity',
+          match_confidence: 'low',
+          candidates: [
+            {
+              claim_id: 'claim-1',
+              score: 60,
+              signals: { street_number: true, street_name: true, city: true },
+            },
+          ],
+        }),
+        matchClaimWithLlm: () => ({ claim_id: '', match_method: 'none', match_confidence: 'none' }),
+      })
+
+      sandbox.processOldestPendingJob()
+
+      expect(jobs.get('dograh-1')?.match_method).toBe('identity')
+      expect(jobs.get('dograh-1')?.claim_id).toBe('claim-1')
+    })
+
+    it('does not send a claim-number win to the LLM', () => {
+      const { sandbox, logged } = harness([dograhJob()], {
+        matchClaim: () => ({
+          claim_id: 'claim-1',
+          match_method: 'claim-number',
+          match_confidence: 'high',
+          candidates: [{ claim_id: 'claim-1', score: 100, signals: { claim_number: true } }],
+        }),
+      })
+
+      sandbox.processOldestPendingJob()
+
+      expect(logged.find((l) => l.event === 'runner.llm_match_attempted')).toBeUndefined()
+    })
+
+    it('does not send an insured-name-based win to the LLM', () => {
+      const { sandbox, logged } = harness([dograhJob()], {
+        matchClaim: () => ({
+          claim_id: 'claim-1',
+          match_method: 'identity',
+          match_confidence: 'high',
+          candidates: [
+            {
+              claim_id: 'claim-1',
+              score: 75,
+              signals: { insured_last_name: true, street_name: true, city: true },
+            },
+          ],
+        }),
+      })
+
+      sandbox.processOldestPendingJob()
+
+      expect(logged.find((l) => l.event === 'runner.llm_match_attempted')).toBeUndefined()
+    })
+  })
+
   it('falls back to the LLM matcher when deterministic matching cannot confirm a claim', () => {
     const { sandbox, jobs, logged } = harness([dograhJob()], {
       matchClaim: () => ({ claim_id: '', match_method: 'none', match_confidence: 'low' }),

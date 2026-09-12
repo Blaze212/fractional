@@ -162,13 +162,15 @@ function resolveClaimMatch(job, claims) {
   })
 
   var match = matchClaim(job.call_started_at, adjusterTranscript, claims)
+  var triggerReason = llmAdjudicationTrigger(match)
 
-  if (match.match_method === 'none' || match.match_method === 'ambiguous') {
+  if (triggerReason) {
     try {
       var llmMatch = matchClaimWithLlm(job.call_started_at, adjusterTranscript, claims)
       logEvent('runner.llm_match_attempted', {
         capture_id: job.capture_id,
         deterministic_method: match.match_method,
+        trigger_reason: triggerReason,
         llm_claim_id: llmMatch.claim_id || '',
         llm_confidence: llmMatch.match_confidence,
       })
@@ -184,6 +186,26 @@ function resolveClaimMatch(job, claims) {
   }
 
   return match
+}
+
+// docs/specs/022 phase 3 — the same shape a rejected read-back suggestion
+// produces (an address with no claim number or insured name behind it) is
+// also the shape a *correct* address-only mention produces, so a deterministic
+// win resting on address alone is sent to the LLM for a second opinion rather
+// than trusted outright. matchClaim() always returns candidates sorted
+// descending by score (see matcher.js), so candidates[0] is the winner whose
+// signals this checks.
+function llmAdjudicationTrigger(match) {
+  if (match.match_method === 'none' || match.match_method === 'ambiguous') {
+    return match.match_method
+  }
+
+  var winner = match.candidates && match.candidates[0]
+  if (winner && !winner.signals.claim_number && !winner.signals.insured_last_name) {
+    return 'address_only'
+  }
+
+  return ''
 }
 
 // Stage B. Its input changed — the master transcript when stage A produced an
