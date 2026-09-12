@@ -74,9 +74,7 @@ describe('c1/c2 prose defects (red baseline)', () => {
 
   it('c1 and c2 overhead_profit_narrative drop the required claim-specific reason', () => {
     expect(c1.fields.overhead_profit_narrative.value).toBe('Overhead and profit do not apply.')
-    expect(c2.fields.overhead_profit_narrative.value).toBe(
-      'No overhead and profit considerations.',
-    )
+    expect(c2.fields.overhead_profit_narrative.value).toBe('No overhead and profit considerations.')
   })
 
   it('c2 front_elevation_status says "two" twice and spells out both measurements', () => {
