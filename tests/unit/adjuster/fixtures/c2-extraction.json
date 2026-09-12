@@ -1,0 +1,27 @@
+{
+  "capture_id": "retell-call_256aa200fdd679f4b7d680cb968",
+  "model": "openai/gpt-5.6-luna",
+  "fields": {
+    "front_elevation_status": {
+      "value": "We observed two large glass panels, approximately sixty-six inches by sixty inches, and there are two of them that were damaged.",
+      "source_span": "there's two large glass panels, about sixty six inches by sixty inches, and there's two of them that got damaged",
+      "confidence": "high"
+    },
+    "interior_status": {
+      "value": "not_affected",
+      "source_span": "interior wasn't affected",
+      "confidence": "high"
+    },
+    "interior_damage_narrative": {
+      "value": "Main Lobby:\nWe observed water staining to the ceiling tiles.",
+      "source_span": "in the main lobby there was some water staining on the ceiling tiles",
+      "confidence": "medium"
+    },
+    "overhead_profit_narrative": {
+      "value": "No overhead and profit considerations.",
+      "source_span": "no overhead and profit considerations here",
+      "confidence": "high"
+    }
+  },
+  "notes": "Fixture reproduces spec 023's documented c2 defects verbatim for the Phase 0 red baseline. Trimmed to the defect-relevant fields rather than a full extraction — the real call artifact is not available to this fixture set."
+}

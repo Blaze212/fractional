@@ -60,6 +60,7 @@ function harness(job: Job, overrides: Record<string, unknown> = {}) {
     getClaims: () => [{ claim_id: 'claim-1', insured_last_name: 'Henderson' }],
     loadEnums: () => TAG_SCHEMA,
     loadGlossary: () => [],
+    loadPhraseBank: () => [],
 
     getExistingCallFolder: () => folder,
     readCallArtifact: (fileId: string) => folderFiles.get(fileId) ?? '',

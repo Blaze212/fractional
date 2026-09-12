@@ -45,3 +45,93 @@ describe('enums Drive sync', () => {
     expect(JSON.parse(runSync())).toEqual(enums)
   })
 })
+
+// Phase 3 (spec 023): phrasebank.json is loaded the way loadGlossary() loads
+// glossary.json, except PHRASEBANK_FILE_ID is optional — a phrase bank is a
+// style reference (see prompt.js's "style reference only, do not copy facts
+// from it" guard), not schema the pipeline depends on to run, so a missing
+// property, a missing Drive file, or bad JSON should all degrade to no phrase
+// bank rather than fail the run.
+describe('loadPhraseBank', () => {
+  it('returns an empty array when PHRASEBANK_FILE_ID is unset', () => {
+    const sandbox = loadGs('apps/adjuster/src/templateData.js', {
+      getOptionalConfig: (_key: string, fallback: string) => fallback,
+      logEvent: () => {},
+    })
+
+    expect(sandbox.loadPhraseBank()).toEqual([])
+  })
+
+  it('loads and parses the configured Drive file', () => {
+    const sandbox = loadGs('apps/adjuster/src/templateData.js', {
+      getOptionalConfig: () => 'phrasebank-file-id',
+      DriveApp: {
+        getFileById: (id: string) => {
+          expect(id).toBe('phrasebank-file-id')
+          return { getBlob: () => ({ getDataAsString: () => JSON.stringify(['a phrase']) }) }
+        },
+      },
+      logEvent: () => {},
+    })
+
+    expect(sandbox.loadPhraseBank()).toEqual(['a phrase'])
+  })
+
+  it('returns an empty array, rather than throwing, when the configured file fails to load', () => {
+    const sandbox = loadGs('apps/adjuster/src/templateData.js', {
+      getOptionalConfig: () => 'phrasebank-file-id',
+      DriveApp: {
+        getFileById: () => {
+          throw new Error('not found')
+        },
+      },
+      describeError: (err: Error) => ({ error: String(err.message ?? err), stack: 'stack' }),
+      logEvent: () => {},
+    })
+
+    expect(sandbox.loadPhraseBank()).toEqual([])
+  })
+
+  it('returns an empty array when the file does not hold a JSON array', () => {
+    const sandbox = loadGs('apps/adjuster/src/templateData.js', {
+      getOptionalConfig: () => 'phrasebank-file-id',
+      DriveApp: {
+        getFileById: () => ({ getBlob: () => ({ getDataAsString: () => '{}' }) }),
+      },
+      logEvent: () => {},
+    })
+
+    expect(sandbox.loadPhraseBank()).toEqual([])
+  })
+})
+
+describe('phrasebank.json', () => {
+  it('is a JSON array of plain strings', () => {
+    const phraseBank = JSON.parse(
+      readFileSync(path.resolve(process.cwd(), 'apps/adjuster/template/phrasebank.json'), 'utf-8'),
+    )
+
+    expect(Array.isArray(phraseBank)).toBe(true)
+    expect(phraseBank.length).toBeGreaterThanOrEqual(20)
+    phraseBank.forEach((phrase: unknown) => {
+      expect(typeof phrase).toBe('string')
+    })
+  })
+
+  // Code review follow-up (PR #55): the phrase bank is injected into the
+  // prompt as a style reference (see prompt.js's formatPhraseBank), so a
+  // spelled-out count here would model exactly the number-format drift
+  // Phase 1's "digits over spelled numbers" rule is meant to prevent.
+  // "several" is a vague quantifier, not a specific count, and stays a word.
+  it('writes countable numbers as digits, matching the register rule it is a reference for', () => {
+    const phraseBank = JSON.parse(
+      readFileSync(path.resolve(process.cwd(), 'apps/adjuster/template/phrasebank.json'), 'utf-8'),
+    )
+    const spelledOutCountPattern =
+      /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/i
+
+    phraseBank.forEach((phrase: string) => {
+      expect(phrase).not.toMatch(spelledOutCountPattern)
+    })
+  })
+})

@@ -1,0 +1,52 @@
+{
+  "capture_id": "retell-call_4e034d77224863af06b4fc2577c",
+  "model": "openai/gpt-5.6-luna",
+  "fields": {
+    "left_elevation_status": {
+      "value": "We observed no storm-related damages on the left elevation. Approximately three or four linear feet of fascia was blown, wind damaged and missing and will need to be replaced. This appeared to be the origin of water leaking into the bathroom.",
+      "source_span": "on the left side there's no damage really, well actually the fascia, three or four linear feet of it, was blown off, wind damaged and missing, that's probably where the water got into the bathroom",
+      "confidence": "high"
+    },
+    "origin_narrative": {
+      "value": "a storm passed through the area on the day of loss",
+      "source_span": "a storm passed through the area on the day of loss",
+      "confidence": "high"
+    },
+    "subrogation_reason": {
+      "value": "no subrogation concerns were reported",
+      "source_span": "no subrogation concerns were reported",
+      "confidence": "high"
+    },
+    "roof_covering_type": {
+      "value": "thirty-year laminate",
+      "source_span": "it's a thirty year laminate",
+      "confidence": "high"
+    },
+    "roof_age_years": {
+      "value": "23",
+      "source_span": "approximately 23 years old",
+      "confidence": "high"
+    },
+    "dwelling_stories": {
+      "value": "1",
+      "source_span": "it's a one story",
+      "confidence": "high"
+    },
+    "dwelling_type": {
+      "value": "single-family home",
+      "source_span": "single family home",
+      "confidence": "high"
+    },
+    "overhead_profit_narrative": {
+      "value": "Overhead and profit do not apply.",
+      "source_span": "no overhead and profit on this one",
+      "confidence": "high"
+    },
+    "coverage_supporting_detail": {
+      "value": "The storm-created opening was confirmed.",
+      "source_span": "yeah the storm created an opening, we confirmed that",
+      "confidence": "medium"
+    }
+  },
+  "notes": "Fixture reproduces spec 023's documented c1 defects verbatim for the Phase 0 red baseline. Trimmed to the defect-relevant fields rather than a full extraction — the real call artifact is not available to this fixture set."
+}
