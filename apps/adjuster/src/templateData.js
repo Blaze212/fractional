@@ -8,6 +8,26 @@ function loadGlossary() {
   return JSON.parse(file.getBlob().getDataAsString())
 }
 
+// Unlike loadEnums/loadGlossary, PHRASEBANK_FILE_ID is optional: the phrase
+// bank is a style reference for prompt.js (see the "style reference only, do
+// not copy facts from it" guard already in the prompt), not schema the
+// pipeline depends on to run. An unset property, a missing Drive file, or
+// unparseable content should all just mean no phrase bank this run rather
+// than a failed extraction.
+function loadPhraseBank() {
+  var fileId = getOptionalConfig('PHRASEBANK_FILE_ID', '')
+  if (!fileId) return []
+
+  try {
+    var file = DriveApp.getFileById(fileId)
+    var parsed = JSON.parse(file.getBlob().getDataAsString())
+    return Array.isArray(parsed) ? parsed : []
+  } catch (err) {
+    logEvent('phrasebank.load_failed', { error: describeError(err).error })
+    return []
+  }
+}
+
 // One-time migration (2026-09-02): pushes the repo's template/enums.json
 // content onto the live ENUMS_FILE_ID Drive file after spec 020's phases 3, 5,
 // and 6 — form: "clause" on the four clause fields, seven enum fields loosened

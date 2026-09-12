@@ -55,6 +55,7 @@ function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
     matchClaimWithLlm: () => ({ claim_id: '', match_method: 'none', match_confidence: 'low' }),
     loadEnums: () => TAG_SCHEMA,
     loadGlossary: () => [],
+    loadPhraseBank: () => [],
 
     runTranscriptionPass: vi.fn((job: Job, claim: Job | null) => {
       transcriptionCalls.push({ job, claim })
@@ -300,6 +301,17 @@ describe('stage B', () => {
     expect(extractCalls[0].transcript).toBe('master text')
     expect(extractCalls[0].transcriptSource).toBe('master')
     expect(validateCalls[0].transcript).toBe('master haystack')
+  })
+
+  it('passes the loaded phrase bank through to extraction', () => {
+    const { sandbox, extractCalls } = harness(
+      [dograhJob({ status: 'transcribed', claim_id: 'claim-1', extraction_input: 'master' })],
+      { loadPhraseBank: () => ['minor granule loss consistent with age'] },
+    )
+
+    sandbox.processOldestPendingJob()
+
+    expect(extractCalls[0].phraseBank).toEqual(['minor granule loss consistent with age'])
   })
 
   it('extracts from the Dograh transcript when stage A resolved to it', () => {
