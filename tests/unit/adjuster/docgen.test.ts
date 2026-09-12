@@ -661,6 +661,29 @@ describe('clauseNeedsReject', () => {
     expect(clauseNeedsReject('a severe storm on 4/12/2026')).toBe(true)
     expect(clauseNeedsReject('a severe storm in April')).toBe(true)
   })
+
+  // Spec 023 Phase 5. Both fixtures are c1's real defects (see prose.test.ts).
+  it('rejects a date paraphrase that duplicates [DATE_LOSS] ("on the day of loss")', () => {
+    expect(clauseNeedsReject('a storm passed through the area on the day of loss')).toBe(true)
+  })
+
+  it('rejects "on the date of loss" and "on that day" the same way', () => {
+    expect(clauseNeedsReject('a severe storm on the date of loss')).toBe(true)
+    expect(clauseNeedsReject('a severe storm that struck on that day')).toBe(true)
+  })
+
+  it('rejects a finite verb dropped into the noun-phrase slot (simple past + preposition)', () => {
+    expect(clauseNeedsReject('a storm passed through the area')).toBe(true)
+  })
+
+  it('rejects a finite verb dropped into the noun-phrase slot (auxiliary + participle)', () => {
+    expect(clauseNeedsReject('no subrogation concerns were reported')).toBe(true)
+  })
+
+  it('does not reject a past participle used adjectivally, with no auxiliary', () => {
+    expect(clauseNeedsReject('a wind driven rain event')).toBe(false)
+    expect(clauseNeedsReject('weather related')).toBe(false)
+  })
 })
 
 // Spec 023 Phase 4. Fixtures are drawn directly from the two real calls

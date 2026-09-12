@@ -209,13 +209,30 @@ var CLAUSE_TRAILING_PUNCTUATION_PATTERN = /[!?]$/
 var CLAUSE_DATE_PATTERN = /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/
 var CLAUSE_MONTH_PATTERN =
   /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i
+// [DATE_LOSS] already prints the date once — a clause that paraphrases "the
+// day of loss" instead of naming an explicit date prints the date concept a
+// second time, the same defect CLAUSE_DATE_PATTERN/CLAUSE_MONTH_PATTERN catch
+// for an explicit date.
+var CLAUSE_DATE_PARAPHRASE_PATTERN = /\bon (?:the day|the date) of loss\b|\bon that day\b/i
+// A clause is a noun phrase dropped into a fixed template sentence, not a
+// sentence with its own subject and verb. This does not try to parse English
+// generally — it catches the two shapes that showed up in real drafts: an
+// auxiliary/copula directly followed by a past participle ("were reported"),
+// and a simple past-tense verb directly followed by a preposition ("passed
+// through"). A past participle used adjectivally with no auxiliary ("wind
+// driven", "weather related") is exactly what a clause should look like and
+// is left alone.
+var CLAUSE_FINITE_VERB_PATTERN =
+  /\b(?:am|is|are|was|were|has|have|had|did|does|do)\s+\w+(?:ed|en)\b|\b\w+ed\s+(?:through|in|into|onto|beneath|under|over|at|to|from|during|across)\b/i
 
 function clauseNeedsReject(text) {
   return (
     CLAUSE_SENTENCE_BOUNDARY_PATTERN.test(text) ||
     CLAUSE_TRAILING_PUNCTUATION_PATTERN.test(text) ||
     CLAUSE_DATE_PATTERN.test(text) ||
-    CLAUSE_MONTH_PATTERN.test(text)
+    CLAUSE_MONTH_PATTERN.test(text) ||
+    CLAUSE_DATE_PARAPHRASE_PATTERN.test(text) ||
+    CLAUSE_FINITE_VERB_PATTERN.test(text)
   )
 }
 
