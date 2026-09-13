@@ -879,3 +879,130 @@ describe('leaseJob', () => {
     expect(leases[0].fields.lease_until).toBe(new Date(clock.now + 7 * 60 * 1000).toISOString())
   })
 })
+
+describe('withRunnerLock flush safety', () => {
+  // This helper exists to release the script lock. An unguarded flush in its
+  // finally block throws past releaseLock, stranding the lock for the rest of
+  // the execution and blocking every webhook handler queued behind it — the
+  // exact ingest starvation spec 024 is built to prevent, reached by accident.
+  // withJobLock (jobs.js) has always guarded its flush; this matches it.
+  it('releases the lock even when the flush throws', () => {
+    let released = 0
+    const { sandbox } = harness([dograhJob()], {
+      LockService: {
+        getScriptLock: () => ({
+          tryLock: () => true,
+          releaseLock: () => {
+            released += 1
+          },
+        }),
+      },
+      SpreadsheetApp: {
+        flush: () => {
+          throw new Error('flush boom')
+        },
+      },
+    })
+
+    expect(() => sandbox.processOldestPendingJob()).not.toThrow()
+    expect(released).toBe(1)
+  })
+})
+
+describe('script lock contention during a drain', () => {
+  // The existing timeline test uses a lock fake that always grants, so it proves
+  // calls are not nested but never proves a contending caller could actually get
+  // in. This one contends for real: tryLock refuses while the lock is held.
+  function contendingHarness(jobRows: Job[]) {
+    let held = false
+    const probes: Array<{ when: string; acquired: boolean }> = []
+
+    const built = harness(jobRows, {
+      LockService: {
+        getScriptLock: () => ({
+          tryLock: () => {
+            if (held) return false
+            held = true
+            return true
+          },
+          releaseLock: () => {
+            held = false
+          },
+        }),
+      },
+    })
+
+    return { ...built, probes, probe: (when: string) => probes.push({ when, acquired: !held }) }
+  }
+
+  it('leaves the lock free between iterations and after the drain', () => {
+    const { sandbox, probe, probes } = contendingHarness([
+      dograhJob({ capture_id: 'a', created_at: '2026-08-26T18:00:00Z' }),
+      dograhJob({ capture_id: 'b', created_at: '2026-08-26T18:01:00Z' }),
+    ])
+
+    // shouldContinueDrain runs between iterations and outside the lock, which
+    // makes it the exact moment an inbound webhook has to be able to get in.
+    sandbox.shouldContinueDrain = ((original: (state: unknown) => unknown) =>
+      function (state: unknown) {
+        probe('between_iterations')
+        return original(state)
+      })(sandbox.shouldContinueDrain)
+
+    sandbox.drainPipeline()
+    probe('after_drain')
+
+    expect(probes.filter((entry) => entry.when === 'between_iterations').length).toBeGreaterThan(1)
+    expect(probes.every((entry) => entry.acquired)).toBe(true)
+  })
+})
+
+// Worth knowing and deliberately NOT asserted anywhere: within an iteration the
+// lock is held for the whole stage, including its remote calls, so a webhook
+// arriving mid-stage waits. That is the cost spec 024 accepts ("waits for one
+// stage boundary, not for the whole drain"), and it means withJobLock's 30s
+// tryLock, not the 240s budget, is the real ingest ceiling. Narrowing the hold
+// to just the sheet writes would be an improvement; no test here forbids it.
+
+describe('runPipelineTick', () => {
+  // The retained manual entry point. Preparation moved inside the try so a
+  // failure in reclaim or the column check still produces a terminal log line.
+  it('reports tick_failed when preparation throws', () => {
+    const { sandbox, logged } = harness([dograhJob()], {
+      reclaimStuckJobs: () => {
+        throw new Error('reclaim boom')
+      },
+    })
+
+    expect(() => sandbox.runPipelineTick()).toThrow('reclaim boom')
+    expect(logged.some((entry) => entry.event === 'runner.tick_failed')).toBe(true)
+  })
+
+  // A webhook can take the lock in the gap between preparation and the stage.
+  // processOldestPendingJob reports that by returning rather than throwing, so
+  // without an explicit check a tick that advanced nothing logs tick_end and
+  // reads as a success.
+  it('does not claim a successful tick when the stage could not take the lock', () => {
+    let attempts = 0
+    const { sandbox, logged } = harness([dograhJob()], {
+      LockService: {
+        getScriptLock: () => ({
+          tryLock: () => {
+            attempts += 1
+            return attempts === 1
+          },
+          releaseLock: () => {},
+        }),
+      },
+    })
+
+    sandbox.runPipelineTick()
+
+    expect(logged.some((entry) => entry.event === 'runner.tick_end')).toBe(false)
+    expect(
+      logged.some(
+        (entry) => entry.event === 'runner.skipped' && entry.fields.reason === 'lock_unavailable',
+      ),
+    ).toBe(true)
+  })
+})

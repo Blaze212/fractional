@@ -150,7 +150,16 @@ function withRunnerLock(timeoutMs, callback) {
   try {
     return { acquired: true, value: callback() }
   } finally {
-    SpreadsheetApp.flush()
+    // Guarded exactly as withJobLock (jobs.js) guards it. The whole purpose of
+    // this helper is to release the lock, so letting a transient flush failure
+    // throw past releaseLock would strand the script lock for the rest of the
+    // execution and block every webhook handler waiting on it — the precise
+    // ingest starvation this design exists to prevent.
+    try {
+      SpreadsheetApp.flush()
+    } catch (err) {
+      console.error('sheet_flush_failed error=' + String(err))
+    }
     lock.releaseLock()
   }
 }
@@ -166,20 +175,34 @@ function withRunnerLock(timeoutMs, callback) {
 function runPipelineTick() {
   var startedAt = Date.now()
 
-  var prep = withRunnerLock(5000, function () {
-    reclaimStuckJobs()
-    ensureTranscriptionColumns()
-  })
-
-  if (!prep.acquired) {
-    logEvent('runner.skipped', { reason: 'lock_unavailable' })
-    return
-  }
-
   logEvent('runner.tick_start', {})
 
+  // Preparation sits INSIDE the try so a failure in reclaim or the column check
+  // still reports as runner.tick_failed. Outside it, this entry point could
+  // throw with no terminal log line, which is the hardest kind of failure to
+  // find in an execution history.
   try {
-    processOldestPendingJob()
+    var prep = withRunnerLock(5000, function () {
+      reclaimStuckJobs()
+      ensureTranscriptionColumns()
+    })
+
+    if (!prep.acquired) {
+      logEvent('runner.skipped', { reason: 'lock_unavailable' })
+      return
+    }
+
+    var pass = processOldestPendingJob()
+
+    // processOldestPendingJob reports contention by returning, not throwing. A
+    // webhook that takes the lock in the gap between preparation and the stage
+    // would otherwise let a tick that advanced nothing log tick_end and read as
+    // a success.
+    if (pass.reason === 'lock_unavailable') {
+      logEvent('runner.skipped', { reason: 'lock_unavailable', ms: Date.now() - startedAt })
+      return
+    }
+
     logEvent('runner.tick_end', { ms: Date.now() - startedAt })
   } catch (err) {
     var described = describeError(err)
