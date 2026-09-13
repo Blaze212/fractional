@@ -104,6 +104,29 @@ function iterator<T>(items: T[]) {
   }
 }
 
+/**
+ * A Drive File stand-in that tracks sharing state, since ElevenLabs now fetches
+ * the recording from a URL rather than receiving an upload — see
+ * withPubliclySharedFile. Starts PRIVATE, like a real Drive file in a
+ * restricted folder.
+ */
+function fakeAudioFile(id = 'audio-1') {
+  let access = 'PRIVATE'
+  let permission = 'NONE'
+
+  return {
+    getId: () => id,
+    getName: () => 'audio.wav',
+    getBlob: () => wavBlob(makeWav({ seconds: 1 })),
+    getSharingAccess: () => access,
+    getSharingPermission: () => permission,
+    setSharing: (nextAccess: string, nextPermission: string) => {
+      access = nextAccess
+      permission = nextPermission
+    },
+  }
+}
+
 function response(status: number, body: string) {
   return { getResponseCode: () => status, getContentText: () => body }
 }
@@ -122,6 +145,24 @@ function harness(overrides: Record<string, unknown> = {}) {
   const filesById: Record<string, ReturnType<typeof fakeFile>> = {}
   const foldersById: Record<string, Folder> = { 'root-1': root }
 
+  // Access/Permission are real enums withPubliclySharedFile reads off DriveApp
+  // itself, so every test gets them for free; a per-test DriveApp override only
+  // needs to supply the methods it actually cares about (getFileById, etc.).
+  const driveApp = {
+    Access: { PRIVATE: 'PRIVATE', ANYONE_WITH_LINK: 'ANYONE_WITH_LINK' },
+    Permission: { NONE: 'NONE', VIEW: 'VIEW' },
+    getFolderById: (id: string) => {
+      if (!foldersById[id]) throw new Error('No folder ' + id)
+      return foldersById[id]
+    },
+    getFileById: (id: string) => {
+      if (!filesById[id]) throw new Error('No file ' + id)
+      return filesById[id]
+    },
+    ...(overrides.DriveApp as Record<string, unknown> | undefined),
+  }
+  delete overrides.DriveApp
+
   const sandbox = loadGs([SOURCES], {
     logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
     describeError: (err: Error) => ({ error: String(err.message ?? err), stack: '' }),
@@ -132,16 +173,7 @@ function harness(overrides: Record<string, unknown> = {}) {
     getOptionalConfig: (key: string, fallback: string) =>
       properties[key] === undefined ? fallback : properties[key],
     getConfigList: () => [],
-    DriveApp: {
-      getFolderById: (id: string) => {
-        if (!foldersById[id]) throw new Error('No folder ' + id)
-        return foldersById[id]
-      },
-      getFileById: (id: string) => {
-        if (!filesById[id]) throw new Error('No file ' + id)
-        return filesById[id]
-      },
-    },
+    DriveApp: driveApp,
     Utilities: {
       base64Encode: (bytes: number[]) => 'b64-' + bytes.length,
       newBlob: (text: string) => ({ getBytes: () => bytesOf(text) }),
@@ -387,9 +419,14 @@ describe('transcribeInParallel', () => {
     return (sandbox.UrlFetchApp.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1]
   }
 
+  function elevenPayload(sandbox: Record<string, any>) {
+    return JSON.parse(elevenRequest(sandbox).payload)
+  }
+
   function run(sandbox: Record<string, any>) {
     return sandbox.transcribeInParallel({
       captureId: 'dograh-1',
+      audioFile: fakeAudioFile(),
       audioBlob: wavBlob(makeWav({ seconds: 1 })),
       format: 'wav',
       keyterms: ['Henderson'],
@@ -398,7 +435,7 @@ describe('transcribeInParallel', () => {
     })
   }
 
-  it('sends ElevenLabs on its own fetch and batches the Qwen slices through fetchAll', () => {
+  it('sends ElevenLabs a JSON request naming a source_url, and batches the Qwen slices through fetchAll', () => {
     const { sandbox } = asrHarness()
 
     const result = run(sandbox)
@@ -407,11 +444,14 @@ describe('transcribeInParallel', () => {
     const eleven = elevenRequest(sandbox)
     expect(eleven.url).toContain('api.elevenlabs.io')
     expect(eleven.headers['xi-api-key']).toBe('xi-key')
-    expect(eleven.contentType).toMatch(/^multipart\/form-data; boundary=/)
-    const form = bodyText(eleven.payload)
-    expect(form).toContain('name="model_id"\r\n\r\nscribe_v2')
-    expect(form).toContain('name="diarize"\r\n\r\ntrue')
-    expect(form).toContain('name="file"; filename="audio.wav"')
+    expect(eleven.contentType).toBe('application/json')
+    const body = elevenPayload(sandbox)
+    expect(body.model_id).toBe('scribe_v2')
+    expect(body.diarize).toBe(true)
+    expect(body.source_url).toContain('drive.google.com')
+    expect(body.source_url).toContain('audio-1')
+    // No multipart body and no file upload — the whole point of source_url.
+    expect(body.file).toBeUndefined()
 
     const batched = batchedRequests(sandbox)
     expect(batched).toHaveLength(1)
@@ -423,11 +463,10 @@ describe('transcribeInParallel', () => {
     expect(result.qwen.text).toBe('the roof is a 6/12')
   })
 
-  it('finishes the ElevenLabs request before it reads the blob for Qwen', () => {
-    // This ordering is the whole memory fix. The multipart body is a byte array
-    // as long as the recording, and it has to be unreachable before the Qwen
-    // pass allocates its own copy of the audio — batching the two into one
-    // fetchAll is what put a ten-minute call over the V8 heap.
+  it('never reads the recording into a byte array for ElevenLabs, only for Qwen', () => {
+    // The whole point of source_url: ElevenLabs fetches the recording itself,
+    // so this script never calls getBytes() on its behalf. Qwen still does,
+    // once, to plan and cut its slices.
     const order: string[] = []
     const wav = makeWav({ seconds: 1 })
     const { sandbox } = harness({
@@ -445,6 +484,7 @@ describe('transcribeInParallel', () => {
 
     sandbox.transcribeInParallel({
       captureId: 'dograh-1',
+      audioFile: fakeAudioFile(),
       audioBlob: {
         getBytes: () => {
           order.push('getBytes')
@@ -459,7 +499,68 @@ describe('transcribeInParallel', () => {
       openRouterKey: 'or-key',
     })
 
-    expect(order).toEqual(['getBytes', 'fetch:elevenlabs', 'getBytes', 'fetchAll'])
+    expect(order).toEqual(['fetch:elevenlabs', 'getBytes', 'fetchAll'])
+  })
+
+  it('shares the recording only for the span of the ElevenLabs request, then reverts it', () => {
+    const audioFile = fakeAudioFile()
+    let accessDuringFetch = ''
+
+    const { sandbox } = harness({
+      UrlFetchApp: {
+        fetchAll: () => [response(200, qwenBody)],
+        fetch: (url: string) => {
+          if (String(url).includes('elevenlabs')) accessDuringFetch = audioFile.getSharingAccess()
+          return response(200, elevenBody)
+        },
+      },
+    })
+
+    expect(audioFile.getSharingAccess()).toBe('PRIVATE')
+
+    sandbox.transcribeInParallel({
+      captureId: 'dograh-1',
+      audioFile,
+      audioBlob: wavBlob(makeWav({ seconds: 1 })),
+      format: 'wav',
+      keyterms: [],
+      elevenLabsKey: 'xi-key',
+      openRouterKey: 'or-key',
+    })
+
+    expect(accessDuringFetch).toBe('ANYONE_WITH_LINK')
+    expect(audioFile.getSharingAccess()).toBe('PRIVATE')
+  })
+
+  it('reverts sharing even when something throws after it was granted', () => {
+    // safeFetch swallows network errors, so the only realistic way anything
+    // inside the shared span throws is a Drive call itself failing — this
+    // simulates that rather than a fetch throw, to exercise the finally.
+    const audioFile = fakeAudioFile()
+    audioFile.getId = () => {
+      throw new Error('drive blew up')
+    }
+
+    const { sandbox, logged } = harness({
+      UrlFetchApp: {
+        fetchAll: () => [response(200, qwenBody)],
+        fetch: () => response(200, elevenBody),
+      },
+    })
+
+    const result = sandbox.transcribeInParallel({
+      captureId: 'dograh-1',
+      audioFile,
+      audioBlob: wavBlob(makeWav({ seconds: 1 })),
+      format: 'wav',
+      keyterms: [],
+      elevenLabsKey: 'xi-key',
+      openRouterKey: 'or-key',
+    })
+
+    expect(audioFile.getSharingAccess()).toBe('PRIVATE')
+    expect(result.elevenlabs.ok).toBe(false)
+    expect(logged.map((l) => l.event)).toContain('transcription.elevenlabs_share_failed')
   })
 
   it('turns the diarized words array into speaker turns', () => {
@@ -517,11 +618,12 @@ describe('transcribeInParallel', () => {
     expect(String(qwen?.fields.error)).toHaveLength(2000)
   })
 
-  it('sends one keyterms form field per term, never a JSON array in one field', () => {
+  it('sends keyterms as a real JSON array', () => {
     const { sandbox } = asrHarness()
 
     sandbox.transcribeInParallel({
       captureId: 'dograh-1',
+      audioFile: fakeAudioFile(),
       audioBlob: wavBlob(makeWav({ seconds: 1 })),
       format: 'wav',
       keyterms: ['Henderson', 'drip edge'],
@@ -529,13 +631,7 @@ describe('transcribeInParallel', () => {
       openRouterKey: 'or-key',
     })
 
-    const form = bodyText(elevenRequest(sandbox).payload)
-
-    expect(form).toContain('name="keyterms"\r\n\r\nHenderson')
-    expect(form).toContain('name="keyterms"\r\n\r\ndrip edge')
-    // The single-field JSON array is what ElevenLabs rejected as one 25-char
-    // "keyword" over its 50-char per-term limit.
-    expect(form).not.toContain('["Henderson"')
+    expect(elevenPayload(sandbox).keyterms).toEqual(['Henderson', 'drip edge'])
   })
 
   it('splits long audio into one Qwen request per slice and rejoins the text', () => {
@@ -547,6 +643,7 @@ describe('transcribeInParallel', () => {
 
     const result = sandbox.transcribeInParallel({
       captureId: 'dograh-1',
+      audioFile: fakeAudioFile(),
       audioBlob: wavBlob(makeWav({ seconds: 700, sampleRate: 100 })),
       format: 'wav',
       keyterms: [],
@@ -582,6 +679,7 @@ describe('transcribeInParallel', () => {
 
     const result = sandbox.transcribeInParallel({
       captureId: 'dograh-1',
+      audioFile: fakeAudioFile(),
       audioBlob: wavBlob(makeWav({ seconds: 700, sampleRate: 100 })),
       format: 'wav',
       keyterms: [],
@@ -644,6 +742,7 @@ describe('transcribeInParallel', () => {
 
     const result = sandbox.transcribeInParallel({
       captureId: 'dograh-1',
+      audioFile: fakeAudioFile(),
       audioBlob: { ...wavBlob(opaque), getName: () => 'audio.mp3' },
       format: 'mp3',
       keyterms: [],
@@ -967,7 +1066,7 @@ describe('runTranscriptionPass', () => {
   }) {
     const folder = fakeFolder('2026-08-26 Henderson dograh-1', 'call-1')
     const root = fakeFolder('root', 'root-1')
-    const audio = { getName: () => 'audio.wav', getBlob: () => wavBlob(makeWav({ seconds: 1 })) }
+    const audio = fakeAudioFile('audio-1')
 
     // ElevenLabs is phase A on its own fetch; Qwen is phase B through fetchAll.
     // Both stubs answer every time rather than draining a queue, so a 500 that

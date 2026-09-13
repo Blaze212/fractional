@@ -70,7 +70,7 @@ its Drive half stays.
 | Moves to `core/`                                                                                     | Stays as adapter                                                                                 |
 | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | `buildKeyterms`, `sanitizeKeyterm`                                                                   | `getOrCreateCallFolder`, `getExistingCallFolder`, `buildCallFolderName`                          |
-| `buildElevenLabsRequest`, `buildMultipartBody`, `buildQwenRequest`                                   | `writeCallArtifact`, `nextArtifactName`, `readCallArtifact`                                      |
+| `buildElevenLabsRequest`, `buildQwenRequest`, `driveDirectDownloadUrl`                               | `writeCallArtifact`, `nextArtifactName`, `readCallArtifact`, `withPubliclySharedFile`            |
 | `probeWav`, `sliceWav`, `buildWavHeader`, `planQwenSpans`, `qwenChunkSeconds` and their byte helpers | `readManifest`, `writeManifest`, `appendManifestRun`                                             |
 | `parseElevenLabsResponse`, `parseQwenResponse`, `renderDiarizedTurns`, `combineChunks`               | `writeRawTranscripts`                                                                            |
 | `selectFallbackTranscript`, `availableSources`, `describeSourcesForManifest`                         | `runTranscriptionPass`, `retranscribeJob` (orchestration, reads/writes Drive and the Jobs sheet) |
