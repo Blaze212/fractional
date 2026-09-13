@@ -156,7 +156,7 @@ earlier handoff note that called this a manual step was wrong.
 
 **The n8n workflow exists but is inert.** Created on
 https://n8n.cmcareersystems.org as **Adjuster — pipeline drain**
-(`tqzMcVXyw77tH1ha`) from `apps/adjuster/n8n/runner-drain.workflow.json`. It is
+(`tqzMcVXyw77tH1ha`) from `n8n/adjuster/runner-drain.workflow.json`. It is
 inactive and carries no credential, so it cannot fire. The credential must be
 made in the n8n UI rather than from here: its value is `WEBHOOK_SECRET`, and a
 secret should not pass through a repo, a tool call, or a transcript to get where
@@ -171,9 +171,13 @@ execution to the failure branch.
 - Brandon's Google account type (consumer or Workspace) is unconfirmed. The
   quota arithmetic above holds either way, so this changes urgency, not design.
   It belongs in this ADR once known.
-- No error workflow is wired. The failure branch is a `stopAndError`, which only
-  turns the execution red; a red execution nobody watches is the same silent
-  failure this ADR replaces.
+- The error workflow exists — **Error handler — Slack #alarms**
+  (`DDGVlGUlKBuXdQ5H`), posting to `#alarms` — but the drain does not name it yet.
+  Until it is selected under the drain's Options → Settings → Error workflow,
+  a failure still only turns the execution red, which is the same silent failure
+  this ADR replaces. The error workflow itself needs no activation, and cannot be
+  tested by running the drain by hand: n8n fires an Error Trigger only for
+  automatic executions, so the wrong-secret test has to wait for the schedule.
 - The every-minute trigger is still installed and must be deleted by hand.
 - The 48-hour observation (trigger runtime under 10 min/day, about 96
   executions/day, no stalled jobs) has not run.
