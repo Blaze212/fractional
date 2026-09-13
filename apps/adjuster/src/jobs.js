@@ -249,10 +249,15 @@ function getOldestPendingJob() {
   return getOldestJobByStatus('pending')
 }
 
+// Returns the number of rows it touched, so drainPipeline (runner.js) can report
+// it in the drain summary. Under the every-minute trigger nobody needed the
+// count; at one pass per 15 minutes it is the only visibility into how often a
+// stage is being killed mid-flight.
 function reclaimStuckJobs() {
   var sheet = getJobsSpreadsheet().getSheetByName(JOBS_TAB)
   var data = getSheetRows(sheet)
   var now = new Date()
+  var reclaimed = 0
 
   data.rows.forEach(function (row) {
     // 'transcribing' belongs here for the same reason the others do: stage A is
@@ -275,8 +280,11 @@ function reclaimStuckJobs() {
       } else {
         writeRowFields(sheet, data.headers, row._rowIndex, { status: 'pending', lease_until: '' })
       }
+      reclaimed += 1
     }
   })
+
+  return reclaimed
 }
 
 function appendRaw(eventType, rawBody) {

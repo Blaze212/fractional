@@ -247,6 +247,21 @@ describe('reclaimStuckJobs', () => {
 
     expect(values[1][headers.indexOf('status')]).toBe('transcribed')
   })
+
+  // Spec 024 — drainPipeline reports this in its summary. At one pass every 15
+  // minutes the count is the only visibility into how often a stage is being
+  // killed mid-flight.
+  it('counts the rows it reclaimed', () => {
+    const { sandbox } = leaseHarness('transcribing', 1)
+
+    expect(sandbox.reclaimStuckJobs()).toBe(1)
+  })
+
+  it('counts nothing when no lease has expired', () => {
+    const { sandbox } = leaseHarness('transcribed', 0)
+
+    expect(sandbox.reclaimStuckJobs()).toBe(0)
+  })
 })
 
 describe('withJobLock flushing', () => {

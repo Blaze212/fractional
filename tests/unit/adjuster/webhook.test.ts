@@ -1017,6 +1017,66 @@ describe('doGet', () => {
     expect(events(logged)).toEqual(['webhook.ping'])
     expect(logged[0]).toContain('"response_body":"adjuster-webhook ok"')
   })
+
+  // Spec 024 — n8n drives the drain with a GET and the Worker forwards the
+  // method unchanged, so a GET carrying an event has to route rather than ping.
+  it('routes a GET that carries an event instead of pinging', () => {
+    const drain = { ok: true, drain_id: 'drain-1', stopped_because: 'queue_empty' }
+    const { sandbox, logged } = harness({ drainPipeline: () => drain })
+
+    const response = sandbox.doGet({ parameter: { t: SECRET, event: 'runner_drain' } })
+
+    expect(JSON.parse(response.body)).toEqual(drain)
+    expect(events(logged)).toEqual(['webhook.received', 'webhook.accepted'])
+  })
+})
+
+// Spec 024. The route that replaces the every-minute Apps Script time trigger.
+describe('runner_drain', () => {
+  const drain = {
+    ok: true,
+    drain_id: 'drain-1757692800000',
+    iterations: 2,
+    advanced: ['retell-abc:transcribe', 'retell-abc:extract'],
+    stopped_because: 'queue_empty',
+    reclaimed: 0,
+    ms: 48213,
+  }
+
+  it('returns the drain summary as JSON', () => {
+    const { sandbox } = harness({ drainPipeline: () => drain })
+
+    const response = sandbox.doPost(post({ event: 'runner_drain' }))
+
+    expect(JSON.parse(response.body)).toEqual(drain)
+  })
+
+  it('files the drain id as the capture id on the terminal log line', () => {
+    const { sandbox, logged } = harness({ drainPipeline: () => drain })
+
+    sandbox.doPost(post({ event: 'runner_drain' }))
+
+    expect(events(logged)).toEqual(['webhook.received', 'webhook.accepted'])
+    expect(logged[1]).toContain('"capture_id":"drain-1757692800000"')
+  })
+
+  // The gate the n8n failure-branch test exercises for real. A wrong secret must
+  // never reach drainPipeline.
+  it('refuses a wrong secret without draining', () => {
+    let drains = 0
+    const { sandbox, logged } = harness({
+      drainPipeline: () => {
+        drains += 1
+        return drain
+      },
+    })
+
+    const response = sandbox.doPost({ parameter: { t: 'wrong', event: 'runner_drain' } })
+
+    expect(response.body).toBe('Forbidden')
+    expect(drains).toBe(0)
+    expect(logged[1]).toContain('"reason":"bad_secret"')
+  })
 })
 
 // Spec 017 — Dograh regression guard. These pin the COMPLETE Jobs-sheet row

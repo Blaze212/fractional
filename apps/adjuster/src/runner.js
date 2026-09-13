@@ -1,8 +1,177 @@
+// Wall-clock budget for one drain pass. Checked BEFORE an iteration starts and
+// never during one, so the true worst case is this plus one full stage. Stage A
+// is itself bounded by the Apps Script 6-minute execution cap, so an iteration
+// starting at 239s can still be killed mid-stage; leaseJob + reclaimStuckJobs
+// return that job to pending, which is why an overrun is a cost rather than a
+// correctness problem. See docs/specs/024.
+var DRAIN_BUDGET_MS = 240 * 1000
+
+// Guard against a job that advances without ever reaching a terminal status,
+// which would otherwise spin until the execution cap killed the whole pass.
+var DRAIN_ITERATION_CAP = 20
+
+// The n8n-driven entry point (docs/specs/024). Where runPipelineTick advances one
+// job by one stage per invocation, this drains the queue inside a wall-clock
+// budget, so a call reaches 'done' in a single pass instead of waiting for a
+// second tick fifteen minutes later.
+//
+// reclaimStuckJobs and ensureTranscriptionColumns run ONCE per drain rather than
+// once per job: under the every-minute trigger the project paid for both 1440
+// times a day to discover nothing had changed.
+function drainPipeline() {
+  var startedAt = Date.now()
+  var drainId = 'drain-' + startedAt
+
+  logEvent('runner.drain_start', { drain_id: drainId })
+
+  var prep = withRunnerLock(5000, function () {
+    var reclaimed = reclaimStuckJobs()
+    ensureTranscriptionColumns()
+    return Number(reclaimed || 0)
+  })
+
+  // Another drain is already mid-pass. Overlap is expected and safe (the lease
+  // plus per-iteration locking means the two never touch the same job), so this
+  // is a no-op exit rather than a failure — ok stays true and n8n stays green.
+  if (!prep.acquired) {
+    logEvent('runner.drain_skipped', { drain_id: drainId, reason: 'lock_unavailable' })
+    return drainResult(drainId, 0, [], 'lock_unavailable', 0, Date.now() - startedAt)
+  }
+
+  var reclaimedCount = prep.value
+  var advanced = []
+  var iterations = 0
+  var advancedLast = true
+  var stoppedBecause = ''
+
+  for (;;) {
+    var decision = shouldContinueDrain({
+      startedAtMs: startedAt,
+      nowMs: Date.now(),
+      iterations: iterations,
+      advancedLast: advancedLast,
+    })
+
+    if (!decision.continue) {
+      stoppedBecause = decision.reason
+      break
+    }
+
+    // The lock is acquired and released INSIDE each iteration, never held across
+    // the loop. withJobLock (jobs.js) takes this same script lock with a 30s
+    // tryLock, and every webhook handler that mutates the Jobs tab must hold it.
+    // A drain that kept the lock for its whole 4-minute budget would time those
+    // handlers out and fail Retell and Dograh ingest for a quarter of every
+    // cycle, with nothing in either vendor dashboard to explain it. This is the
+    // single most important line of this design — see docs/specs/024.
+    var pass = processOldestPendingJob()
+
+    if (pass.reason === 'lock_unavailable') {
+      stoppedBecause = 'lock_unavailable'
+      break
+    }
+
+    // Counts advances, not loop passes: the final pass that finds an empty queue
+    // is not an iteration anybody needs to account for, and this keeps
+    // iterations === advanced.length so the two halves of the summary agree.
+    // It also makes the cap mean what it says — twenty ADVANCES without the
+    // queue draining is the spin signature.
+    advancedLast = pass.advanced
+    if (pass.advanced) {
+      iterations += 1
+      advanced.push(pass.capture_id + ':' + pass.stage)
+    }
+  }
+
+  var result = drainResult(
+    drainId,
+    iterations,
+    advanced,
+    stoppedBecause,
+    reclaimedCount,
+    Date.now() - startedAt,
+  )
+
+  logEvent('runner.drain_end', {
+    drain_id: drainId,
+    iterations: iterations,
+    advanced: advanced.join(','),
+    stopped_because: stoppedBecause,
+    reclaimed: reclaimedCount,
+    ms: result.ms,
+  })
+
+  return result
+}
+
+// Pure, so the loop-control decision is testable without Apps Script globals
+// (ADR 006's rule). Order matters and is the contract:
+//
+//   queue_empty     — nothing advanced last iteration, so there is no work left.
+//                     Checked first: an empty queue makes the other two moot.
+//   budget_exhausted— out of wall clock. Checked BEFORE the cap so that the
+//                     legitimate busy-queue case (20 real jobs drained inside
+//                     240s) reports the honest reason instead of raising a false
+//                     iteration_cap alarm.
+//   iteration_cap   — hit 20 iterations WITHOUT exhausting the budget, which is
+//                     the signature of a job advancing without ever reaching a
+//                     terminal status. This is the one value worth investigating.
+function shouldContinueDrain(state) {
+  if (!state.advancedLast) return { continue: false, reason: 'queue_empty' }
+  if (state.nowMs - state.startedAtMs >= DRAIN_BUDGET_MS) {
+    return { continue: false, reason: 'budget_exhausted' }
+  }
+  if (state.iterations >= DRAIN_ITERATION_CAP) {
+    return { continue: false, reason: 'iteration_cap' }
+  }
+  return { continue: true, reason: '' }
+}
+
+function drainResult(drainId, iterations, advanced, stoppedBecause, reclaimed, ms) {
+  return {
+    ok: true,
+    drain_id: drainId,
+    iterations: iterations,
+    advanced: advanced,
+    stopped_because: stoppedBecause,
+    reclaimed: reclaimed,
+    ms: ms,
+  }
+}
+
+// One acquire and one release per call — the whole point of the refactor in
+// docs/specs/024. Flushes before releasing for the same reason withJobLock
+// (jobs.js) does: sheet writes are buffered and are NOT guaranteed to be visible
+// to the next execution just because this one returned.
+function withRunnerLock(timeoutMs, callback) {
+  var lock = LockService.getScriptLock()
+  if (!lock.tryLock(timeoutMs)) return { acquired: false, value: null }
+
+  try {
+    return { acquired: true, value: callback() }
+  } finally {
+    SpreadsheetApp.flush()
+    lock.releaseLock()
+  }
+}
+
+// The manual single-step entry point. Kept so a one-stage run stays available
+// from the Apps Script editor after the every-minute trigger is retired
+// (docs/specs/024 phase 3). External behaviour is unchanged: one invocation
+// reclaims, ensures columns, and advances exactly one job by exactly one stage.
+//
+// What changed is the lock. It used to be held across the whole tick and
+// inherited by processOldestPendingJob; that function now takes its own, so this
+// takes the lock twice briefly rather than once for the duration.
 function runPipelineTick() {
   var startedAt = Date.now()
-  var lock = LockService.getScriptLock()
 
-  if (!lock.tryLock(5000)) {
+  var prep = withRunnerLock(5000, function () {
+    reclaimStuckJobs()
+    ensureTranscriptionColumns()
+  })
+
+  if (!prep.acquired) {
     logEvent('runner.skipped', { reason: 'lock_unavailable' })
     return
   }
@@ -10,8 +179,6 @@ function runPipelineTick() {
   logEvent('runner.tick_start', {})
 
   try {
-    reclaimStuckJobs()
-    ensureTranscriptionColumns()
     processOldestPendingJob()
     logEvent('runner.tick_end', { ms: Date.now() - startedAt })
   } catch (err) {
@@ -22,9 +189,6 @@ function runPipelineTick() {
       ms: Date.now() - startedAt,
     })
     throw err
-  } finally {
-    SpreadsheetApp.flush()
-    lock.releaseLock()
   }
 }
 
@@ -42,7 +206,25 @@ function ensureTranscriptionColumns() {
 //
 // One tick advances one job by one stage, and 'transcribed' is preferred over
 // 'pending' so work already in flight drains before new work starts.
+//
+// Lock discipline (docs/specs/024): this function acquires and releases the
+// script lock ITSELF rather than inheriting an outer one from its caller. That
+// is what lets drainPipeline loop without starving webhook ingest — see the
+// comment at its call site. Do not hoist the lock back out to the caller.
 function processOldestPendingJob() {
+  var pass = withRunnerLock(5000, advanceOldestPendingJob)
+
+  if (!pass.acquired) {
+    logEvent('runner.skipped', { reason: 'lock_unavailable' })
+    return { advanced: false, reason: 'lock_unavailable', capture_id: '', stage: '' }
+  }
+
+  return pass.value
+}
+
+// The unlocked body. Callers reach it through processOldestPendingJob, which owns
+// the lock; nothing else should call it directly.
+function advanceOldestPendingJob() {
   var picked = getOldestJobByStatus('transcribed')
   var stage = 'extract'
 
@@ -53,7 +235,7 @@ function processOldestPendingJob() {
 
   if (!picked.job) {
     logEvent('runner.no_pending_jobs', {})
-    return
+    return { advanced: false, reason: 'queue_empty', capture_id: '', stage: '' }
   }
 
   var job = picked.job
@@ -79,6 +261,12 @@ function processOldestPendingJob() {
     })
     failJob(job, e.message)
   }
+
+  // A stage that threw still counts as advanced: failJob moved the row to
+  // pending or failed, so the drain loop has work to re-examine rather than an
+  // empty queue. attempts >= 3 terminates the retry, and the iteration cap
+  // bounds the pathological case.
+  return { advanced: true, reason: '', capture_id: job.capture_id, stage: stage }
 }
 
 function leaseJob(sheet, headers, job, status) {

@@ -5,6 +5,10 @@
 // between them is allowed to throw past doPost, so a request can never leave
 // without a recorded outcome.
 function doPost(e) {
+  return handleWebhookRequest(e)
+}
+
+function handleWebhookRequest(e) {
   var startedAt = Date.now()
   var params = (e && e.parameter) || {}
   var event = params.event || 'unknown'
@@ -40,9 +44,17 @@ function doPost(e) {
   }
 }
 
-// Reachability probe. Hitting the deployment URL in a browser or with curl proves
-// the URL is live and running current code without needing a call from Telnyx.
-function doGet() {
+// Reachability probe, and — since docs/specs/024 — the GET half of the webhook.
+// The n8n scheduler drives the drain with a GET, and the bh-systems Worker
+// forwards the method unchanged (worker.js passes request.method through and
+// sends no body on GET), so a GET carrying ?event=… lands here rather than in
+// doPost. A bare GET with no event param stays the plain-text ping it has always
+// been; anything with an event goes through the same routing, secret gate, and
+// terminal-logging contract as a POST.
+function doGet(e) {
+  var params = (e && e.parameter) || {}
+  if (params.event) return handleWebhookRequest(e)
+
   var responseBody = 'adjuster-webhook ok'
   logEvent('webhook.ping', { response_body: responseBody })
   return ContentService.createTextOutput(responseBody)
@@ -51,6 +63,26 @@ function doGet() {
 function routeWebhook(event, params, e) {
   if (params.t !== getConfig('WEBHOOK_SECRET')) {
     return denied('bad_secret', '', 'Forbidden')
+  }
+
+  // The pipeline scheduler (docs/specs/024). Replaces the Apps Script
+  // every-minute time trigger with an n8n schedule calling this route every 15
+  // minutes; drainPipeline empties the queue inside a wall-clock budget instead
+  // of advancing one job by one stage.
+  //
+  // The JSON body is the contract, not the status code. proxyToAppsScript
+  // (apps/bh-systems/src/worker.js) answers a proxy-layer failure with HTTP 200
+  // and a TeXML hangup body, which is right for Telnyx and means a caller that
+  // trusts the status code would read a dead pipeline as healthy. n8n asserts on
+  // ok === true.
+  if (event === 'runner_drain') {
+    var drain = drainPipeline()
+    return accepted(
+      drain.drain_id,
+      ContentService.createTextOutput(JSON.stringify(drain)).setMimeType(
+        ContentService.MimeType.JSON,
+      ),
+    )
   }
 
   // Dograh's Notetaker voice agent (workflow id 10551) posts one JSON body per
