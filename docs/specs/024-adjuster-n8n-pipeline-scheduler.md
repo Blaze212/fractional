@@ -205,8 +205,13 @@ Four nodes, no Wait node, no loop:
 
 1. **Schedule Trigger** — every 15 minutes.
 2. **HTTP Request** — GET the Worker URL with `t` and `event=runner_drain`.
-   Timeout set to **300000 ms (5 min)**, comfortably above the 240s budget plus
-   one overrunning stage. Self-hosted n8n defaults `EXECUTIONS_TIMEOUT` to `-1`
+   Timeout set to **660000 ms (11 min)**. This spec originally said 300000 ms
+   (5 min) and called it comfortably above the budget plus one overrunning
+   stage; that arithmetic was wrong. The budget is checked before an iteration
+   and never during one, so an iteration starting at 239s runs until the Apps
+   Script 6-minute cap: 240s + 360s = 600s worst case. Five minutes sits below
+   that bound and would take the failure branch while Apps Script was still
+   working normally. Self-hosted n8n defaults `EXECUTIONS_TIMEOUT` to `-1`
    (no timeout), so nothing on the n8n side truncates this.
 3. **IF** — `$json.ok === true`.
 4. **Failure branch** — alert. Channel is an implementation choice; anything

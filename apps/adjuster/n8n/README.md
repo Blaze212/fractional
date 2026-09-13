@@ -15,7 +15,22 @@ runs `drainPipeline()` (`apps/adjuster/src/runner.js`). The drain empties the
 queue inside a 240-second budget rather than advancing one job by one stage, so
 a call reaches `done` in a single pass instead of waiting for a second tick.
 
-### Import
+### Already on the instance
+
+This workflow exists on https://n8n.cmcareersystems.org as
+**Adjuster — pipeline drain** (`tqzMcVXyw77tH1ha`), created from this
+definition. It is **inactive and has no credential attached**, so it cannot
+fire. Two steps remain, both of which have to happen in the n8n UI because a
+credential value must never pass through the repo or a transcript:
+
+1. Create the credential (see below) and select it on the **Drain the pipeline**
+   node.
+2. Activate the workflow.
+
+The JSON file below stays the source of truth. Re-export over it if the workflow
+is edited in the UI.
+
+### Importing it fresh
 
 1. n8n → Workflows → Import from File → pick `runner-drain.workflow.json`.
 2. Create the credential before the first run (see below), then open the
@@ -64,10 +79,17 @@ nobody looks at is the same silent failure the every-minute trigger had.
 
 ### Timeout
 
-The HTTP node's timeout is **300000 ms (5 min)**, above the drain's 240-second
-budget plus one overrunning stage. Self-hosted n8n defaults `EXECUTIONS_TIMEOUT`
-to `-1`, so nothing on the n8n side truncates this. If you shorten the budget in
-`runner.js`, shorten this too — in that order.
+The HTTP node's timeout is **660000 ms (11 min)**, and the arithmetic matters.
+The drain checks its 240-second budget BEFORE starting an iteration and never
+during one, so an iteration that starts at 239s can still run until the Apps
+Script 6-minute execution cap kills it: 240s + 360s = 600s worst case, with the
+remaining minute covering proxy and network overhead.
+
+The 5 minutes originally specified in docs/specs/024 is below that bound. A
+timeout under it makes n8n abandon the request and take the failure branch while
+Apps Script is still working normally — a false alarm that looks exactly like a
+dead pipeline. If you shorten the budget in `runner.js`, shorten this too — in
+that order.
 
 ### Overlapping runs
 

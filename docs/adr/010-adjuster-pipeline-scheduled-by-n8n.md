@@ -143,6 +143,50 @@ before. Acceptable against the same 15-to-30-minute latency budget.
 still mid-pass. Overlap is expected under a 15-minute schedule and a 4-minute
 budget, and it is a no-op exit rather than a failure, so n8n stays green.
 
+## Rollout state
+
+Recorded here because the cutover spans three systems and only one of them is
+the repo.
+
+**Apps Script deploys itself on merge.** `.github/workflows/ci.yml` runs
+`clasp push -f` and `clasp redeploy` against the Production environment on every
+push to `main` (job: _Deploy Adjuster Apps Script_). The `event=runner_drain`
+route therefore goes live when this PR merges; no hand deploy is needed, and an
+earlier handoff note that called this a manual step was wrong.
+
+**The n8n workflow exists but is inert.** Created on
+https://n8n.cmcareersystems.org as **Adjuster — pipeline drain**
+(`tqzMcVXyw77tH1ha`) from `apps/adjuster/n8n/runner-drain.workflow.json`. It is
+inactive and carries no credential, so it cannot fire. The credential must be
+made in the n8n UI rather than from here: its value is `WEBHOOK_SECRET`, and a
+secret should not pass through a repo, a tool call, or a transcript to get where
+it is going.
+
+**Order matters.** Merge first so CI deploys the route, then attach the
+credential and activate. Activating against an undeployed route sends every
+execution to the failure branch.
+
+**Still open at the time of writing:**
+
+- Brandon's Google account type (consumer or Workspace) is unconfirmed. The
+  quota arithmetic above holds either way, so this changes urgency, not design.
+  It belongs in this ADR once known.
+- No error workflow is wired. The failure branch is a `stopAndError`, which only
+  turns the execution red; a red execution nobody watches is the same silent
+  failure this ADR replaces.
+- The every-minute trigger is still installed and must be deleted by hand.
+- The 48-hour observation (trigger runtime under 10 min/day, about 96
+  executions/day, no stalled jobs) has not run.
+
+**One spec number was wrong and is corrected here.** Spec 024 specified a
+300000 ms (5 min) HTTP timeout and called it comfortably above the budget plus
+one overrunning stage. It is not: the 240-second budget is checked before an
+iteration and never during one, so an iteration starting at 239s runs until the
+Apps Script 6-minute cap, for a 600-second worst case. The workflow and the spec
+now use 660000 ms. A timeout below the real bound would take the failure branch
+while Apps Script was still working normally — a false alarm indistinguishable
+from a dead pipeline.
+
 ## Alternatives considered
 
 **Leave it on Apps Script and lengthen the trigger interval.** The longest Apps
