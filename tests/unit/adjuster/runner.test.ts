@@ -864,3 +864,18 @@ describe('processOldestPendingJob locking', () => {
     })
   })
 })
+
+describe('leaseJob', () => {
+  // Spec 024 phase 3. The lease only has to outlast the 6-minute Apps Script
+  // execution cap. It was 10 minutes, which cost three minutes of dead time
+  // before a killed job could be reclaimed — barely visible when reclaim ran
+  // every minute, three minutes on every recovery now that it runs once per
+  // 15-minute drain.
+  it('leases a job for seven minutes', () => {
+    const { sandbox, leases, clock } = drainHarness([dograhJob()])
+
+    sandbox.processOldestPendingJob()
+
+    expect(leases[0].fields.lease_until).toBe(new Date(clock.now + 7 * 60 * 1000).toISOString())
+  })
+})

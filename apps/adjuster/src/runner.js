@@ -269,10 +269,15 @@ function advanceOldestPendingJob() {
   return { advanced: true, reason: '', capture_id: job.capture_id, stage: stage }
 }
 
+// Lease length: 7 minutes (docs/specs/024 phase 3). It only has to outlast the
+// 6-minute Apps Script execution cap, so the old 10 minutes bought three minutes
+// of dead time before a killed job could be reclaimed. Under the every-minute
+// trigger that barely showed; with reclaim now running once per 15-minute drain
+// it is three minutes added to every recovery.
 function leaseJob(sheet, headers, job, status) {
   writeRowFields(sheet, headers, job._rowIndex, {
     status: status,
-    lease_until: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    lease_until: new Date(Date.now() + 7 * 60 * 1000).toISOString(),
     attempts: Number(job.attempts || 0) + 1,
     // A new attempt starts clean. Without this the previous attempt's error text
     // survives a successful run and reads as a live failure long after the job
