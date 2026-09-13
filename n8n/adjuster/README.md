@@ -1,8 +1,7 @@
-# n8n workflows for the Adjuster pipeline
+# Adjuster n8n workflows
 
-Importable workflow definitions. n8n is not provisioned from this repo — these
-are the source of truth for what the instance should be running, so a workflow
-someone edits in the UI should be re-exported back over the file here.
+Workflows belonging to the Adjuster pipeline. See `../README.md` for the export
+contract that governs every file under `n8n/`.
 
 ## `runner-drain.workflow.json`
 
@@ -71,11 +70,16 @@ Do not "simplify" this node into a status-code check.
 
 ### The failure branch
 
-**Alert — drain failed** is a `stopAndError`, which marks the execution red and
-fires whatever workflow is set under Settings → Error Workflow. That is a neutral
-default, not a considered choice of channel: wire an error workflow, or swap the
-node for Slack or email, so a failure actually reaches a person. A red execution
-nobody looks at is the same silent failure the every-minute trigger had.
+**Alert — drain failed** is a `stopAndError`, which despite the name alerts
+nobody by itself. All it does is mark the execution failed, which is exactly the
+point: a failed execution is the event an error workflow subscribes to. It is the
+bridge between "the drain replied but said it was not ok" and "somebody gets
+told". See `../shared/error-handler-slack.workflow.json` for the other half.
+
+Do not replace it with a Slack node on the false branch. That branch only catches
+the case where the drain answered and reported not-ok; it never sees the HTTP node
+timing out or failing to reach the Worker, because those kill the execution before
+control reaches the IF. It would also leave every broken run showing green.
 
 ### Timeout
 

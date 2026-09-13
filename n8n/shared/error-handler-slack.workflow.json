@@ -1,0 +1,52 @@
+{
+  "name": "Error handler — Slack #alarms",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "709c93d8-e589-426f-ba67-bbee3c5f9d5f",
+      "name": "When a workflow fails",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "post",
+        "authentication": "accessToken",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "alarms"
+        },
+        "messageType": "text",
+        "text": "=:rotating_light: *n8n workflow failed* — {{ $json.workflow.name || \"unknown workflow\" }}\n*Error:* {{ $json.execution.error.message || \"no message\" }}\n*Last node:* {{ $json.execution.lastNodeExecuted || \"n/a\" }}\n{{ $json.execution.url ? \"<\" + $json.execution.url + \"|Open the execution>\" : \"No execution URL — set N8N_EDITOR_BASE_URL\" }}",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "mrkdwn": true
+        }
+      },
+      "id": "42941968-a221-4c62-948a-3ae60e9181b9",
+      "name": "Post to Slack #alarms",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [224, 0],
+      "credentials": {
+        "slackApi": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When a workflow fails": {
+      "main": [[{ "node": "Post to Slack #alarms", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
