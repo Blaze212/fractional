@@ -1,0 +1,126 @@
+{
+  "name": "Adjuster — pipeline drain",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "b1f0a4de-2a3c-4c11-9d3a-5a7e1c0f9001",
+      "name": "Every 15 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-260, 0]
+    },
+    {
+      "parameters": {
+        "url": "https://www.bh-systems.com/texml/gas",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "event",
+              "value": "runner_drain"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 660000,
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "autodetect"
+            }
+          }
+        }
+      },
+      "id": "b1f0a4de-2a3c-4c11-9d3a-5a7e1c0f9002",
+      "name": "Drain the pipeline",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-40, 0],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Adjuster WEBHOOK_SECRET (t)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "drain-reported-ok",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "b1f0a4de-2a3c-4c11-9d3a-5a7e1c0f9003",
+      "name": "Did the drain report ok?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [180, 0]
+    },
+    {
+      "parameters": {},
+      "id": "b1f0a4de-2a3c-4c11-9d3a-5a7e1c0f9004",
+      "name": "Drained",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [400, -100]
+    },
+    {
+      "parameters": {
+        "errorMessage": "=Adjuster drain did not report ok. stopped_because={{ $json.stopped_because || 'n/a' }} body={{ JSON.stringify($json).slice(0, 500) }}"
+      },
+      "id": "b1f0a4de-2a3c-4c11-9d3a-5a7e1c0f9005",
+      "name": "Alert — drain failed",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [400, 100]
+    }
+  ],
+  "connections": {
+    "Every 15 minutes": {
+      "main": [[{ "node": "Drain the pipeline", "type": "main", "index": 0 }]]
+    },
+    "Drain the pipeline": {
+      "main": [[{ "node": "Did the drain report ok?", "type": "main", "index": 0 }]]
+    },
+    "Did the drain report ok?": {
+      "main": [
+        [{ "node": "Drained", "type": "main", "index": 0 }],
+        [{ "node": "Alert — drain failed", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

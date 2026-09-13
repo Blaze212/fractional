@@ -618,3 +618,391 @@ describe('runPipelineTick', () => {
     expect(added?.fields.columns).toBe('call_folder_id')
   })
 })
+
+// Spec 024. The drain replaces the every-minute Apps Script trigger, so these
+// cover the two things that change: the loop-control decision (pure, so it is
+// tested directly) and the lock discipline the loop depends on.
+describe('shouldContinueDrain', () => {
+  const BUDGET_MS = 240 * 1000
+  const CAP = 20
+
+  function decide(overrides: Record<string, unknown> = {}) {
+    const { sandbox } = harness([])
+    return sandbox.shouldContinueDrain({
+      startedAtMs: 0,
+      nowMs: 1000,
+      iterations: 1,
+      advancedLast: true,
+      ...overrides,
+    })
+  }
+
+  it('continues while there is work, time, and headroom', () => {
+    expect(decide()).toEqual({ continue: true, reason: '' })
+  })
+
+  it('stops on an empty queue', () => {
+    expect(decide({ advancedLast: false })).toEqual({ continue: false, reason: 'queue_empty' })
+  })
+
+  it('stops when the wall-clock budget is spent', () => {
+    expect(decide({ nowMs: BUDGET_MS })).toEqual({
+      continue: false,
+      reason: 'budget_exhausted',
+    })
+  })
+
+  it('keeps going at one millisecond under budget', () => {
+    expect(decide({ nowMs: BUDGET_MS - 1 }).continue).toBe(true)
+  })
+
+  it('stops at the iteration cap', () => {
+    expect(decide({ iterations: CAP })).toEqual({ continue: false, reason: 'iteration_cap' })
+  })
+
+  it('keeps going at one iteration under the cap', () => {
+    expect(decide({ iterations: CAP - 1 }).continue).toBe(true)
+  })
+
+  // The boundary case the ordering exists for. Twenty advances INSIDE the budget
+  // is the spin signature worth investigating; twenty advances that also ran the
+  // clock out is just a busy morning, and reporting iteration_cap there would
+  // send someone hunting a bug that isn't there.
+  it('reports the budget, not the cap, when both trip together', () => {
+    expect(decide({ iterations: CAP, nowMs: BUDGET_MS })).toEqual({
+      continue: false,
+      reason: 'budget_exhausted',
+    })
+  })
+
+  // An empty queue outranks both: there is nothing left to do, so why the loop
+  // ended is not interesting.
+  it('reports an empty queue ahead of the cap and the budget', () => {
+    expect(decide({ advancedLast: false, iterations: CAP, nowMs: BUDGET_MS }).reason).toBe(
+      'queue_empty',
+    )
+  })
+})
+
+// The lock timeline is the point of these. withJobLock (jobs.js) takes the same
+// script lock with a 30s tryLock and every webhook handler that mutates the Jobs
+// tab holds it, so a drain that kept the lock across its loop would fail ingest
+// for a quarter of every cycle.
+function drainHarness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
+  const timeline: string[] = []
+  let held = 0
+  let maxHeld = 0
+  const clock = { now: 1_000_000 }
+
+  class FakeDate extends Date {
+    static now() {
+      return clock.now
+    }
+  }
+
+  const built = harness(jobRows, {
+    Date: FakeDate,
+    LockService: {
+      getScriptLock: () => ({
+        tryLock: () => {
+          held += 1
+          maxHeld = Math.max(maxHeld, held)
+          timeline.push('acquire')
+          return true
+        },
+        releaseLock: () => {
+          held -= 1
+          timeline.push('release')
+        },
+      }),
+    },
+    ...overrides,
+  })
+
+  return { ...built, timeline, clock, lock: { maxHeld: () => maxHeld } }
+}
+
+describe('drainPipeline', () => {
+  it('carries a job from pending to done in one invocation', () => {
+    const { sandbox, jobs } = drainHarness([dograhJob()])
+
+    const result = sandbox.drainPipeline()
+
+    expect(jobs.get('dograh-1')?.status).toBe('done')
+    expect(result.advanced).toEqual(['dograh-1:transcribe', 'dograh-1:extract'])
+    expect(result.iterations).toBe(2)
+    expect(result.stopped_because).toBe('queue_empty')
+    expect(result.ok).toBe(true)
+  })
+
+  it('never holds the script lock across two iterations', () => {
+    const { sandbox, timeline, lock } = drainHarness([
+      dograhJob({ capture_id: 'a', created_at: '2026-08-26T18:00:00Z' }),
+      dograhJob({ capture_id: 'b', created_at: '2026-08-26T18:01:00Z' }),
+    ])
+
+    sandbox.drainPipeline()
+
+    expect(lock.maxHeld()).toBe(1)
+    // Strictly alternating: every acquire is answered by a release before the
+    // next acquire, which is what leaves a gap for an inbound webhook.
+    timeline.forEach((entry, index) => {
+      expect(entry).toBe(index % 2 === 0 ? 'acquire' : 'release')
+    })
+  })
+
+  it('reclaims and checks columns once per drain, not once per job', () => {
+    let reclaims = 0
+    let columnChecks = 0
+    const { sandbox } = drainHarness(
+      [
+        dograhJob({ capture_id: 'a', created_at: '2026-08-26T18:00:00Z' }),
+        dograhJob({ capture_id: 'b', created_at: '2026-08-26T18:01:00Z' }),
+      ],
+      {
+        reclaimStuckJobs: () => {
+          reclaims += 1
+          return 2
+        },
+        ensureJobsColumns: () => {
+          columnChecks += 1
+          return []
+        },
+      },
+    )
+
+    const result = sandbox.drainPipeline()
+
+    expect(reclaims).toBe(1)
+    expect(columnChecks).toBe(1)
+    expect(result.reclaimed).toBe(2)
+  })
+
+  it('stops once the wall-clock budget is spent', () => {
+    const { sandbox, clock } = drainHarness([
+      dograhJob({ capture_id: 'a', created_at: '2026-08-26T18:00:00Z' }),
+      dograhJob({ capture_id: 'b', created_at: '2026-08-26T18:01:00Z' }),
+    ])
+
+    const startedAt = clock.now
+    // Every stage burns three minutes, so the second check is past the 240s budget.
+    sandbox.runTranscriptionStage = ((original) =>
+      function (job: Job) {
+        clock.now += 180 * 1000
+        return original(job)
+      })(sandbox.runTranscriptionStage)
+
+    const result = sandbox.drainPipeline()
+
+    expect(result.stopped_because).toBe('budget_exhausted')
+    expect(clock.now - startedAt).toBeGreaterThanOrEqual(240 * 1000)
+  })
+
+  // A second drain firing while the first is mid-pass is expected under a 15
+  // minute schedule and a 4 minute budget. It exits without doing work, and
+  // reports ok so the n8n assertion stays green.
+  it('exits cleanly when another drain already holds the lock', () => {
+    const { sandbox } = harness([dograhJob()], {
+      LockService: { getScriptLock: () => ({ tryLock: () => false, releaseLock: () => {} }) },
+    })
+
+    const result = sandbox.drainPipeline()
+
+    expect(result).toMatchObject({
+      ok: true,
+      iterations: 0,
+      advanced: [],
+      stopped_because: 'lock_unavailable',
+    })
+  })
+
+  it('stops at the iteration cap rather than spinning to the execution cap', () => {
+    // A job that advances forever without reaching a terminal status — the
+    // pathology the cap exists for.
+    const { sandbox } = drainHarness([dograhJob()], {
+      getOldestJobByStatus: () => ({
+        sheet: 'sheet',
+        headers: ['capture_id'],
+        job: dograhJob({ status: 'transcribed' }),
+      }),
+    })
+
+    const result = sandbox.drainPipeline()
+
+    expect(result.stopped_because).toBe('iteration_cap')
+    expect(result.iterations).toBe(20)
+  })
+})
+
+describe('processOldestPendingJob locking', () => {
+  it('takes and releases the script lock itself', () => {
+    const { sandbox, timeline } = drainHarness([dograhJob()])
+
+    const result = sandbox.processOldestPendingJob()
+
+    expect(timeline).toEqual(['acquire', 'release'])
+    expect(result).toMatchObject({ advanced: true, capture_id: 'dograh-1', stage: 'transcribe' })
+  })
+
+  it('reports an empty queue without claiming an advance', () => {
+    const { sandbox } = drainHarness([])
+
+    expect(sandbox.processOldestPendingJob()).toMatchObject({
+      advanced: false,
+      reason: 'queue_empty',
+    })
+  })
+
+  it('reports a contended lock rather than an empty queue', () => {
+    const { sandbox } = harness([dograhJob()], {
+      LockService: { getScriptLock: () => ({ tryLock: () => false, releaseLock: () => {} }) },
+    })
+
+    expect(sandbox.processOldestPendingJob()).toMatchObject({
+      advanced: false,
+      reason: 'lock_unavailable',
+    })
+  })
+})
+
+describe('leaseJob', () => {
+  // Spec 024 phase 3. The lease only has to outlast the 6-minute Apps Script
+  // execution cap. It was 10 minutes, which cost three minutes of dead time
+  // before a killed job could be reclaimed — barely visible when reclaim ran
+  // every minute, three minutes on every recovery now that it runs once per
+  // 15-minute drain.
+  it('leases a job for seven minutes', () => {
+    const { sandbox, leases, clock } = drainHarness([dograhJob()])
+
+    sandbox.processOldestPendingJob()
+
+    expect(leases[0].fields.lease_until).toBe(new Date(clock.now + 7 * 60 * 1000).toISOString())
+  })
+})
+
+describe('withRunnerLock flush safety', () => {
+  // This helper exists to release the script lock. An unguarded flush in its
+  // finally block throws past releaseLock, stranding the lock for the rest of
+  // the execution and blocking every webhook handler queued behind it — the
+  // exact ingest starvation spec 024 is built to prevent, reached by accident.
+  // withJobLock (jobs.js) has always guarded its flush; this matches it.
+  it('releases the lock even when the flush throws', () => {
+    let released = 0
+    const { sandbox } = harness([dograhJob()], {
+      LockService: {
+        getScriptLock: () => ({
+          tryLock: () => true,
+          releaseLock: () => {
+            released += 1
+          },
+        }),
+      },
+      SpreadsheetApp: {
+        flush: () => {
+          throw new Error('flush boom')
+        },
+      },
+    })
+
+    expect(() => sandbox.processOldestPendingJob()).not.toThrow()
+    expect(released).toBe(1)
+  })
+})
+
+describe('script lock contention during a drain', () => {
+  // The existing timeline test uses a lock fake that always grants, so it proves
+  // calls are not nested but never proves a contending caller could actually get
+  // in. This one contends for real: tryLock refuses while the lock is held.
+  function contendingHarness(jobRows: Job[]) {
+    let held = false
+    const probes: Array<{ when: string; acquired: boolean }> = []
+
+    const built = harness(jobRows, {
+      LockService: {
+        getScriptLock: () => ({
+          tryLock: () => {
+            if (held) return false
+            held = true
+            return true
+          },
+          releaseLock: () => {
+            held = false
+          },
+        }),
+      },
+    })
+
+    return { ...built, probes, probe: (when: string) => probes.push({ when, acquired: !held }) }
+  }
+
+  it('leaves the lock free between iterations and after the drain', () => {
+    const { sandbox, probe, probes } = contendingHarness([
+      dograhJob({ capture_id: 'a', created_at: '2026-08-26T18:00:00Z' }),
+      dograhJob({ capture_id: 'b', created_at: '2026-08-26T18:01:00Z' }),
+    ])
+
+    // shouldContinueDrain runs between iterations and outside the lock, which
+    // makes it the exact moment an inbound webhook has to be able to get in.
+    sandbox.shouldContinueDrain = ((original: (state: unknown) => unknown) =>
+      function (state: unknown) {
+        probe('between_iterations')
+        return original(state)
+      })(sandbox.shouldContinueDrain)
+
+    sandbox.drainPipeline()
+    probe('after_drain')
+
+    expect(probes.filter((entry) => entry.when === 'between_iterations').length).toBeGreaterThan(1)
+    expect(probes.every((entry) => entry.acquired)).toBe(true)
+  })
+})
+
+// Worth knowing and deliberately NOT asserted anywhere: within an iteration the
+// lock is held for the whole stage, including its remote calls, so a webhook
+// arriving mid-stage waits. That is the cost spec 024 accepts ("waits for one
+// stage boundary, not for the whole drain"), and it means withJobLock's 30s
+// tryLock, not the 240s budget, is the real ingest ceiling. Narrowing the hold
+// to just the sheet writes would be an improvement; no test here forbids it.
+
+describe('runPipelineTick', () => {
+  // The retained manual entry point. Preparation moved inside the try so a
+  // failure in reclaim or the column check still produces a terminal log line.
+  it('reports tick_failed when preparation throws', () => {
+    const { sandbox, logged } = harness([dograhJob()], {
+      reclaimStuckJobs: () => {
+        throw new Error('reclaim boom')
+      },
+    })
+
+    expect(() => sandbox.runPipelineTick()).toThrow('reclaim boom')
+    expect(logged.some((entry) => entry.event === 'runner.tick_failed')).toBe(true)
+  })
+
+  // A webhook can take the lock in the gap between preparation and the stage.
+  // processOldestPendingJob reports that by returning rather than throwing, so
+  // without an explicit check a tick that advanced nothing logs tick_end and
+  // reads as a success.
+  it('does not claim a successful tick when the stage could not take the lock', () => {
+    let attempts = 0
+    const { sandbox, logged } = harness([dograhJob()], {
+      LockService: {
+        getScriptLock: () => ({
+          tryLock: () => {
+            attempts += 1
+            return attempts === 1
+          },
+          releaseLock: () => {},
+        }),
+      },
+    })
+
+    sandbox.runPipelineTick()
+
+    expect(logged.some((entry) => entry.event === 'runner.tick_end')).toBe(false)
+    expect(
+      logged.some(
+        (entry) => entry.event === 'runner.skipped' && entry.fields.reason === 'lock_unavailable',
+      ),
+    ).toBe(true)
+  })
+})
