@@ -34,6 +34,37 @@ jobs:
         with:
           version: latest
 
+      # ── bh-delivery kit (spec 029 B-5) ────────────────────────────────────────
+      # The delivery machinery lives in Blaze212/bh-delivery, not in this repo; the
+      # scripts/*.sh here are three-line shims onto it. CI has no plugin manager, so it
+      # checks the kit out at the tag this repo pins and points BH_DELIVERY_ROOT at it.
+      # Pinned tag, never a moving ref: a kit whose scripts disagree with the profile they
+      # read is exactly the drift the kit exists to end.
+      - name: Read the pinned kit version
+        id: kit
+        run: |
+          v="$(grep -E '^kit_version:' .claude/delivery-profile.yaml | head -1 \
+            | sed -E "s/^kit_version:[[:space:]]*//; s/[\"']//g; s/[[:space:]]*(#.*)?$//")"
+          [ -n "$v" ] || { echo "no kit_version in .claude/delivery-profile.yaml"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "pinned kit_version: $v"
+
+      - name: Check out the bh-delivery kit
+        uses: actions/checkout@v4
+        with:
+          repository: Blaze212/bh-delivery
+          ref: refs/tags/v${{ steps.kit.outputs.version }}
+          token: ${{ secrets.BH_DELIVERY_TOKEN }}
+          path: .bh-delivery
+
+      - name: Point the shims at the checked-out kit
+        run: |
+          echo "BH_DELIVERY_ROOT=$GITHUB_WORKSPACE/.bh-delivery" >> "$GITHUB_ENV"
+          node -e 'console.log("kit version:", JSON.parse(require("fs").readFileSync(".bh-delivery/.claude-plugin/plugin.json","utf8")).version)'
+
+      - name: Delivery profile and kit shims
+        run: scripts/tests/run.sh
+
       - run: pnpm install --frozen-lockfile
       # - name: Dependency vulnerability audit
       #   run: pnpm audit --audit-level=high

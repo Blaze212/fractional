@@ -1,0 +1,69 @@
+# bh-delivery profile for the fractional workspace (spec 029 B-5).
+# Everything the kit used to hardcode per repo lives here. Schema and worked examples:
+#   node "$(scripts/kit-root.sh)/scripts/profile.mjs" validate .claude/delivery-profile.yaml
+#   "$(scripts/kit-root.sh)"/profile-schema/delivery-profile.schema.json
+kit_version: '1.0.2'
+repo:
+  github: Blaze212/fractional
+  default_branch: main
+  key: fractional
+  linear_project: Brandon Adjuster
+worktree:
+  dir: .claude/worktrees
+  prefix: ''
+  pnpm_store: .pnpm-store
+secrets:
+  doppler_project: fractional
+  doppler_config: dev
+  doppler_required_for: []
+stack:
+  supabase_project: fractional
+ci:
+  required_check: 'Typecheck, Lint & Test'
+verify:
+  full: pnpm typecheck && pnpm test:unit:coverage && pnpm lint && pnpm format:check
+  scoped: pnpm typecheck && pnpm exec vitest run <files>
+  post_merge: [] # the adjuster regression corpus (BH-58) joins here when it lands
+models:
+  impl: sonnet
+  test: sonnet
+  review: { green: sonnet, yellow: opus, red: opus }
+  spec: session
+  escalate_after_review_cycles: 2
+train_size: 3
+auto_red:
+  - name: retell-publish
+    keywords: [publish agent, publish flow, agent version, bind number, phone number]
+    reason: Reaches a live line. Claude drafts versions; Barton publishes.
+  - name: apps-script-deploy
+    # The spec's example glob is apps-script/**, which matches nothing here: the Apps
+    # Script lives in apps/adjuster. Scoped to the deploy surface (clasp config and the
+    # workflow that pushes it) rather than the whole app, so ordinary adjuster work is
+    # still tiered on its own merits.
+    paths: ['apps/adjuster/.clasp.json', 'apps/adjuster/appsscript.json', '.github/workflows/**']
+    keywords: [clasp push, clasp redeploy, deploy id]
+    reason: Deploys to the client's sheet.
+  - name: worker-secrets
+    keywords: [wrangler secret, worker secret]
+    reason: Standing credential.
+env_notes: |
+  pnpm workspace. apps/portal is the member portal, packages/ui the shared primitives,
+  supabase/functions the edge functions and supabase/migrations the schema source of truth.
+  Every change ships with a unit test under tests/unit. Log with pino, and inside an edge
+  function always the passed-in child logger, never the root logger. Every function in
+  supabase/config.toml stays verify_jwt = false; auth happens inside the function via
+  withAuth(). Never import from a file containing Deno.serve() — extract the shared helper
+  into its own file first. Never run supabase db push; migrations ride CI. Never use the
+  `unknown` type. Never run pnpm format, pnpm lint, or the full suite inside an impl step.
+  Refresh main only via scripts/git-fetch-main.sh.
+verify_notes: |
+  Barton places one test call end to end before anything adjuster-facing is called Done.
+deploy_notes: |
+  Merge to main runs supabase db push and supabase functions deploy, triggers the
+  Cloudflare Pages portal hook, deploys the bh-systems Worker, and pushes + redeploys the
+  adjuster Apps Script. There is no staging: a merge is a production deploy.
+never:
+  - 'Retell agents and numbers are published or bound by Barton, never by a run.'
+  - 'No production DB push from a session; migrations ride CI on merge to main.'
+  - 'verify_jwt stays false for every function in supabase/config.toml.'
+  - 'Backwards-incompatible changes are called out and shipped standalone, never coupled to a feature launch.'

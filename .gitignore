@@ -11,7 +11,17 @@ supabase/.env.local
 .DS_Store
 coverage
 .turbo
-.claude/
+.claude/*
+# …except the bh-delivery profile: CI and scripts/kit-root.sh read kit_version from it,
+# so it has to be in the tree. A parent-directory ignore cannot be un-ignored per file,
+# which is why the pattern above is .claude/* and not .claude/.
+!.claude/delivery-profile.yaml
+# …and the project instructions, which every checkout and sandbox needs, not just this
+# machine. They were untracked, so a fresh clone had none of them.
+!.claude/CLAUDE.md
+
+# CI checks the bh-delivery kit out here at the pinned tag (spec 029 B-5).
+.bh-delivery/
 workspace
 
 # Cloudflare / wrangler
