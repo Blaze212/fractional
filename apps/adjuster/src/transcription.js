@@ -363,31 +363,68 @@ function appendManifestRun(folder, run) {
 // ---------------------------------------------------------------------------
 
 // ElevenLabs fetches the recording itself via `source_url` rather than
-// receiving an uploaded body, so the request is plain JSON — `keyterms` is a
-// real array here, with none of the repeated-form-field problem a multipart
-// upload would have. See docs/adr/007's amendment: the old hand-built
-// multipart body was the thing that turned the recording into a JS byte array
-// at all, and Apps Script has no typed-array form at the Blob boundary, so
-// that array cost several times the recording's own size in V8 heap. This
-// request never touches the audio bytes in this script — see
-// withPubliclySharedFile for how ElevenLabs gets a URL it can reach.
+// receiving an uploaded body. See docs/adr/007's amendment: the old multipart
+// body was the thing that turned the recording into a JS byte array at all,
+// and Apps Script has no typed-array form at the Blob boundary, so that array
+// cost several times the recording's own size in V8 heap. Referencing the
+// audio by URL is what fixed that — see withPubliclySharedFile for how
+// ElevenLabs gets a URL it can reach.
+//
+// The body still has to be multipart. /v1/speech-to-text is a
+// multipart/form-data endpoint and accepts no other content type: an
+// application/json body parses to no form fields at all, and the request comes
+// back 422 naming model_id as missing with "input": null — the whole body,
+// unread. That is what shipped between 2026-09-13 and this fix, so ElevenLabs
+// contributed nothing to any master transcript in that window while the run
+// still reported ok (SOURCE_PRECEDENCE simply fell through to Qwen).
+//
+// Multipart is not what caused the OOM — the audio bytes inside it were. This
+// body carries only text fields and never the recording, so it is a few
+// hundred bytes. It is hand-built rather than handed to Apps Script as a
+// payload object because `keyterms` is a repeated field, one part per term,
+// and an object literal cannot express a duplicate key.
 function buildElevenLabsRequest(sourceUrl, keyterms, apiKey) {
+  var boundary = 'adjusterform' + Date.now()
+  var fields = [
+    { name: 'model_id', value: TRANSCRIPTION_MODELS.elevenlabs.id },
+    { name: 'language_code', value: 'en' },
+    { name: 'diarize', value: 'true' },
+    { name: 'num_speakers', value: '2' },
+    { name: 'timestamps_granularity', value: 'word' },
+    { name: 'source_url', value: sourceUrl },
+  ]
+
+  ;(keyterms || []).forEach(function (term) {
+    fields.push({ name: 'keyterms', value: term })
+  })
+
   return {
     url: ELEVENLABS_URL,
     method: 'post',
-    contentType: 'application/json',
+    contentType: 'multipart/form-data; boundary=' + boundary,
     headers: { 'xi-api-key': apiKey },
-    payload: JSON.stringify({
-      model_id: TRANSCRIPTION_MODELS.elevenlabs.id,
-      language_code: 'en',
-      diarize: true,
-      num_speakers: 2,
-      timestamps_granularity: 'word',
-      keyterms: keyterms || [],
-      source_url: sourceUrl,
-    }),
+    payload: buildTextMultipartBody(boundary, fields),
     muteHttpExceptions: true,
   }
+}
+
+// Text fields only. The file-part variant this replaced is deliberately gone:
+// reintroducing one would put the recording back in V8 heap and bring back the
+// OOM (docs/adr/007's amendment).
+function buildTextMultipartBody(boundary, fields) {
+  var parts = []
+
+  fields.forEach(function (field) {
+    parts.push('--' + boundary)
+    parts.push('Content-Disposition: form-data; name="' + field.name + '"')
+    parts.push('')
+    parts.push(field.value)
+  })
+
+  parts.push('--' + boundary + '--')
+  parts.push('')
+
+  return parts.join('\r\n')
 }
 
 // source_url has to be reachable without Google auth, and the recording lives

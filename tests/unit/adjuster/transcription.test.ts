@@ -419,8 +419,27 @@ describe('transcribeInParallel', () => {
     return (sandbox.UrlFetchApp.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1]
   }
 
-  function elevenPayload(sandbox: Record<string, any>) {
-    return JSON.parse(elevenRequest(sandbox).payload)
+  // /v1/speech-to-text is multipart/form-data only, so the payload is a wire
+  // body rather than JSON. Parsed back into { name -> value | value[] } so the
+  // assertions below can stay about content instead of boundary syntax;
+  // keyterms is a repeated field, which is why repeats collect into an array.
+  function elevenPayload(sandbox: Record<string, any>): Record<string, any> {
+    const raw: string = elevenRequest(sandbox).payload
+    const fields: Record<string, any> = {}
+
+    raw.split(/\r\n/).forEach((line, i, lines) => {
+      const match = /^Content-Disposition: form-data; name="([^"]+)"$/.exec(line)
+      if (!match) return
+
+      const name = match[1]
+      const value = lines[i + 2]
+
+      if (fields[name] === undefined) fields[name] = value
+      else if (Array.isArray(fields[name])) fields[name].push(value)
+      else fields[name] = [fields[name], value]
+    })
+
+    return fields
   }
 
   function run(sandbox: Record<string, any>) {
@@ -435,7 +454,7 @@ describe('transcribeInParallel', () => {
     })
   }
 
-  it('sends ElevenLabs a JSON request naming a source_url, and batches the Qwen slices through fetchAll', () => {
+  it('sends ElevenLabs a multipart form naming a source_url, and batches the Qwen slices through fetchAll', () => {
     const { sandbox } = asrHarness()
 
     const result = run(sandbox)
@@ -444,14 +463,20 @@ describe('transcribeInParallel', () => {
     const eleven = elevenRequest(sandbox)
     expect(eleven.url).toContain('api.elevenlabs.io')
     expect(eleven.headers['xi-api-key']).toBe('xi-key')
-    expect(eleven.contentType).toBe('application/json')
+    // Not application/json. A JSON body parses to no form fields at all and
+    // the endpoint answers 422 "model_id Field required" with "input": null —
+    // the failure that silently cost every run its ElevenLabs source between
+    // 2026-09-13 and this fix.
+    expect(eleven.contentType).toMatch(/^multipart\/form-data; boundary=/)
     const body = elevenPayload(sandbox)
     expect(body.model_id).toBe('scribe_v2')
-    expect(body.diarize).toBe(true)
+    expect(body.diarize).toBe('true')
     expect(body.source_url).toContain('drive.google.com')
     expect(body.source_url).toContain('audio-1')
-    // No multipart body and no file upload — the whole point of source_url.
+    // Still no file part — that is what source_url bought, and putting one
+    // back would restore the OOM.
     expect(body.file).toBeUndefined()
+    expect(eleven.payload).not.toContain('filename=')
 
     const batched = batchedRequests(sandbox)
     expect(batched).toHaveLength(1)
