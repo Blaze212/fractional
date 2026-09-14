@@ -277,13 +277,18 @@ describe('field-specific guidance', () => {
     expect(user).not.toMatch(/severe wind and rain/i)
   })
 
-  it('shows subrogation_reason a bad finite-verb answer against a good noun-phrase one', () => {
+  // Spec 023 paired the bad finite-verb answer with "an absence of any
+  // identified subrogation potential". Spec 026 replaced that good example:
+  // the template sentence already asserts there is no subrogation, so the
+  // slot carries the cause, not a restatement of the negative answer.
+  it('shows subrogation_reason a bad finite-verb answer against the cause clause', () => {
     const spec = { subrogation_reason: { label: 'Subrogation reason clause', type: 'narrative' } }
 
     const { user } = buildPrompt({ transcript: 't', claim: null, templateSpec: spec })
 
     expect(user).toContain('no subrogation concerns were reported')
-    expect(user).toContain('an absence of any identified subrogation potential')
+    expect(user).toContain('Echo the cause you extracted for origin_narrative')
+    expect(user).toContain('weather related')
   })
 
   it('tells roof_covering_type to include the head noun so it does not collide with roof_age_years digits', () => {
@@ -464,6 +469,63 @@ describe('field-specific guidance', () => {
   })
 })
 
+// A Q&A intake agent asks each section as a question, so the normal "this
+// section does not apply" answer arrives as a bare "No" in the adjuster's turn.
+// The agent's question carries the context and is deliberately absent from the
+// span haystack (buildSpanHaystack, spec 022), so these three fields used to
+// have no reachable negative path at all.
+describe('negative answers to the intake agent section questions', () => {
+  it('counts a one-word answer as the affirmative statement a status variant needs', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/A direct answer to a direct question is an affirmative statement/i)
+    expect(system).toContain('cite his own answer turn as the source_span')
+    // Silence still has to stay a miss, or the rule has swallowed its own point.
+    expect(system).toMatch(/Silence is what does not count/i)
+  })
+
+  it('routes a negative mitigation answer to the canned none branch', () => {
+    const { user } = buildPrompt({
+      transcript: 't',
+      claim: null,
+      templateSpec: { mitigation_status: { label: 'Mitigation status', type: 'variant' } },
+    })
+
+    expect(user).toContain('mitigation_status:')
+    expect(user).toContain('No mitigation services were performed on this loss.')
+    expect(user).toMatch(/needs no mitigation_narrative behind it/i)
+  })
+
+  it('lets a bare no stand as a complete overhead and profit determination', () => {
+    const { user } = buildPrompt({
+      transcript: 't',
+      claim: null,
+      templateSpec: {
+        overhead_profit_narrative: { label: 'Overhead & profit', type: 'narrative' },
+      },
+    })
+
+    expect(user).toContain('Overhead and profit are not included on this loss.')
+    expect(user).toMatch(/is itself his determination and is complete as it stands/i)
+    // The reason requirement survives for the case it was written for.
+    expect(user).toContain('A determination alone is not a complete answer without its reason')
+  })
+
+  it('sends the subrogation slot to the cause of loss, not to the negative answer', () => {
+    const { user } = buildPrompt({
+      transcript: 't',
+      claim: null,
+      templateSpec: { subrogation_reason: { label: 'Subrogation reason', type: 'narrative' } },
+    })
+
+    expect(user).toMatch(/does not belong in this slot at all/i)
+    expect(user).toContain('Echo the cause you extracted for origin_narrative')
+    // The old fallback produced "the damages are an absence of any identified
+    // subrogation potential", which is what this replaced.
+    expect(user).not.toContain('an absence of any identified subrogation potential')
+  })
+})
+
 describe('variant fields in the tag list', () => {
   it('lists allowed variant keys, which validateFields matches on exactly', () => {
     const spec = {
@@ -573,7 +635,26 @@ describe('transcript source framing', () => {
       transcriptSource: 'master',
     })
 
-    expect(system).toMatch(/never from an agent/i)
+    expect(system).toMatch(/never evidence for a value/i)
+    expect(system).toContain('never cite one')
+  })
+
+  // resolveExtractionTranscript passes the full master (transcript) to the
+  // model and only the adjuster-turn projection (haystack) to validateFields —
+  // see transcription.test.ts's 'strips speaker labels for the span haystack'.
+  // The framing used to tell the model the agent's turns had been removed,
+  // which is not what it receives; a short answer is unreadable without the
+  // question it answers, so the framing now describes what is actually there.
+  it('tells the model both speakers are present, and to read the agent for context', () => {
+    const { system } = buildPrompt({
+      transcript: 'anything',
+      templateSpec,
+      transcriptSource: 'master',
+    })
+
+    expect(system).toContain('Both speakers are present and labelled')
+    expect(system).toMatch(/which question a short answer belongs to/i)
+    expect(system).not.toContain("agent's turns removed")
   })
 
   it.each([
