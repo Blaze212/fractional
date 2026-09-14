@@ -308,7 +308,6 @@
     "type": "variant",
     "section": "Interior",
     "required": true,
-    "emptyText": "Inspection found no interior-related damages.",
     "values": [
       {
         "key": "not_affected",

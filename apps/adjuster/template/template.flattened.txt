@@ -56,8 +56,5 @@ There are no subrogation possibilities as the damages are {{subrogation_reason}}
 COINSURANCE:
 {{coinsurance_status}}
 
-FURTHER HANDLING:
-We will need to confirm the carrier has accepted liability or if a denial of the claim will take place. Once that is confirmed, we will work on the following items to conclude this loss:
-
 CLAIM COMPLETION:
 At this time our claim handling has been completed and the claim is being forwarded to the carrier for their review and approval. Thank you for allowing Ibis Claim Services to assist in the handling of this loss. We look forward to working with you in the future.

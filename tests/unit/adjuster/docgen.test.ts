@@ -168,22 +168,42 @@ describe('resolveTagsForDoc', () => {
 
   it("renders a field's emptyText fallback instead of a blank gap when the schema declares one", () => {
     const validated = {
-      interior_status: { valid: true, empty: true, label: 'Interior status' },
+      coinsurance_narrative: { valid: true, empty: true, label: 'Coinsurance narrative' },
     }
     const schemaWithEmptyText = {
-      interior_status: {
-        label: 'Interior status',
-        type: 'variant',
-        emptyText: 'Inspection found no interior-related damages.',
-        values: [{ key: 'not_affected', text: 'The dwelling interior was not affected.' }],
+      coinsurance_narrative: {
+        label: 'Coinsurance narrative',
+        type: 'narrative',
+        emptyText: 'No coinsurance penalty applies to this loss.',
       },
     }
 
     const { resolved } = resolveTagsForDoc(validated, schemaWithEmptyText)
 
-    expect(resolved.interior_status).toMatchObject({
-      text: 'Inspection found no interior-related damages.',
+    expect(resolved.coinsurance_narrative).toMatchObject({
+      text: 'No coinsurance penalty applies to this loss.',
     })
+  })
+
+  // interior_status carried an emptyText for eleven days that could never fire:
+  // the field is required: true, so validateFields routes an unanswered one to
+  // needsInput (valid: false), never to the empty branch emptyText lives in.
+  // The fallback is gone; a silent Interior is meant to reach the adjuster.
+  it('flags a silent interior_status for input rather than asserting no damages', () => {
+    const validated = { interior_status: { valid: false, label: 'Interior status' } }
+    const interiorSchema = {
+      interior_status: {
+        label: 'Interior status',
+        type: 'variant',
+        values: [
+          { key: 'not_affected', text: 'The dwelling interior was not affected during this loss.' },
+        ],
+      },
+    }
+
+    const { resolved } = resolveTagsForDoc(validated, interiorSchema)
+
+    expect(resolved.interior_status.text).toBe('[NEEDS INPUT: Interior status]')
   })
 
   it('flags a required variant branch whose canned text is blank instead of rendering an invisible gap', () => {

@@ -290,3 +290,19 @@ describe('spec 020 phase 6: mitigation always renders a section', () => {
     expect(present?.text).toBe('{{mitigation_narrative}}')
   })
 })
+
+// Further Handling was static boilerplate with no tags behind it (see the
+// template README's "left as static boilerplate" note), so dropping it is a
+// pure text edit — nothing in enums.json referenced it. The live
+// TEMPLATE_DOC_ID Doc is what actually renders and has to be edited to match;
+// this only pins the repo copy the parity checks above read.
+describe('further handling section', () => {
+  it('is gone from the flattened template', () => {
+    expect(templateText).not.toContain('FURTHER HANDLING')
+    expect(templateText).not.toContain('confirm the carrier has accepted liability')
+  })
+
+  it('leaves coinsurance running straight into claim completion', () => {
+    expect(templateText).toContain('{{coinsurance_status}}\n\nCLAIM COMPLETION:')
+  })
+})
