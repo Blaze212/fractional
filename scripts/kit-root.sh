@@ -20,9 +20,15 @@ fixit() {
 }
 
 # kit_version is a flat scalar on purpose so this grep works with no YAML parser.
+#
+# The trailing `|| true` is load-bearing. Under `set -euo pipefail`, a profile that EXISTS
+# but carries no kit_version line makes grep exit 1, the pipeline inherits it, and `set -e`
+# kills the script on this very line — before the missing-pin diagnostic below can run. The
+# whole contract of this resolver is that a bad or absent pin fails LOUDLY with exit 3 and
+# the fix-it command; a bare `exit 1` and no message is the one outcome it must never have.
 want=""
 if [ -f "$profile" ]; then
-  want="$(grep -E "^kit_version:" "$profile" | head -1     | sed -E "s/^kit_version:[[:space:]]*//; s/[\"']//g; s/[[:space:]]*(#.*)?$//")"
+  want="$(grep -E "^kit_version:" "$profile" | head -1     | sed -E "s/^kit_version:[[:space:]]*//; s/[\"']//g; s/[[:space:]]*(#.*)?$//" || true)"
 fi
 if [ -z "$want" ]; then
   echo "bh-delivery: no kit_version in $profile — cannot verify the kit pin." >&2

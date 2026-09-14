@@ -2,7 +2,7 @@
 # Everything the kit used to hardcode per repo lives here. Schema and worked examples:
 #   node "$(scripts/kit-root.sh)/scripts/profile.mjs" validate .claude/delivery-profile.yaml
 #   "$(scripts/kit-root.sh)"/profile-schema/delivery-profile.schema.json
-kit_version: '1.0.2'
+kit_version: '1.0.3'
 repo:
   github: Blaze212/fractional
   default_branch: main
