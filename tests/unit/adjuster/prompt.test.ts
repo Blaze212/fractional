@@ -511,6 +511,30 @@ describe('negative answers to the intake agent section questions', () => {
     expect(user).toContain('A determination alone is not a complete answer without its reason')
   })
 
+  it('routes a negative interior answer to the not_affected branch', () => {
+    const { user } = buildPrompt({
+      transcript: 't',
+      claim: null,
+      templateSpec: { interior_status: { label: 'Interior status', type: 'variant' } },
+    })
+
+    expect(user).toContain('interior_status:')
+    expect(user).toContain('The dwelling interior was not affected during this loss.')
+    expect(user).toMatch(/needs no interior_damage_narrative behind it/i)
+    // The whole point of choosing this over an emptyText fallback: an interior
+    // nobody raised still reaches the adjuster as [NEEDS INPUT] rather than
+    // asserting a finding he never made.
+    expect(user).toMatch(/silence is not a "not_affected" answer/i)
+  })
+
+  it('names interior among the status variants the one-word rule covers', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    // The rule is scoped by an explicit list, so interior only inherits it by
+    // being in that list — spec 026 shipped without it, which is the bug.
+    expect(system).toContain('Status variants (roof, exterior, interior,')
+  })
+
   it('sends the subrogation slot to the cause of loss, not to the negative answer', () => {
     const { user } = buildPrompt({
       transcript: 't',
