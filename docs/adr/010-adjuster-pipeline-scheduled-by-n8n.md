@@ -191,6 +191,62 @@ now use 660000 ms. A timeout below the real bound would take the failure branch
 while Apps Script was still working normally — a false alarm indistinguishable
 from a dead pipeline.
 
+## Amendment (2026-09-14) — the drain calls Apps Script directly, not through the Worker
+
+The decision above routed the schedule at `https://www.bh-systems.com/texml/gas`,
+reusing the Worker proxy the telephony webhooks already went through. That is
+wrong for this caller, and the way it failed is worth recording because nothing
+about it looks like a timeout problem from inside n8n.
+
+**Cloudflare answers 524 at roughly 100 seconds.** It is an edge timeout between
+the client and the origin, not configurable outside an Enterprise plan, and it
+has no relationship to the HTTP node's own timeout. The execution that exposed it
+had that timeout set to 660000 ms and still died at 125 s wall clock with
+`{"data": "error code: 524\n"}` as the body — the connection was already gone
+when n8n's own clock was still eight minutes from expiring.
+
+The ceiling sat far below what this ADR deliberately allows. The budget is 240 s,
+checked before an iteration and never during one, on top of Apps Script's
+6-minute cap: a 600-second worst case, reasoned through in the **Timeout**
+section of `n8n/adjuster/README.md` and corrected upward once already when spec
+024's 5 minutes proved too short. Behind Cloudflare none of that was reachable.
+Empty-queue drains returned in 6-11 s and looked healthy; the first pass with a
+real job took 63 s; the next crossed 100 s and failed.
+
+**The Worker was never needed on this path.** `proxyToAppsScript` exists because
+Apps Script `/exec` answers 302 to a `script.googleusercontent.com` URL carrying
+the real body and Telnyx's TeXML callbacks do not follow that hop. n8n's HTTP
+Request node follows redirects natively. Pointing the drain at `/exec` removes
+the Cloudflare ceiling and leaves Apps Script's 6-minute cap as the only limit,
+inside the node's timeout rather than outside it.
+
+Nothing about the Worker or the call path changed. Every telephony and webhook
+route still goes through `/texml/gas`.
+
+**Consequence:** the `/exec` URL now lives in the n8n workflow as well as the
+Worker's `GAS_EXEC_URL` secret and CI's. `docs/specs/022`'s BH-107 reissues that
+URL when the script moves to Brandon's account; both have to change together, and
+a drain left pointing at the old deployment fails closed rather than silently, so
+the failure branch will say so.
+
+It is not committed. The repo is public, and while `/exec` is gated by
+`WEBHOOK_SECRET`, publishing the endpoint widens the surface for no benefit — so
+`runner-drain.workflow.json` carries `REPLACE_WITH_GAS_EXEC_URL` alongside the
+credential placeholder that was already there.
+
+**This also closes two items left open under Rollout state.** The error workflow
+is now named on the drain, and the every-minute Apps Script trigger is gone.
+
+### A manual execution never fires the error workflow
+
+Recorded here because it has now been mistaken for a broken alert more than once.
+n8n runs error workflows for automatic executions only. Hitting Execute Workflow
+on a drain that fails turns the execution red and posts nothing to Slack, which
+is indistinguishable from a dead Slack node. The Rollout state section above
+already noted this for the wrong-secret test; the general rule is that any
+"it failed but did not alert" report should be checked against the execution's
+`mode` before anything else.
+
 ## Alternatives considered
 
 **Leave it on Apps Script and lengthen the trigger interval.** The longest Apps

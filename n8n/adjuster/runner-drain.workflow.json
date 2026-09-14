@@ -20,7 +20,7 @@
     },
     {
       "parameters": {
-        "url": "https://www.bh-systems.com/texml/gas",
+        "url": "REPLACE_WITH_GAS_EXEC_URL",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpQueryAuth",
         "sendQuery": true,
