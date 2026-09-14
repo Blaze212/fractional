@@ -56,6 +56,10 @@ jobs:
           ref: refs/tags/v${{ steps.kit.outputs.version }}
           token: ${{ secrets.BH_DELIVERY_TOKEN }}
           path: .bh-delivery
+          # Do NOT leave the kit token in .bh-delivery/.git/config: the very next step
+          # runs scripts/tests/run.sh, which is PR-controlled code in a public repo.
+          # Nothing reads from the kit remote after the clone, so persistence buys nothing.
+          persist-credentials: false
 
       - name: Point the shims at the checked-out kit
         run: |

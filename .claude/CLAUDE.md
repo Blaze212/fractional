@@ -27,7 +27,7 @@ CareerSystems - We build tools to aid jobseekers
 
 - Dev: `pnpm dev:portal` and `pnpm dev:diagnostic`
 - Build: `pnpm build` (all) and `pnpm build:embed` (diagnostic embed)
-- Test: no root test command is currently defined (run package-level tests when added)
+- Test: `pnpm test` (all unit tests) or `pnpm test:unit:coverage` (with coverage); `pnpm test:watch` while iterating
 - Format: `pnpm format` (write) or `pnpm format:check` (CI)
 - Lint: `pnpm lint`
 
@@ -66,8 +66,8 @@ This project uses Supabase's **asymmetric JWT signing keys** (ES256). The legacy
 - Auth is handled inside each function via `withAuth()` in `_shared/auth.ts`, which calls `supabase.auth.getUser(token)` and correctly validates ES256 tokens.
 - Internal functions (`job-matcher-run`, `job-matcher-cron`) use `isServiceRoleBearer()` for server-to-server auth.
 - Webhooks (`webhook-skool`) use a shared secret header (`X-Skool-Secret`), not a JWT.
-- Fuctions should have ONE responsibilty
-- Pay special attention do backawards incompatible changes. CALL THESE OUT. When required suggest implementhing these standalone and not coupling with a feature launch
+- Functions should have ONE responsibility
+- Pay special attention to backwards-incompatible changes. CALL THESE OUT. When required, suggest implementing these standalone and not coupling them with a feature launch
 - NEVER use 'unknown' type. You must explicitly ask for my permission to use unknown types!
 
 ## Edge Function Module Isolation — Deno.serve Side-Effect Rule
