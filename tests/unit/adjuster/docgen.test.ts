@@ -902,3 +902,64 @@ describe('resolveTagsForDoc: clause fields', () => {
     ])
   })
 })
+
+describe('shareDraft', () => {
+  function harness(notifyEmails: string[], addEditor?: (email: string) => void) {
+    const added: string[] = []
+    const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
+
+    const sandbox = loadGs('apps/adjuster/src/docgen.js', {
+      getConfigList: (key: string, fallback: string[]) =>
+        key === 'NOTIFY_EMAILS' ? notifyEmails : fallback,
+      logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
+      describeError: (err: Error) => ({ error: String(err.message ?? err), stack: 'stack' }),
+    })
+
+    const file = {
+      getId: () => 'draft-1',
+      addEditor: (email: string) => {
+        if (addEditor) addEditor(email)
+        added.push(email)
+      },
+    }
+
+    return { sandbox, file, added, logged }
+  }
+
+  it('gives every NOTIFY_EMAILS address edit access to the draft', () => {
+    const h = harness(['brandon@example.com', 'ops@example.com'])
+
+    h.sandbox.shareDraft(h.file)
+
+    expect(h.added).toEqual(['brandon@example.com', 'ops@example.com'])
+  })
+
+  it('shares with nobody when NOTIFY_EMAILS is unset', () => {
+    const h = harness([])
+
+    h.sandbox.shareDraft(h.file)
+
+    expect(h.added).toEqual([])
+  })
+
+  it('keeps sharing with the rest of the list when one address is refused, and logs the refusal', () => {
+    const h = harness(['blocked@external.com', 'ops@example.com'], (email) => {
+      if (email === 'blocked@external.com') throw new Error('sharing policy')
+    })
+
+    expect(() => h.sandbox.shareDraft(h.file)).not.toThrow()
+
+    expect(h.added).toEqual(['ops@example.com'])
+    expect(h.logged).toEqual([
+      {
+        event: 'docgen.share_failed',
+        fields: {
+          email: 'blocked@external.com',
+          file_id: 'draft-1',
+          error: 'sharing policy',
+          stack: 'stack',
+        },
+      },
+    ])
+  })
+})
