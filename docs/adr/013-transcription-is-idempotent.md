@@ -43,13 +43,27 @@ transcription back forever.
 
 So `transcription_fingerprint` covers everything the calls actually read:
 
-| Input                    | Why it is in the fingerprint                                           |
-| ------------------------ | ---------------------------------------------------------------------- |
-| `audio_drive_id`         | A different recording is a different call                              |
-| keyterms                 | They bias both ASR calls; a corrected claim match changes only these   |
-| `job.transcript`         | The voice platform's own transcript is a merge source                  |
-| `MASTER_TRANSCRIPT_MODE` | shadow/live decides `extraction_input`, which a reused pass hands back |
-| both model ids           | A model bump must re-transcribe, not serve the previous model's result |
+| Input                                             | Why it is in the fingerprint                                                      |
+| ------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `audio_drive_id`                                  | A different recording is a different call                                         |
+| keyterms                                          | They bias both ASR calls; a corrected claim match changes only these              |
+| `job.transcript`                                  | The voice platform's own transcript is a merge source                             |
+| `MASTER_TRANSCRIPT_MODE`                          | shadow/live decides `extraction_input`, which a reused pass hands back            |
+| both ASR model ids                                | A model bump must re-transcribe, not serve the previous model's result            |
+| `MASTER_TRANSCRIPT_MODEL`, `OPENROUTER_FALLBACKS` | The cached result includes the merge, so the merge's model is part of the key     |
+| claim content, glossary term **and definition**   | `formatClaimBlock` and `formatGlossary` render both into the merge prompt in full |
+
+Keyterms are not a proxy for the merge's view of the claim and glossary:
+`sanitizeKeyterm` caps a term at 5 words and the list at 1000, and a glossary
+definition reaches the merge prompt without reaching the keyterms at all.
+
+The claim is fingerprinted by its **content**, not by the rendered prompt block,
+and `_rowIndex`, `property_lookup_at`, `calendar_fingerprint` and
+`property_address_fingerprint` are excluded. `formatClaimBlock` serializes every
+key on the row, so a faithful hash of the prompt would re-buy two ASR passes and
+a merge every time a calendar tick ran a property lookup or a row moved up the
+sheet — the same defect in a new place. Those four are bookkeeping the merge
+gains nothing from; everything the merge can actually reason about is in the key.
 
 This is the same mechanism spec 027 applied to calendar enrichment, pointed at
 the more expensive call. `fingerprintText` / `fingerprintParts` moved to
@@ -63,6 +77,19 @@ cannot: _have the inputs to this specific paid call changed since we last paid
 for it?_ Status still decides which stage runs. The fingerprint only decides
 whether that stage has to buy its result again.
 
+### A reuse is rejected when there is nothing meaningful to reuse
+
+Two rejections, both falling through to a full pass:
+
+- **`extraction_input` is blank.** `retranscribeJob` empties the transcription
+  columns and re-queues stage A. Its fingerprint used to survive that, so the next
+  pass matched, `storedTranscriptIsReadable` fell through to its voice-platform
+  branch, and the blanks were handed back as a cache hit — silently swallowing the
+  operator request that function exists to make. `retranscribeJob` now clears the
+  fingerprint, and `reusableTranscription` independently refuses a row with no
+  `extraction_input`, so neither half depends on the other being remembered.
+- **The artifact is unreadable.** Below.
+
 ### A reuse is rejected when the artifact it vouches for is unreadable
 
 A fingerprint match over a master transcript somebody deleted out of Drive would
@@ -71,6 +98,16 @@ checks the one artifact `resolveExtractionTranscript` will actually reach for,
 branching on `extraction_input` exactly as that function does, and falls through
 to a full pass when it cannot be read. Paying again beats silently producing a
 draft from an empty transcript.
+
+### Both operator entry points write under the script lock
+
+`forceRetranscribe` and `retranscribeJob` read, log and write inside
+`withJobLock`. Without it a drain already holding a lease on that row can finish
+after the write and overwrite the cleared fingerprint with its own result, losing
+the request with no trace. Both also call `ensureJobsColumns` first:
+`transcription_fingerprint` postdates every Jobs sheet in existence and
+`writeRowFields` throws on a header it cannot find, so without it the documented
+override is unusable until the next drain happens to add the column.
 
 ### The override is explicit and named
 
@@ -115,6 +152,13 @@ means fetching the blob before deciding whether to skip, which is most of the
 latency the skip is trying to avoid. `audio_drive_id` changes whenever the
 recording is re-ingested, which is the case that matters. Worth revisiting if a
 recording is ever mutated in place under a stable id.
+
+**Two-level caching — reuse the raw ASR, re-run the merge.** Considered once the
+merge inputs turned out to belong in the key. It would mean a changed merge model
+or glossary definition costs one merge call rather than two ASR calls plus a
+merge. Rejected for now on complexity: it needs the raw transcripts read back out
+of Drive and re-gated, for a saving on a path that should be rare once the inputs
+are stable. Worth revisiting if merge-model churn proves common.
 
 **A global spend cap.** Still worth doing, still out of scope, now for the third
 time. It would bound the damage from the next defect of this shape without

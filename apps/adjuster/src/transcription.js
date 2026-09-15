@@ -997,8 +997,10 @@ function availableSources(sources, precedence) {
 // problem: the floor is the job's own voice-platform transcript, which is
 // exactly today's behavior, so a dead vendor degrades the run rather than
 // failing the job.
-// ADR 013. Everything the ASR and merge calls actually read. Any change here has
-// to re-transcribe, and nothing else may:
+// ADR 013. Everything the cached result was built from. The cache key covers the
+// WHOLE pass, ASR and merge alike, so it has to cover the merge's inputs too —
+// reusing a master merged from a claim or a model that has since changed would be
+// exactly the stale-cache failure this guard exists to avoid.
 //
 //   audio           — the recording itself. A different file is a different call.
 //   keyterms        — buildKeyterms derives these from the matched claim, the
@@ -1009,21 +1011,80 @@ function availableSources(sources, precedence) {
 //   voice text      — the voice platform's own transcript is a merge source.
 //   mode            — shadow/live decides extraction_input, which is part of what
 //                     a reused pass hands back.
-//   model ids       — a model bump must re-transcribe, not serve a cached result
+//   ASR model ids   — a model bump must re-transcribe, not serve a cached result
 //                     from the previous one.
+//   merge inputs    — the merge prompt renders the claim and the glossary in full
+//                     (formatClaimBlock / formatGlossary) and runs on
+//                     MASTER_TRANSCRIPT_MODEL with OPENROUTER_FALLBACKS. Keyterms
+//                     are NOT a proxy for these: sanitizeKeyterm caps terms at 5
+//                     words and the list at 1000, and the glossary's definitions
+//                     reach the merge without reaching the keyterms at all.
 function transcriptionInputsFingerprint(config) {
   var job = config.job || {}
 
   return fingerprintParts([
-    'v1',
+    'v2',
     config.mode,
     job.source,
     job.audio_drive_id,
     TRANSCRIPTION_MODELS.elevenlabs.id,
     TRANSCRIPTION_MODELS.qwen.id,
-    (config.keyterms || []).join('|'),
+    // Nested rather than joined: sanitizeKeyterm's banned-character list does not
+    // include '|', so joining on one would fingerprint ['A|B'] and ['A', 'B']
+    // identically and reuse the wrong pass. fingerprintParts separates on \u0000,
+    // which no keyterm can contain.
+    fingerprintParts(config.keyterms || []),
     fingerprintText(job.transcript),
+    mergeInputsFingerprint(config.claim, config.glossary),
   ])
+}
+
+// The merge's own inputs. Deliberately NOT a fingerprint of the rendered prompt:
+// formatClaimBlock serializes every key on the claim row, which since
+// docs/specs/027 includes property_lookup_at, and getSheetRows adds _rowIndex.
+// Letting a property lookup or a row moving up the sheet re-buy two ASR passes
+// would be the same bug in a new place. This covers the claim's content, sorted
+// so key order cannot matter, minus the bookkeeping the merge gains nothing from.
+var FINGERPRINT_IGNORED_CLAIM_KEYS = [
+  '_rowIndex',
+  'property_lookup_at',
+  'calendar_fingerprint',
+  'property_address_fingerprint',
+]
+
+function mergeInputsFingerprint(claim, glossary) {
+  return fingerprintParts([
+    // getOptionalConfig on both halves, where mergeIfPossible uses getConfig for
+    // the fallback: this runs on every pass, including ones with too few sources
+    // to merge at all, and must not turn an unconfigured OpenRouter into a thrown
+    // stage. The effective value is identical whenever the merge can actually run.
+    getOptionalConfig('MASTER_TRANSCRIPT_MODEL', getOptionalConfig('OPENROUTER_MODEL', '')),
+    getConfigList('OPENROUTER_FALLBACKS', []).join(','),
+    getOptionalConfig('ADJUSTER_NAME', 'Brandon'),
+    fingerprintParts(claimFingerprintParts(claim)),
+    fingerprintParts(glossaryFingerprintParts(glossary)),
+  ])
+}
+
+function claimFingerprintParts(claim) {
+  if (!claim) return ['no_claim']
+
+  return Object.keys(claim)
+    .filter(function (key) {
+      return FINGERPRINT_IGNORED_CLAIM_KEYS.indexOf(key) === -1
+    })
+    .sort()
+    .map(function (key) {
+      return key + '=' + String(claim[key])
+    })
+}
+
+// term AND definition: formatGlossary renders both into the merge prompt, so an
+// edited definition changes the merge even though the keyterms are untouched.
+function glossaryFingerprintParts(glossary) {
+  return (glossary || []).map(function (entry) {
+    return String((entry && entry.term) || '') + '=' + String((entry && entry.definition) || '')
+  })
 }
 
 // The stored pass, when the row's fingerprint matches AND the artifacts it points
@@ -1036,6 +1097,19 @@ function transcriptionInputsFingerprint(config) {
 function reusableTranscription(job, fingerprint) {
   var stored = String(job.transcription_fingerprint || '')
   if (!stored || stored !== fingerprint) return null
+
+  // A row whose extraction_input has been cleared has had its transcription
+  // deliberately emptied (retranscribeJob) or never completed one. There is
+  // nothing to reuse, and storedTranscriptIsReadable's voice-platform fallback
+  // would otherwise wave through a set of blank transcript fields as a cache hit.
+  if (!String(job.extraction_input || '')) {
+    logEvent('transcription.reuse_rejected', {
+      capture_id: job.capture_id,
+      reason: 'no_extraction_input',
+      extraction_input: '',
+    })
+    return null
+  }
 
   var fields = {
     transcript_elevenlabs_id: String(job.transcript_elevenlabs_id || ''),
@@ -1089,24 +1163,34 @@ function storedTranscriptIsReadable(job, fields) {
 // fresh pass. Run by hand from the Apps Script editor against a capture_id off
 // the Jobs tab, the same way the replay entry points are.
 function forceRetranscribe(captureId) {
-  var job = getJobByCaptureId(captureId)
-  if (!job) throw new Error('No job for capture_id: ' + captureId)
+  // Read, log and write under the script lock. A drain holding a lease on this
+  // row can otherwise finish after the write and overwrite the cleared
+  // fingerprint with its own result, losing the forced rerun with no trace.
+  return withJobLock(function () {
+    var job = getJobByCaptureId(captureId)
+    if (!job) throw new Error('No job for capture_id: ' + captureId)
 
-  logEvent('transcription.force_requested', {
-    capture_id: captureId,
-    previous_status: job.status,
-    previous_fingerprint: String(job.transcription_fingerprint || ''),
+    // transcription_fingerprint postdates every Jobs sheet in existence, and
+    // writeRowFields throws on a header it cannot find. Without this the
+    // documented override is unusable until the next drain adds the column.
+    ensureJobsColumns(JOBS_TRANSCRIPTION_COLUMNS)
+
+    logEvent('transcription.force_requested', {
+      capture_id: captureId,
+      previous_status: job.status,
+      previous_fingerprint: String(job.transcription_fingerprint || ''),
+    })
+
+    upsertJob(captureId, {
+      status: 'pending',
+      transcription_fingerprint: '',
+      lease_until: '',
+      attempts: 0,
+      error: '',
+    })
+
+    return { capture_id: captureId, status: 'pending' }
   })
-
-  upsertJob(captureId, {
-    status: 'pending',
-    transcription_fingerprint: '',
-    lease_until: '',
-    attempts: 0,
-    error: '',
-  })
-
-  return { capture_id: captureId, status: 'pending' }
 }
 
 function runTranscriptionPass(job, claim) {
@@ -1138,6 +1222,8 @@ function runTranscriptionPass(job, claim) {
     mode: mode,
     job: job,
     keyterms: keyterms,
+    claim: claim,
+    glossary: glossary,
   })
 
   var reusable = reusableTranscription(job, fingerprint)
@@ -1366,30 +1452,39 @@ function resolveExtractionTranscript(job) {
 // transcription columns and puts the job back to pending so the runner redoes
 // stage A. call_folder_id is deliberately kept: the previous run's artifacts stay
 // where they are and the new ones version alongside them.
+// Locked for the same reason forceRetranscribe is: a drain may already hold a
+// lease on this row, and a stage finishing after this returns would write its
+// result straight over the clearing.
 function retranscribeJob(captureId) {
-  var job = getJobByCaptureId(captureId)
-  if (!job) throw new Error('No job for capture_id: ' + captureId)
+  return withJobLock(function () {
+    var job = getJobByCaptureId(captureId)
+    if (!job) throw new Error('No job for capture_id: ' + captureId)
 
-  ensureJobsColumns(JOBS_TRANSCRIPTION_COLUMNS)
+    ensureJobsColumns(JOBS_TRANSCRIPTION_COLUMNS)
 
-  upsertJob(captureId, {
-    transcript_elevenlabs_id: '',
-    transcript_qwen_id: '',
-    transcript_master: '',
-    transcript_master_id: '',
-    master_coverage: '',
-    transcription_sources: '',
-    extraction_input: '',
-    status: 'pending',
-    lease_until: '',
-    attempts: 0,
-    error: '',
+    upsertJob(captureId, {
+      transcript_elevenlabs_id: '',
+      transcript_qwen_id: '',
+      transcript_master: '',
+      transcript_master_id: '',
+      master_coverage: '',
+      transcription_sources: '',
+      extraction_input: '',
+      // ADR 013. Without this the emptied row still matches its own fingerprint
+      // and the next pass "reuses" the blanks it was just asked to discard,
+      // silently swallowing the retranscribe this function exists to request.
+      transcription_fingerprint: '',
+      status: 'pending',
+      lease_until: '',
+      attempts: 0,
+      error: '',
+    })
+
+    logEvent('transcription.retranscribe_queued', {
+      capture_id: captureId,
+      previous_status: job.status,
+    })
+
+    return true
   })
-
-  logEvent('transcription.retranscribe_queued', {
-    capture_id: captureId,
-    previous_status: job.status,
-  })
-
-  return true
 }
