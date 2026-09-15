@@ -74,6 +74,23 @@ describe('buildPrompt', () => {
     expect(user).not.toContain('9f8e7d6c5b4a3210')
   })
 
+  // ADR 009 / spec 022. The extraction prompt used to treat "the adjuster rejected the
+  // identity an agent proposed" as a mismatch trigger, which contradicts ADR 009 /
+  // spec 022: an agent's read-back is never evidence, which is exactly why
+  // resolveClaimMatch reads adjusterTurnsOf() and never the raw transcript. A real
+  // call (retell-call_ef7420efbe359fcf34e72232774) parked at needs_review with a
+  // correct claim mapping because the agent opened with the wrong insured and the
+  // adjuster corrected it — the pipeline working, reported as the pipeline
+  // failing, with no draft and no notification.
+  it('scopes the identity mismatch to the adjuster against the claim context', () => {
+    const { system } = buildPrompt({ transcript: 'anything', templateSpec })
+
+    expect(system).toMatch(/only comparison that can set claim_identity_mismatch/i)
+    expect(system).toMatch(/an identity an agent proposed is never evidence/i)
+    expect(system).toMatch(/ignore the agent's proposal entirely/i)
+    expect(system).not.toMatch(/rejects the identity an agent proposed/i)
+  })
+
   it('notes when no claim was matched', () => {
     const { user } = buildPrompt({ transcript: 'anything', templateSpec, claim: null })
 
