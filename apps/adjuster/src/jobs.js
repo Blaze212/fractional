@@ -130,8 +130,12 @@ function getClaims() {
 var CLAIM_CANDIDATES_CACHE_KEY = 'claim_candidates_v1'
 var CLAIM_CANDIDATES_CACHE_TTL_SECONDS = 21600 // CacheService's own max: 6h
 
-function refreshClaimCandidatesCache() {
-  var claims = getClaims()
+// Takes the rows when the caller has already read them. The calendar tick reads
+// getClaims() for its enrichment cache check (docs/specs/027) and then called
+// this, which read the whole tab a second time for the same rows — one wasted
+// full-sheet read per tick. Callers with nothing to hand over still get the read.
+function refreshClaimCandidatesCache(claims) {
+  claims = claims || getClaims()
   try {
     CacheService.getScriptCache().put(
       CLAIM_CANDIDATES_CACHE_KEY,

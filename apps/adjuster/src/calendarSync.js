@@ -191,8 +191,59 @@ function runInstallCalendarSync() {
 // claims from syncing — but a failure to reach the calendar at all fails loudly
 // (and rethrows, matching runPipelineTick) so a broken sync doesn't fail silent
 // and leave claims stale with no signal anywhere.
+// The cache check is a read-then-decide-then-spend, and only the final upsert was
+// ever inside a lock. Two overlapping executions — the hourly trigger and a manual
+// run, say — would both read the same stale fingerprints, both decide to enrich,
+// and both spend before either write became visible. Serializing the whole tick
+// is not an option: it makes paid LLM calls, and holding the script lock across
+// them would starve webhook ingest for minutes (docs/specs/024). So the
+// check-and-reserve is what gets serialized, briefly, and the slow work happens
+// outside the lock.
+//
+// TTL rather than a released-only marker so a tick killed mid-flight (the
+// 6-minute Apps Script execution cap) cannot wedge the sync until someone
+// notices. No tick can outlive that cap, so nothing legitimate is still running
+// when the marker expires.
+var CALENDAR_SYNC_IN_FLIGHT_KEY = 'calendar_sync_in_flight'
+var CALENDAR_SYNC_IN_FLIGHT_TTL_SECONDS = 360
+
+function reserveCalendarSyncSlot() {
+  try {
+    return withJobLock(function () {
+      var cache = CacheService.getScriptCache()
+      if (cache.get(CALENDAR_SYNC_IN_FLIGHT_KEY)) return false
+
+      cache.put(
+        CALENDAR_SYNC_IN_FLIGHT_KEY,
+        String(Date.now()),
+        CALENDAR_SYNC_IN_FLIGHT_TTL_SECONDS,
+      )
+      return true
+    })
+  } catch (err) {
+    // The reservation is an optimisation, not a correctness guarantee — a
+    // CacheService or lock hiccup degrades to the old behaviour (a tick that runs
+    // and may duplicate work) rather than to a sync that stops running at all.
+    logEvent('calendar_sync.slot_check_failed', { error: String(err) })
+    return true
+  }
+}
+
+function releaseCalendarSyncSlot() {
+  try {
+    CacheService.getScriptCache().remove(CALENDAR_SYNC_IN_FLIGHT_KEY)
+  } catch (err) {
+    // Left to expire on its own TTL.
+  }
+}
+
 function syncClaimsFromCalendar() {
   var startedAt = Date.now()
+
+  if (!reserveCalendarSyncSlot()) {
+    logEvent('calendar_sync.tick_skipped', { reason: 'already_running' })
+    return
+  }
 
   try {
     var calendarId = getConfig('CALENDAR_ID')
@@ -216,8 +267,11 @@ function syncClaimsFromCalendar() {
     logEvent('calendar_sync.tick_start', { event_count: events.length })
 
     // ONE Sheet read per tick, mapped by claim_id, rather than one per event:
-    // every event's enrichment-cache check is answered out of this map.
-    var storedClaims = indexClaimsByCalendarId(getClaims())
+    // every event's enrichment-cache check is answered out of this map. The same
+    // rows are handed to refreshClaimCandidatesCache below, which would otherwise
+    // read the whole tab again for them.
+    var claimRows = getClaims()
+    var storedClaims = indexClaimsByCalendarId(claimRows)
 
     var syncedTitles = []
     var skippedTitles = []
@@ -243,7 +297,7 @@ function syncClaimsFromCalendar() {
     // way every other best-effort piece of this tick already does, rather
     // than failing the sync or skipping the tick_end log below.
     try {
-      refreshClaimCandidatesCache()
+      refreshClaimCandidatesCache(claimRows)
     } catch (err) {
       logEvent('calendar_sync.cache_refresh_failed', { error: String(err) })
     }
@@ -271,6 +325,8 @@ function syncClaimsFromCalendar() {
       ms: Date.now() - startedAt,
     })
     throw err
+  } finally {
+    releaseCalendarSyncSlot()
   }
 }
 
@@ -285,12 +341,14 @@ function syncClaimsFromCalendar() {
 // the cache saved.
 function syncEventToClaim(event, storedClaim) {
   var eventId = event.getId()
+  var calls = 0
+  var skipped = 0
 
   try {
     var header = parseEventTitle(event.getTitle())
     if (!header.claim_number) {
       logEvent('calendar_sync.title_unparsed', { event_id: eventId, title: event.getTitle() })
-      return eventOutcome(false, 0, 0)
+      return eventOutcome(false, calls, skipped)
     }
 
     var description = event.getDescription() || ''
@@ -312,13 +370,27 @@ function syncEventToClaim(event, storedClaim) {
     var extractable = description.trim() !== ''
     var lookupable = fullAddressText !== ''
 
-    var details = decision.extract
-      ? extractCalendarFields(event.getTitle(), event.getLocation(), description)
-      : { fields: storedCalendarFields(storedClaim) }
+    // Incremented BEFORE the call, never after: a call that throws once the HTTP
+    // request is away has still been billed, and telemetry that under-reports
+    // precisely when things fail is worse than no telemetry. The catch below
+    // returns whatever has been counted by the time it fires.
+    var details
+    if (decision.extract) {
+      if (extractable) calls += 1
+      details = extractCalendarFields(event.getTitle(), event.getLocation(), description)
+    } else {
+      if (extractable) skipped += 1
+      details = { fields: storedCalendarFields(storedClaim) }
+    }
 
-    var propertyLookup = decision.lookup
-      ? lookupPropertyDetailsSafely(fullAddressText)
-      : { values: storedPropertyValues(storedClaim), failed: false }
+    var propertyLookup
+    if (decision.lookup) {
+      if (lookupable) calls += 1
+      propertyLookup = lookupPropertyDetailsSafely(fullAddressText)
+    } else {
+      if (lookupable) skipped += 1
+      propertyLookup = { values: storedPropertyValues(storedClaim), failed: false }
+    }
 
     // The LLM's extracted fields are a lossy summary — keep the verbatim
     // description alongside them so nothing the model missed or mis-normalized
@@ -351,10 +423,6 @@ function syncEventToClaim(event, storedClaim) {
       upsertClaim(eventId, fields)
     })
 
-    var calls = (decision.extract && extractable ? 1 : 0) + (decision.lookup && lookupable ? 1 : 0)
-    var skipped =
-      (!decision.extract && extractable ? 1 : 0) + (!decision.lookup && lookupable ? 1 : 0)
-
     if (skipped > 0) {
       logEvent('calendar_sync.enrichment_skipped', {
         event_id: eventId,
@@ -381,8 +449,9 @@ function syncEventToClaim(event, storedClaim) {
       title: event.getTitle(),
       error: described.error,
       stack: described.stack,
+      llm_calls: calls,
     })
-    return eventOutcome(false, 0, 0)
+    return eventOutcome(false, calls, skipped)
   }
 }
 

@@ -91,6 +91,25 @@ first tick after deploy writes the columns and populates them, and every later
 tick skips. A row written before they existed carries blank fingerprints, which
 simply means "enrich once more, then cache".
 
+### The check-and-reserve is serialized; the spending is not
+
+The cache check is a read, then a decision, then a paid call, and only the final
+`upsertClaim` was ever inside a lock. Two overlapping executions — the hourly
+trigger and a manual run — would both read the same stale fingerprints, both
+decide to enrich, and both spend before either write became visible.
+
+Serializing the whole tick is not an option: it makes paid LLM calls, and holding
+the script lock across them would starve webhook ingest for minutes, which is
+precisely what `docs/specs/024`'s lock discipline exists to prevent. So the tick
+takes the lock only long enough to check and set an in-flight marker, then
+releases it and does the slow work outside.
+
+The marker carries a TTL equal to the Apps Script execution cap rather than
+relying solely on being released, so a tick killed mid-flight cannot wedge the
+sync until somebody notices. A failure of the reservation itself degrades to
+running the tick, not to skipping it: the reservation is an optimisation against
+duplicate spend, and a CacheService outage must not stop claims syncing.
+
 ### A miss is cached, a failure is not
 
 The property lookup has three outcomes, and they cache differently:
@@ -122,6 +141,12 @@ the same lookup again next tick.
   or two laps early. Attempts are per-stage and reset on the next clean handoff,
   so this is bounded to jobs already in flight, and each one is visible in the
   failure notification.
+- `llm_calls` counts a call from the moment it is issued, not once it returns. A
+  call that throws after its HTTP request is away has still been billed, and
+  telemetry that under-reports precisely when things fail is worse than none.
+- The tick reads the Claims tab once and hands those rows to
+  `refreshClaimCandidatesCache`, which otherwise reads the whole tab again for
+  the same data.
 - `calendar_sync.tick_end` carries `llm_calls` and `llm_calls_skipped`. On a
   steady calendar the second tick over the same events reads `llm_calls: 0`;
   anything else means a fingerprint input is changing every hour and is worth

@@ -867,6 +867,8 @@ describe('shouldReenrich', () => {
   })
 })
 
+const CACHE_KEY = 'calendar_sync_in_flight'
+
 describe('calendar sync consults the cache before it spends', () => {
   function tickHarness(
     events: Array<ReturnType<typeof fakeEvent>>,
@@ -878,41 +880,64 @@ describe('calendar sync consults the cache before it spends', () => {
     const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
     const llmCalls: string[] = []
     const webSearchCalls: string[] = []
+    const cacheEntries: Record<string, string> = {}
 
-    const sandbox = loadGs(['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'], {
-      getConfig: () => 'x',
-      getConfigList: () => [],
-      loadEnums: () => ({}),
-      formatTagList: () => 'tags',
-      buildExtractionSchema: () => ({}),
-      callOpenRouter: (config: { messages: Array<{ role: string; content: string }> }) => {
-        llmCalls.push(String(config.messages[1]?.content))
-        return { fields: { roof_age_years: { value: '19 years' } } }
+    const sandbox: Record<string, any> = loadGs(
+      ['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'],
+      {
+        getConfig: () => 'x',
+        getConfigList: () => [],
+        loadEnums: () => ({}),
+        formatTagList: () => 'tags',
+        buildExtractionSchema: () => ({}),
+        callOpenRouter: (config: { messages: Array<{ role: string; content: string }> }) => {
+          llmCalls.push(String(config.messages[1]?.content))
+          return { fields: { roof_age_years: { value: '19 years' } } }
+        },
+        callOpenRouterWebSearch: (config: {
+          messages: Array<{ role: string; content: string }>
+        }) => {
+          webSearchCalls.push(String(config.messages[1]?.content))
+          if (opts.throwOnWebSearch) throw new Error('OpenRouter request failed: 402 no credits')
+          return {
+            content:
+              opts.webSearchContent ??
+              JSON.stringify({ year_built: '1979', source_url: 'https://zillow.example/1' }),
+          }
+        },
+        withJobLock: (fn: () => unknown) => fn(),
+        ensureClaimsColumns: () => [],
+        getClaims: () => [...claims.values()],
+        upsertClaim: (claimId: string, fields: Record<string, unknown>) => {
+          claims.set(claimId, { ...(claims.get(claimId) ?? {}), ...fields, claim_id: claimId })
+        },
+        // Mirrors jobs.js's real signature: it reads the tab itself when the caller
+        // hands it nothing. Stubbing it as a no-op is what let the old "one read
+        // per tick" test pass while production did two.
+        refreshClaimCandidatesCache: (rows?: unknown[]) => {
+          if (!rows) sandbox.getClaims()
+        },
+        CacheService: {
+          getScriptCache: () => ({
+            get: () => cacheEntries[CACHE_KEY] ?? null,
+            put: (key: string, value: string) => {
+              cacheEntries[key] = value
+            },
+            remove: (key: string) => {
+              delete cacheEntries[key]
+            },
+          }),
+        },
+        CalendarApp: { getCalendarById: () => ({ getEvents: () => events }) },
+        logEvent: (event: string, fields: Record<string, unknown>) =>
+          logged.push({ event, fields }),
+        describeError: (err: Error) => ({ error: String(err.message || err), stack: '' }),
       },
-      callOpenRouterWebSearch: (config: { messages: Array<{ role: string; content: string }> }) => {
-        webSearchCalls.push(String(config.messages[1]?.content))
-        if (opts.throwOnWebSearch) throw new Error('OpenRouter request failed: 402 no credits')
-        return {
-          content:
-            opts.webSearchContent ??
-            JSON.stringify({ year_built: '1979', source_url: 'https://zillow.example/1' }),
-        }
-      },
-      withJobLock: (fn: () => unknown) => fn(),
-      ensureClaimsColumns: () => [],
-      getClaims: () => [...claims.values()],
-      upsertClaim: (claimId: string, fields: Record<string, unknown>) => {
-        claims.set(claimId, { ...(claims.get(claimId) ?? {}), ...fields, claim_id: claimId })
-      },
-      refreshClaimCandidatesCache: () => {},
-      CalendarApp: { getCalendarById: () => ({ getEvents: () => events }) },
-      logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
-      describeError: (err: Error) => ({ error: String(err.message || err), stack: '' }),
-    })
+    )
 
     const tickEnds = () => logged.filter((l) => l.event === 'calendar_sync.tick_end')
 
-    return { sandbox, claims, logged, llmCalls, webSearchCalls, tickEnds }
+    return { sandbox, claims, logged, llmCalls, webSearchCalls, tickEnds, cacheEntries }
   }
 
   function inspectionEvent(overrides: Partial<Parameters<typeof fakeEvent>[0]> = {}) {
@@ -1047,6 +1072,73 @@ describe('calendar sync consults the cache before it spends', () => {
     expect(webSearchCalls).toHaveLength(1)
   })
 
+  // The cache check is read-then-decide-then-spend and only the upsert was ever
+  // locked, so two overlapping executions could both decide to enrich and both
+  // spend before either write landed.
+  it('skips a tick while another one is already in flight', () => {
+    const { sandbox, cacheEntries, logged, llmCalls } = tickHarness([inspectionEvent()])
+
+    cacheEntries[CACHE_KEY] = String(Date.now())
+    sandbox.syncClaimsFromCalendar()
+
+    expect(llmCalls).toHaveLength(0)
+    expect(logged.find((l) => l.event === 'calendar_sync.tick_skipped')?.fields.reason).toBe(
+      'already_running',
+    )
+  })
+
+  it('releases the slot when the tick finishes, so the next hour is not blocked', () => {
+    const { sandbox, cacheEntries, llmCalls } = tickHarness([inspectionEvent()])
+
+    sandbox.syncClaimsFromCalendar()
+
+    expect(cacheEntries[CACHE_KEY]).toBeUndefined()
+    expect(llmCalls).toHaveLength(1)
+  })
+
+  it('releases the slot even when the tick throws', () => {
+    const { sandbox, cacheEntries } = tickHarness([])
+    sandbox.CalendarApp = {
+      getCalendarById: () => ({
+        getEvents: () => {
+          throw new Error('Calendar service unavailable')
+        },
+      }),
+    }
+
+    expect(() => sandbox.syncClaimsFromCalendar()).toThrow('Calendar service unavailable')
+    expect(cacheEntries[CACHE_KEY]).toBeUndefined()
+  })
+
+  // The reservation is an optimisation. A cache outage must not stop the sync.
+  it('still runs when the slot check itself fails', () => {
+    const { sandbox, logged, llmCalls } = tickHarness([inspectionEvent()])
+    sandbox.CacheService = {
+      getScriptCache: () => {
+        throw new Error('CacheService unavailable')
+      },
+    }
+
+    sandbox.syncClaimsFromCalendar()
+
+    expect(llmCalls).toHaveLength(1)
+    expect(logged.some((l) => l.event === 'calendar_sync.slot_check_failed')).toBe(true)
+  })
+
+  // Telemetry that under-reports precisely when calls fail is worse than none:
+  // the request may already have been billed when the exception arrived.
+  it('counts an extraction call that threw as spent', () => {
+    const { sandbox, logged, tickEnds } = tickHarness([inspectionEvent()])
+    sandbox.callOpenRouter = () => {
+      throw new Error('OpenRouter request failed: 500 upstream exploded')
+    }
+
+    sandbox.syncClaimsFromCalendar()
+
+    expect(logged.find((l) => l.event === 'calendar_sync.event_failed')?.fields.llm_calls).toBe(1)
+    expect(tickEnds()[0].fields).toMatchObject({ llm_calls: 1, synced: 0 })
+  })
+
   it('reads the Claims sheet once per tick, not once per event', () => {
     const events = [
       inspectionEvent({ id: 'ev-1', title: 'TALLEY - CLF-1 IBIS' }),
@@ -1065,5 +1157,18 @@ describe('calendar sync consults the cache before it spends', () => {
 
     expect(reads).toBe(1)
     expect(logged.find((l) => l.event === 'calendar_sync.tick_end')?.fields.synced).toBe(3)
+  })
+
+  // refreshClaimCandidatesCache reads the whole tab when it is handed nothing,
+  // which made the tick's "one read" two. It gets the rows the tick already has.
+  it('hands the rows it already read to the claim-candidates refresh', () => {
+    const received: Array<unknown[] | undefined> = []
+    const { sandbox } = tickHarness([inspectionEvent()])
+    sandbox.refreshClaimCandidatesCache = (rows?: unknown[]) => received.push(rows)
+
+    sandbox.syncClaimsFromCalendar()
+
+    expect(received).toHaveLength(1)
+    expect(Array.isArray(received[0])).toBe(true)
   })
 })
