@@ -45,7 +45,7 @@ function harness(
   const llmCalls: Array<{ messages: Array<{ role: string; content: string }> }> = []
   const webSearchCalls: Array<{ messages: Array<{ role: string; content: string }> }> = []
 
-  const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+  const sandbox = loadGs(['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'], {
     getConfig: (key: string) => {
       if (key === 'CALENDAR_ID') return 'calendar-1'
       if (key === 'OPENROUTER_API_KEY') return 'key'
@@ -535,7 +535,7 @@ describe('installCalendarSync', () => {
     const created: string[] = []
     const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
 
-    const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+    const sandbox = loadGs(['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'], {
       logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
       PropertiesService: {
         getScriptProperties: () => ({
@@ -605,7 +605,7 @@ describe('syncClaimsFromCalendar', () => {
     const claims = new Map<string, Record<string, unknown>>()
     const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
 
-    const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+    const sandbox = loadGs(['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'], {
       getConfig: (key: string) => (key === 'CALENDAR_ID' ? 'missing-cal' : 'x'),
       CalendarApp: { getCalendarById: () => null },
       logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
@@ -625,7 +625,7 @@ describe('syncClaimsFromCalendar', () => {
     const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
     const claims = new Map<string, Record<string, unknown>>()
 
-    const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+    const sandbox = loadGs(['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'], {
       getConfig: () => 'x',
       getConfigList: () => [],
       loadEnums: () => ({}),
@@ -658,7 +658,7 @@ describe('syncClaimsFromCalendar', () => {
     const good = fakeEvent({ id: 'ev-good', title: 'TALLEY - CLF-1 IBIS' })
     const refreshCalls: number[] = []
 
-    const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+    const sandbox = loadGs(['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'], {
       getConfig: () => 'x',
       getConfigList: () => [],
       loadEnums: () => ({}),
@@ -682,7 +682,7 @@ describe('syncClaimsFromCalendar', () => {
   it('does not fail the tick or skip tick_end logging when the cache refresh itself fails', () => {
     const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
 
-    const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+    const sandbox = loadGs(['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'], {
       getConfig: () => 'x',
       getConfigList: () => [],
       loadEnums: () => ({}),
@@ -708,7 +708,7 @@ describe('syncClaimsFromCalendar', () => {
   it('logs tick_failed and rethrows when the calendar API itself fails', () => {
     const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
 
-    const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+    const sandbox = loadGs(['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'], {
       getConfig: () => 'calendar-1',
       describeError: (err: Error) => ({ error: String(err.message || err), stack: '' }),
       ensureClaimsColumns: () => [],
@@ -879,7 +879,7 @@ describe('calendar sync consults the cache before it spends', () => {
     const llmCalls: string[] = []
     const webSearchCalls: string[] = []
 
-    const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+    const sandbox = loadGs(['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'], {
       getConfig: () => 'x',
       getConfigList: () => [],
       loadEnums: () => ({}),

@@ -131,7 +131,7 @@ function response(status: number, body: string) {
   return { getResponseCode: () => status, getContentText: () => body }
 }
 
-const SOURCES = 'apps/adjuster/src/transcription.js'
+const SOURCES = ['apps/adjuster/src/util.js', 'apps/adjuster/src/transcription.js']
 
 function harness(overrides: Record<string, unknown> = {}) {
   const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
@@ -163,7 +163,7 @@ function harness(overrides: Record<string, unknown> = {}) {
   }
   delete overrides.DriveApp
 
-  const sandbox = loadGs([SOURCES], {
+  const sandbox = loadGs(SOURCES, {
     logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
     describeError: (err: Error) => ({ error: String(err.message ?? err), stack: '' }),
     getConfig: (key: string) => {
@@ -180,6 +180,7 @@ function harness(overrides: Record<string, unknown> = {}) {
       sleep: () => {},
     },
     UrlFetchApp: { fetchAll: () => [], fetch: () => null },
+    withJobLock: (fn: () => unknown) => fn(),
     ...overrides,
   })
 
@@ -1159,6 +1160,225 @@ describe('runTranscriptionPass', () => {
     model: 'merge-model',
   }
 
+  // ADR 013. Stage A re-entered over unchanged inputs — a hand-edited status, a
+  // replayed job — used to buy a second ElevenLabs pass over the same recording.
+  // The fingerprint is over what the ASR calls actually read, so a corrected
+  // claim match (which changes the keyterms that bias both calls) still
+  // re-transcribes.
+  describe('idempotency', () => {
+    // One live pass, then a second call with the row as the first pass left it.
+    function twoPasses(secondJob: Record<string, unknown> = {}) {
+      const built = passHarness({ mode: 'live', merge: acceptedMerge })
+      const first = built.sandbox.runTranscriptionPass({ ...job }, claim)
+      const filesAfterFirst = built.folder.files.length
+
+      const second = built.sandbox.runTranscriptionPass({ ...job, ...first, ...secondJob }, claim)
+
+      return { ...built, first, second, filesAfterFirst }
+    }
+
+    it('reuses the stored pass instead of re-transcribing unchanged inputs', () => {
+      const { first, second, folder, filesAfterFirst, logged } = twoPasses()
+
+      expect(second).toEqual(first)
+      expect(folder.files).toHaveLength(filesAfterFirst)
+      expect(logged.filter((l) => l.event === 'transcription.pass_complete')).toHaveLength(1)
+      expect(logged.find((l) => l.event === 'transcription.reused')?.fields.extraction_input).toBe(
+        'master',
+      )
+    })
+
+    it('carries the fingerprint on the fields it writes to the row', () => {
+      const { first } = twoPasses()
+
+      expect(String(first.transcription_fingerprint)).not.toBe('')
+    })
+
+    // The case an "artifacts exist, skip" guard would have got wrong: the audio
+    // is identical, but a corrected claim changes the keyterms that bias the ASR.
+    it('re-transcribes when the matched claim changes the keyterms', () => {
+      const built = passHarness({ mode: 'live', merge: acceptedMerge })
+      const first = built.sandbox.runTranscriptionPass({ ...job }, claim)
+
+      built.sandbox.runTranscriptionPass({ ...job, ...first }, {
+        claim_id: 'claim-2',
+        insured_last_name: 'Okafor',
+      } as never)
+
+      expect(built.logged.filter((l) => l.event === 'transcription.pass_complete')).toHaveLength(2)
+      expect(built.logged.some((l) => l.event === 'transcription.reused')).toBe(false)
+    })
+
+    it('re-transcribes when the audio changes', () => {
+      const { logged } = twoPasses({ audio_drive_id: 'audio-2' })
+
+      expect(logged.filter((l) => l.event === 'transcription.pass_complete')).toHaveLength(2)
+    })
+
+    it('re-transcribes when the mode flips, since it decides extraction_input', () => {
+      const built = passHarness({ mode: 'live', merge: acceptedMerge })
+      const first = built.sandbox.runTranscriptionPass({ ...job }, claim)
+
+      built.properties.MASTER_TRANSCRIPT_MODE = 'shadow'
+      const second = built.sandbox.runTranscriptionPass({ ...job, ...first }, claim)
+
+      expect(second.extraction_input).toBe('dograh')
+      expect(built.logged.filter((l) => l.event === 'transcription.pass_complete')).toHaveLength(2)
+    })
+
+    it('re-transcribes a row that has no fingerprint yet', () => {
+      const { logged } = twoPasses({ transcription_fingerprint: '' })
+
+      expect(logged.filter((l) => l.event === 'transcription.pass_complete')).toHaveLength(2)
+    })
+
+    // The cache key covers the whole pass, so it has to cover the merge's inputs
+    // too — the merge prompt renders the claim and glossary in full and runs on
+    // its own model. Keyterms are not a proxy: sanitizeKeyterm caps terms at five
+    // words and the list at 1000, and definitions never reach the keyterms.
+    it('re-transcribes when the merge model changes', () => {
+      const built = passHarness({ mode: 'live', merge: acceptedMerge })
+      const first = built.sandbox.runTranscriptionPass({ ...job }, claim)
+
+      built.properties.MASTER_TRANSCRIPT_MODEL = 'some/other-merge-model'
+      built.sandbox.runTranscriptionPass({ ...job, ...first }, claim)
+
+      expect(built.logged.filter((l) => l.event === 'transcription.pass_complete')).toHaveLength(2)
+    })
+
+    it('re-transcribes when a glossary definition changes but its term does not', () => {
+      const built = passHarness({ mode: 'live', merge: acceptedMerge })
+      const first = built.sandbox.runTranscriptionPass({ ...job }, claim)
+
+      built.sandbox.loadGlossary = () => [{ term: 'drip edge', definition: 'the metal flashing' }]
+      built.sandbox.runTranscriptionPass({ ...job, ...first }, claim)
+
+      expect(built.logged.filter((l) => l.event === 'transcription.pass_complete')).toHaveLength(2)
+    })
+
+    // Churn the merge does not care about must NOT re-buy two ASR passes.
+    // property_lookup_at moves whenever a calendar tick runs a property lookup
+    // (docs/specs/027) and _rowIndex moves when a row moves up the sheet.
+    it('reuses across claim-row bookkeeping the merge gains nothing from', () => {
+      const built = passHarness({ mode: 'live', merge: acceptedMerge })
+      const first = built.sandbox.runTranscriptionPass({ ...job }, { ...claim, _rowIndex: 4 })
+
+      built.sandbox.runTranscriptionPass(
+        { ...job, ...first },
+        { ...claim, _rowIndex: 9, property_lookup_at: '2026-09-15T18:00:00Z' },
+      )
+
+      expect(built.logged.filter((l) => l.event === 'transcription.pass_complete')).toHaveLength(1)
+      expect(built.logged.some((l) => l.event === 'transcription.reused')).toBe(true)
+    })
+
+    // sanitizeKeyterm's banned-character list does not include '|', so a joined
+    // serialization would hash ['A|B'] and ['A', 'B'] identically.
+    it('does not confuse keyterm lists that differ only in where they split', () => {
+      const { sandbox } = harness()
+
+      expect(
+        sandbox.transcriptionInputsFingerprint({ mode: 'live', job: {}, keyterms: ['A|B'] }),
+      ).not.toBe(
+        sandbox.transcriptionInputsFingerprint({ mode: 'live', job: {}, keyterms: ['A', 'B'] }),
+      )
+    })
+
+    // retranscribeJob empties the transcription columns and re-queues stage A.
+    // Its fingerprint used to survive that, so the next pass matched, reused the
+    // blanks, and the operator's explicit request vanished.
+    it('does not reuse a row whose transcription was deliberately cleared', () => {
+      const { logged } = twoPasses({ extraction_input: '', transcript_master_id: '' })
+
+      expect(logged.filter((l) => l.event === 'transcription.pass_complete')).toHaveLength(2)
+      expect(logged.find((l) => l.event === 'transcription.reuse_rejected')?.fields.reason).toBe(
+        'no_extraction_input',
+      )
+    })
+
+    // A fingerprint match over a master somebody deleted out of Drive would hand
+    // extraction an id resolving to nothing — worse than paying again.
+    it('re-transcribes when the artifact the fingerprint vouches for is gone', () => {
+      const { logged } = twoPasses({ transcript_master: '', transcript_master_id: 'deleted-1' })
+
+      expect(logged.filter((l) => l.event === 'transcription.pass_complete')).toHaveLength(2)
+      expect(logged.find((l) => l.event === 'transcription.reuse_rejected')?.fields.reason).toBe(
+        'artifact_unreadable',
+      )
+    })
+  })
+
+  // The escape hatch for what the fingerprint cannot see: same audio, same claim,
+  // simply a bad transcription.
+  describe('forceRetranscribe', () => {
+    function forceHarness(row: Record<string, unknown> | null) {
+      const writes: Array<Record<string, unknown>> = []
+      const ensured: string[][] = []
+      const built = harness({
+        getJobByCaptureId: () => row,
+        upsertJob: (_id: string, fields: Record<string, unknown>) => writes.push(fields),
+        ensureJobsColumns: (columns: string[]) => {
+          ensured.push(columns)
+          return []
+        },
+      })
+      return { ...built, writes, ensured }
+    }
+
+    it('clears the fingerprint and returns the job to stage A', () => {
+      const { sandbox, writes } = forceHarness({
+        capture_id: 'dograh-1',
+        status: 'done',
+        transcription_fingerprint: 'fp-1',
+      })
+
+      sandbox.forceRetranscribe('dograh-1')
+
+      expect(writes[0]).toMatchObject({
+        status: 'pending',
+        transcription_fingerprint: '',
+        attempts: 0,
+      })
+    })
+
+    // The column postdates every Jobs sheet in existence; without this the
+    // documented override throws Missing column until the next drain runs.
+    it('ensures the fingerprint column exists before writing to it', () => {
+      const { sandbox, ensured } = forceHarness({ capture_id: 'dograh-1', status: 'done' })
+
+      sandbox.forceRetranscribe('dograh-1')
+
+      expect(ensured[0]).toContain('transcription_fingerprint')
+    })
+
+    // A drain holding a lease on this row can otherwise finish after the write
+    // and overwrite the cleared fingerprint with its own result.
+    it('takes the job lock around the read and the write', () => {
+      const order: string[] = []
+      const { sandbox } = harness({
+        getJobByCaptureId: () => ({ capture_id: 'dograh-1', status: 'done' }),
+        ensureJobsColumns: () => [],
+        upsertJob: () => order.push('write'),
+        withJobLock: (fn: () => unknown) => {
+          order.push('lock')
+          const result = fn()
+          order.push('release')
+          return result
+        },
+      })
+
+      sandbox.forceRetranscribe('dograh-1')
+
+      expect(order).toEqual(['lock', 'write', 'release'])
+    })
+
+    it('refuses a capture_id that is not on the Jobs tab', () => {
+      const { sandbox } = forceHarness(null)
+
+      expect(() => sandbox.forceRetranscribe('nope')).toThrow('No job for capture_id')
+    })
+  })
+
   it('skips everything and leaves extraction on Dograh when the mode is off', () => {
     const { sandbox, folder, logged } = passHarness({ mode: 'off' })
 
@@ -1360,6 +1580,9 @@ describe('retranscribeJob', () => {
       transcript_master: '',
       transcript_master_id: '',
       extraction_input: '',
+      // ADR 013. A fingerprint surviving the clearing would let the next pass
+      // match, reuse the blanks, and swallow the retranscribe just requested.
+      transcription_fingerprint: '',
     })
     expect(written[0]).not.toHaveProperty('call_folder_id')
   })
