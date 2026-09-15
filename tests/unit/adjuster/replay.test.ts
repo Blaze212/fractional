@@ -138,13 +138,13 @@ describe('regenerateDraftFromArtifacts', () => {
     expect(call.claim.claim_id).toBe('claim-1')
   })
 
-  it('renders a scratch draft: no notification email, marked in the drafts folder', () => {
+  it('renders a scratch draft: no notification email, no sharing, marked in the drafts folder', () => {
     const h = harness(JOB)
     h.folderFiles.set('artifact-1', JSON.stringify(SAVED_EXTRACTION))
 
     h.sandbox.regenerateDraftFromArtifacts('cap-1')
 
-    expect(h.generated[0].options).toMatchObject({ notify: false })
+    expect(h.generated[0].options).toMatchObject({ notify: false, share: false })
     expect(String(h.generated[0].options.nameSuffix)).toContain('REPLAY')
   })
 

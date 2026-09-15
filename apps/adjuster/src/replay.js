@@ -16,9 +16,10 @@
 
 var EXTRACTION_ARTIFACT_NAME = 'extraction.json'
 // A replay draft must not mail Brandon a "draft ready" notice for a document
-// nobody asked for, and has to be tellable at a glance from the real draft
-// sitting next to it in the same folder.
-var REPLAY_DOC_OPTIONS = { notify: false, nameSuffix: ' — REPLAY' }
+// nobody asked for, must not land in his Drive as a shared scratch copy either,
+// and has to be tellable at a glance from the real draft sitting next to it in
+// the same folder.
+var REPLAY_DOC_OPTIONS = { notify: false, share: false, nameSuffix: ' — REPLAY' }
 
 // Same pointer-plus-versioned-file shape the transcripts use: writeCallArtifact
 // never overwrites, so a re-extract versions alongside its predecessor and the

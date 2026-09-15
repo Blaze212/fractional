@@ -1,7 +1,8 @@
 // options is the replay hatch (see replay.js): a hand-run replay renders a real
 // draft to look at, but it is a scratch copy — it must not mail Brandon a
-// "draft ready" notice, and it has to be tellable from the real draft in the
-// same folder. Absent options, every default is the live pipeline's behaviour.
+// "draft ready" notice, must not be shared onto the NOTIFY_EMAILS list, and it
+// has to be tellable from the real draft in the same folder. Absent options,
+// every default is the live pipeline's behaviour.
 function generateDoc(job, claim, validated, tagSchema, unplacedNotes, options) {
   var settings = options || {}
   var needsInputCount = countNeedsInput(validated, tagSchema)
@@ -11,6 +12,8 @@ function generateDoc(job, claim, validated, tagSchema, unplacedNotes, options) {
     buildDraftName(job, claim) + (settings.nameSuffix || ''),
     draftsFolder,
   )
+  if (settings.share !== false) shareDraft(copy)
+
   var doc = DocumentApp.openById(copy.getId())
   var body = doc.getBody()
 
@@ -498,6 +501,32 @@ function variantTextNeedsInput(schema, field) {
   })[0]
 
   return !!option && option.text.indexOf('[NEEDS INPUT:') !== -1
+}
+
+// The draft is created by the script's own account inside DRAFTS_FOLDER_ID, so
+// everyone on NOTIFY_EMAILS gets a link they cannot open until the file is
+// shared with them by name. Editor, not viewer: the point of the draft is that
+// an adjuster fills in its [NEEDS INPUT] placeholders. Shared at copy time
+// rather than beside notifyDraftReady, so a draft that fails on leftover tags
+// is still reachable by the person who has to look at why.
+//
+// Per recipient and wrapped: one address a domain sharing policy refuses must
+// not cost the rest of the list its access, and must never fail a draft that
+// has already been rendered.
+function shareDraft(file) {
+  getConfigList('NOTIFY_EMAILS', []).forEach(function (email) {
+    try {
+      file.addEditor(email)
+    } catch (err) {
+      var described = describeError(err)
+      logEvent('docgen.share_failed', {
+        email: email,
+        file_id: file.getId(),
+        error: described.error,
+        stack: described.stack,
+      })
+    }
+  })
 }
 
 function notifyDraftReady(docUrl, needsInputCount) {
