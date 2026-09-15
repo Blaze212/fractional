@@ -45,7 +45,7 @@ function harness(
   const llmCalls: Array<{ messages: Array<{ role: string; content: string }> }> = []
   const webSearchCalls: Array<{ messages: Array<{ role: string; content: string }> }> = []
 
-  const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+  const sandbox = loadGs(['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'], {
     getConfig: (key: string) => {
       if (key === 'CALENDAR_ID') return 'calendar-1'
       if (key === 'OPENROUTER_API_KEY') return 'key'
@@ -311,7 +311,7 @@ describe('syncEventToClaim', () => {
 
     const result = sandbox.syncEventToClaim(event)
 
-    expect(result).toBe(true)
+    expect(result.synced).toBe(true)
     expect(lockCalls).toHaveLength(1)
 
     const claim = claims.get('event-1') as Record<string, unknown>
@@ -354,7 +354,7 @@ describe('syncEventToClaim', () => {
 
     const result = sandbox.syncEventToClaim(event)
 
-    expect(result).toBe(true)
+    expect(result.synced).toBe(true)
     expect(llmCalls).toHaveLength(1)
     const userMessage = llmCalls[0].messages.find((m) => m.role === 'user')
     expect(userMessage?.content).toContain('Title: TALLEY - CLF-00153289 IBIS')
@@ -438,7 +438,7 @@ describe('syncEventToClaim', () => {
 
     const result = sandbox.syncEventToClaim(fakeEvent({ title: 'Reminder: call insured' }))
 
-    expect(result).toBe(false)
+    expect(result.synced).toBe(false)
     expect(claims.size).toBe(0)
     expect(lockCalls).toHaveLength(0)
     expect(logged.some((l) => l.event === 'calendar_sync.title_unparsed')).toBe(true)
@@ -454,7 +454,7 @@ describe('syncEventToClaim', () => {
       }),
     )
 
-    expect(result).toBe(false)
+    expect(result.synced).toBe(false)
     expect(claims.size).toBe(0)
     const failedLog = logged.find((l) => l.event === 'calendar_sync.event_failed')
     expect(failedLog?.fields).toMatchObject({
@@ -501,7 +501,7 @@ describe('property lookup in syncEventToClaim', () => {
       fakeEvent({ location: '218 Park Ave Wadesboro NC 28170' }),
     )
 
-    expect(result).toBe(true)
+    expect(result.synced).toBe(true)
     const claim = claims.get('event-1') as Record<string, unknown>
     expect(claim.property_year_built).toBe('')
     expect(claim.property_source_url).toBe('')
@@ -514,7 +514,7 @@ describe('property lookup in syncEventToClaim', () => {
       fakeEvent({ location: '218 Park Ave Wadesboro NC 28170' }),
     )
 
-    expect(result).toBe(true)
+    expect(result.synced).toBe(true)
     const claim = claims.get('event-1') as Record<string, unknown>
     expect(claim.property_source_url).toBe('')
     expect(logged.some((l) => l.event === 'calendar_sync.property_lookup_failed')).toBe(true)
@@ -535,7 +535,7 @@ describe('installCalendarSync', () => {
     const created: string[] = []
     const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
 
-    const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+    const sandbox = loadGs(['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'], {
       logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
       PropertiesService: {
         getScriptProperties: () => ({
@@ -605,7 +605,7 @@ describe('syncClaimsFromCalendar', () => {
     const claims = new Map<string, Record<string, unknown>>()
     const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
 
-    const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+    const sandbox = loadGs(['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'], {
       getConfig: (key: string) => (key === 'CALENDAR_ID' ? 'missing-cal' : 'x'),
       CalendarApp: { getCalendarById: () => null },
       logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
@@ -625,7 +625,7 @@ describe('syncClaimsFromCalendar', () => {
     const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
     const claims = new Map<string, Record<string, unknown>>()
 
-    const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+    const sandbox = loadGs(['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'], {
       getConfig: () => 'x',
       getConfigList: () => [],
       loadEnums: () => ({}),
@@ -635,6 +635,7 @@ describe('syncClaimsFromCalendar', () => {
       upsertClaim: (claimId: string, fields: Record<string, unknown>) =>
         claims.set(claimId, fields),
       ensureClaimsColumns: () => [],
+      getClaims: () => [],
       describeError: (err: Error) => ({ error: String(err.message || err), stack: '' }),
       CalendarApp: { getCalendarById: () => ({ getEvents: () => [good, bad] }) },
       logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
@@ -657,7 +658,7 @@ describe('syncClaimsFromCalendar', () => {
     const good = fakeEvent({ id: 'ev-good', title: 'TALLEY - CLF-1 IBIS' })
     const refreshCalls: number[] = []
 
-    const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+    const sandbox = loadGs(['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'], {
       getConfig: () => 'x',
       getConfigList: () => [],
       loadEnums: () => ({}),
@@ -666,6 +667,7 @@ describe('syncClaimsFromCalendar', () => {
       withJobLock: (fn: () => unknown) => fn(),
       upsertClaim: () => {},
       ensureClaimsColumns: () => [],
+      getClaims: () => [],
       describeError: (err: Error) => ({ error: String(err.message || err), stack: '' }),
       CalendarApp: { getCalendarById: () => ({ getEvents: () => [good] }) },
       logEvent: () => {},
@@ -680,7 +682,7 @@ describe('syncClaimsFromCalendar', () => {
   it('does not fail the tick or skip tick_end logging when the cache refresh itself fails', () => {
     const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
 
-    const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+    const sandbox = loadGs(['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'], {
       getConfig: () => 'x',
       getConfigList: () => [],
       loadEnums: () => ({}),
@@ -689,6 +691,7 @@ describe('syncClaimsFromCalendar', () => {
       withJobLock: (fn: () => unknown) => fn(),
       upsertClaim: () => {},
       ensureClaimsColumns: () => [],
+      getClaims: () => [],
       describeError: (err: Error) => ({ error: String(err.message || err), stack: '' }),
       CalendarApp: { getCalendarById: () => ({ getEvents: () => [] }) },
       logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
@@ -705,10 +708,11 @@ describe('syncClaimsFromCalendar', () => {
   it('logs tick_failed and rethrows when the calendar API itself fails', () => {
     const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
 
-    const sandbox = loadGs('apps/adjuster/src/calendarSync.js', {
+    const sandbox = loadGs(['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'], {
       getConfig: () => 'calendar-1',
       describeError: (err: Error) => ({ error: String(err.message || err), stack: '' }),
       ensureClaimsColumns: () => [],
+      getClaims: () => [],
       CalendarApp: {
         getCalendarById: () => ({
           getEvents: () => {
@@ -721,5 +725,450 @@ describe('syncClaimsFromCalendar', () => {
 
     expect(() => sandbox.syncClaimsFromCalendar()).toThrow('Calendar service unavailable')
     expect(logged.some((l) => l.event === 'calendar_sync.tick_failed')).toBe(true)
+  })
+})
+
+// docs/specs/027. The 52-hour window and the hourly tick meant each event was
+// re-enriched about forty times before it aged out — 278 property lookups across
+// 10 distinct events in 48 hours, seven of which already held complete data.
+describe('enrichment fingerprints', () => {
+  it('changes when any input the extraction call receives changes', () => {
+    const { sandbox } = harness()
+    const base = sandbox.calendarFieldsFingerprint('title', 'location', 'description')
+
+    expect(sandbox.calendarFieldsFingerprint('title', 'location', 'description')).toBe(base)
+    expect(sandbox.calendarFieldsFingerprint('other', 'location', 'description')).not.toBe(base)
+    expect(sandbox.calendarFieldsFingerprint('title', 'other', 'description')).not.toBe(base)
+    expect(sandbox.calendarFieldsFingerprint('title', 'location', 'other')).not.toBe(base)
+  })
+
+  it('cannot be fooled by moving text across the field boundary', () => {
+    const { sandbox } = harness()
+
+    expect(sandbox.calendarFieldsFingerprint('a', 'b', '')).not.toBe(
+      sandbox.calendarFieldsFingerprint('a', '', 'b'),
+    )
+  })
+
+  it('treats a missing field and an empty one alike, since the call does', () => {
+    const { sandbox } = harness()
+
+    expect(sandbox.calendarFieldsFingerprint('a', null, undefined)).toBe(
+      sandbox.calendarFieldsFingerprint('a', '', ''),
+    )
+  })
+
+  it('fingerprints the resolved address the lookup actually receives', () => {
+    const { sandbox } = harness()
+
+    expect(sandbox.propertyAddressFingerprint('5139 Alderman Rd. Concord NC 28025')).not.toBe(
+      sandbox.propertyAddressFingerprint('5140 Alderman Rd. Concord NC 28025'),
+    )
+  })
+})
+
+describe('shouldReenrich', () => {
+  const NOW = new Date('2026-09-15T12:00:00Z')
+
+  function current(sandbox: Record<string, any>, description = 'notes', address = '1 Main St') {
+    return sandbox.calendarEnrichmentFingerprints('title', 'location', description, address)
+  }
+
+  function storedRow(sandbox: Record<string, any>, overrides: Record<string, unknown> = {}) {
+    const fingerprints = current(sandbox)
+    return {
+      calendar_fingerprint: fingerprints.calendar_fingerprint,
+      property_address_fingerprint: fingerprints.property_address_fingerprint,
+      property_source_url: 'https://zillow.example/1-main-st',
+      property_lookup_at: '2026-09-15T11:00:00Z',
+      ...overrides,
+    }
+  }
+
+  it('runs both calls for an event it has never seen', () => {
+    const { sandbox } = harness()
+
+    expect(sandbox.shouldReenrich(null, current(sandbox), NOW)).toMatchObject({
+      extract: true,
+      lookup: true,
+    })
+  })
+
+  it('skips both when nothing the calls read has changed', () => {
+    const { sandbox } = harness()
+
+    expect(sandbox.shouldReenrich(storedRow(sandbox), current(sandbox), NOW)).toMatchObject({
+      extract: false,
+      lookup: false,
+    })
+  })
+
+  it('re-extracts and nothing else when only the description changed', () => {
+    const { sandbox } = harness()
+
+    const decision = sandbox.shouldReenrich(storedRow(sandbox), current(sandbox, 'new notes'), NOW)
+
+    expect(decision).toMatchObject({ extract: true, lookup: false })
+  })
+
+  it('re-looks-up and nothing else when only the address changed', () => {
+    const { sandbox } = harness()
+    const stored = storedRow(sandbox)
+
+    const decision = sandbox.shouldReenrich(
+      stored,
+      sandbox.calendarEnrichmentFingerprints('title', 'location', 'notes', '2 Main St'),
+      NOW,
+    )
+
+    expect(decision).toMatchObject({ extract: false, lookup: true, address_changed: true })
+  })
+
+  // A miss is a real answer and is cached; without this an address the search
+  // genuinely cannot resolve is re-searched every hour forever.
+  it('skips a cached miss inside the seven-day window', () => {
+    const { sandbox } = harness()
+    const stored = storedRow(sandbox, {
+      property_source_url: '',
+      property_lookup_at: '2026-09-14T12:00:00Z',
+    })
+
+    expect(sandbox.shouldReenrich(stored, current(sandbox), NOW).lookup).toBe(false)
+  })
+
+  it('retries a cached miss once the seven days are up', () => {
+    const { sandbox } = harness()
+    const stored = storedRow(sandbox, {
+      property_source_url: '',
+      property_lookup_at: '2026-09-01T12:00:00Z',
+    })
+
+    expect(sandbox.shouldReenrich(stored, current(sandbox), NOW).lookup).toBe(true)
+  })
+
+  // The distinction the whole negative cache rests on: a lookup that threw
+  // writes no marker, so it is retried rather than cached as a miss. Caching a
+  // 402 would suppress the lookup for a week after credits were restored.
+  it('retries when a lookup left no marker behind', () => {
+    const { sandbox } = harness()
+    const stored = storedRow(sandbox, { property_source_url: '', property_lookup_at: '' })
+
+    expect(sandbox.shouldReenrich(stored, current(sandbox), NOW).lookup).toBe(true)
+  })
+
+  it('runs both for a row written before the fingerprint columns existed', () => {
+    const { sandbox } = harness()
+    const stored = { claim_id: 'event-1', property_source_url: 'https://zillow.example/old' }
+
+    expect(sandbox.shouldReenrich(stored, current(sandbox), NOW)).toMatchObject({
+      extract: true,
+      lookup: true,
+    })
+  })
+})
+
+const CACHE_KEY = 'calendar_sync_in_flight'
+
+describe('calendar sync consults the cache before it spends', () => {
+  function tickHarness(
+    events: Array<ReturnType<typeof fakeEvent>>,
+    opts: { webSearchContent?: string; throwOnWebSearch?: boolean } = {},
+  ) {
+    // Survives across ticks, exactly as the Claims sheet does — which is the
+    // only way a "second tick makes zero calls" assertion means anything.
+    const claims = new Map<string, Record<string, any>>()
+    const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
+    const llmCalls: string[] = []
+    const webSearchCalls: string[] = []
+    const cacheEntries: Record<string, string> = {}
+
+    const sandbox: Record<string, any> = loadGs(
+      ['apps/adjuster/src/util.js', 'apps/adjuster/src/calendarSync.js'],
+      {
+        getConfig: () => 'x',
+        getConfigList: () => [],
+        loadEnums: () => ({}),
+        formatTagList: () => 'tags',
+        buildExtractionSchema: () => ({}),
+        callOpenRouter: (config: { messages: Array<{ role: string; content: string }> }) => {
+          llmCalls.push(String(config.messages[1]?.content))
+          return { fields: { roof_age_years: { value: '19 years' } } }
+        },
+        callOpenRouterWebSearch: (config: {
+          messages: Array<{ role: string; content: string }>
+        }) => {
+          webSearchCalls.push(String(config.messages[1]?.content))
+          if (opts.throwOnWebSearch) throw new Error('OpenRouter request failed: 402 no credits')
+          return {
+            content:
+              opts.webSearchContent ??
+              JSON.stringify({ year_built: '1979', source_url: 'https://zillow.example/1' }),
+          }
+        },
+        withJobLock: (fn: () => unknown) => fn(),
+        ensureClaimsColumns: () => [],
+        getClaims: () => [...claims.values()],
+        upsertClaim: (claimId: string, fields: Record<string, unknown>) => {
+          claims.set(claimId, { ...(claims.get(claimId) ?? {}), ...fields, claim_id: claimId })
+        },
+        // Mirrors jobs.js's real signature: it reads the tab itself when the caller
+        // hands it nothing. Stubbing it as a no-op is what let the old "one read
+        // per tick" test pass while production did two.
+        refreshClaimCandidatesCache: (rows?: unknown[]) => {
+          if (!rows) sandbox.getClaims()
+        },
+        CacheService: {
+          getScriptCache: () => ({
+            get: () => cacheEntries[CACHE_KEY] ?? null,
+            put: (key: string, value: string) => {
+              cacheEntries[key] = value
+            },
+            remove: (key: string) => {
+              delete cacheEntries[key]
+            },
+          }),
+        },
+        CalendarApp: { getCalendarById: () => ({ getEvents: () => events }) },
+        logEvent: (event: string, fields: Record<string, unknown>) =>
+          logged.push({ event, fields }),
+        describeError: (err: Error) => ({ error: String(err.message || err), stack: '' }),
+      },
+    )
+
+    const tickEnds = () => logged.filter((l) => l.event === 'calendar_sync.tick_end')
+
+    return { sandbox, claims, logged, llmCalls, webSearchCalls, tickEnds, cacheEntries }
+  }
+
+  function inspectionEvent(overrides: Partial<Parameters<typeof fakeEvent>[0]> = {}) {
+    return fakeEvent({
+      location: '5139 Alderman Rd. Concord NC 28025',
+      description: 'AGE OF ROOF - APPROX - 19 YRS',
+      ...overrides,
+    })
+  }
+
+  it('makes both calls on the first tick and none on the second', () => {
+    const { sandbox, claims, llmCalls, webSearchCalls } = tickHarness([inspectionEvent()])
+
+    sandbox.syncClaimsFromCalendar()
+    expect(llmCalls).toHaveLength(1)
+    expect(webSearchCalls).toHaveLength(1)
+
+    const afterFirst = { ...(claims.get('event-1') as Record<string, unknown>) }
+
+    sandbox.syncClaimsFromCalendar()
+
+    expect(llmCalls).toHaveLength(1)
+    expect(webSearchCalls).toHaveLength(1)
+    const afterSecond = claims.get('event-1') as Record<string, unknown>
+    expect(afterSecond.property_year_built).toBe(afterFirst.property_year_built)
+    expect(afterSecond.property_source_url).toBe(afterFirst.property_source_url)
+    expect(afterSecond.calendar_fields).toBe(afterFirst.calendar_fields)
+  })
+
+  it('reports the calls it made and the calls the cache saved', () => {
+    const { sandbox, tickEnds } = tickHarness([inspectionEvent()])
+
+    sandbox.syncClaimsFromCalendar()
+    sandbox.syncClaimsFromCalendar()
+
+    expect(tickEnds()[0].fields).toMatchObject({ llm_calls: 2, llm_calls_skipped: 0 })
+    expect(tickEnds()[1].fields).toMatchObject({ llm_calls: 0, llm_calls_skipped: 2 })
+  })
+
+  it('logs which enrichment it skipped, per event', () => {
+    const { sandbox, logged } = tickHarness([inspectionEvent()])
+
+    sandbox.syncClaimsFromCalendar()
+    sandbox.syncClaimsFromCalendar()
+
+    const skipped = logged.filter((l) => l.event === 'calendar_sync.enrichment_skipped')
+    expect(skipped).toHaveLength(1)
+    expect(skipped[0].fields).toMatchObject({
+      event_id: 'event-1',
+      extract_skipped: true,
+      lookup_skipped: true,
+    })
+  })
+
+  it('re-extracts an edited description without re-running the property lookup', () => {
+    let description = 'AGE OF ROOF - APPROX - 19 YRS'
+    const event = {
+      ...inspectionEvent(),
+      getDescription: () => description,
+    }
+    const { sandbox, claims, llmCalls, webSearchCalls } = tickHarness([event])
+
+    sandbox.syncClaimsFromCalendar()
+    description = 'AGE OF ROOF - APPROX - 19 YRS\nTARP ON NORTH SLOPE'
+    sandbox.syncClaimsFromCalendar()
+
+    expect(llmCalls).toHaveLength(2)
+    expect(webSearchCalls).toHaveLength(1)
+    expect(JSON.parse(String(claims.get('event-1')?.calendar_fields)).raw_notes).toContain('TARP')
+  })
+
+  it('re-runs the property lookup when the address changes', () => {
+    let location = '5139 Alderman Rd. Concord NC 28025'
+    const event = { ...inspectionEvent(), getLocation: () => location }
+    const { sandbox, webSearchCalls } = tickHarness([event])
+
+    sandbox.syncClaimsFromCalendar()
+    location = '1104 S Zion St, Landis, NC 28088'
+    sandbox.syncClaimsFromCalendar()
+
+    expect(webSearchCalls).toHaveLength(2)
+    expect(webSearchCalls[1]).toContain('1104 S Zion St')
+  })
+
+  // A 402 is not "this address has no records" — caching it as a miss would
+  // suppress the lookup for a week after credits were restored.
+  it('writes no cache marker when the lookup throws, and retries next tick', () => {
+    const { sandbox, claims, webSearchCalls } = tickHarness([inspectionEvent()], {
+      throwOnWebSearch: true,
+    })
+
+    sandbox.syncClaimsFromCalendar()
+    expect(claims.get('event-1')?.property_lookup_at).toBe('')
+
+    sandbox.syncClaimsFromCalendar()
+    expect(webSearchCalls).toHaveLength(2)
+  })
+
+  // A lookup that genuinely returned nothing IS an answer, and is cached.
+  it('caches a sourceless result rather than re-searching it hourly', () => {
+    const { sandbox, claims, webSearchCalls } = tickHarness([inspectionEvent()], {
+      webSearchContent: JSON.stringify({}),
+    })
+
+    sandbox.syncClaimsFromCalendar()
+    expect(claims.get('event-1')?.property_source_url).toBe('')
+    expect(claims.get('event-1')?.property_lookup_at).not.toBe('')
+
+    sandbox.syncClaimsFromCalendar()
+    expect(webSearchCalls).toHaveLength(1)
+  })
+
+  // Risk table, docs/specs/027: three columns were appended to the Claims tab.
+  // A row written before they existed carries no fingerprints, so it enriches
+  // once more and caches from then on rather than failing to read.
+  it('enriches a row written before the fingerprint columns existed, then caches', () => {
+    const { sandbox, claims, llmCalls, webSearchCalls } = tickHarness([inspectionEvent()])
+
+    claims.set('event-1', {
+      claim_id: 'event-1',
+      claim_number: 'CLF-00153289',
+      property_year_built: '1979',
+      property_source_url: 'https://zillow.example/1',
+    })
+
+    sandbox.syncClaimsFromCalendar()
+    expect(llmCalls).toHaveLength(1)
+    expect(webSearchCalls).toHaveLength(1)
+
+    sandbox.syncClaimsFromCalendar()
+    expect(llmCalls).toHaveLength(1)
+    expect(webSearchCalls).toHaveLength(1)
+  })
+
+  // The cache check is read-then-decide-then-spend and only the upsert was ever
+  // locked, so two overlapping executions could both decide to enrich and both
+  // spend before either write landed.
+  it('skips a tick while another one is already in flight', () => {
+    const { sandbox, cacheEntries, logged, llmCalls } = tickHarness([inspectionEvent()])
+
+    cacheEntries[CACHE_KEY] = String(Date.now())
+    sandbox.syncClaimsFromCalendar()
+
+    expect(llmCalls).toHaveLength(0)
+    expect(logged.find((l) => l.event === 'calendar_sync.tick_skipped')?.fields.reason).toBe(
+      'already_running',
+    )
+  })
+
+  it('releases the slot when the tick finishes, so the next hour is not blocked', () => {
+    const { sandbox, cacheEntries, llmCalls } = tickHarness([inspectionEvent()])
+
+    sandbox.syncClaimsFromCalendar()
+
+    expect(cacheEntries[CACHE_KEY]).toBeUndefined()
+    expect(llmCalls).toHaveLength(1)
+  })
+
+  it('releases the slot even when the tick throws', () => {
+    const { sandbox, cacheEntries } = tickHarness([])
+    sandbox.CalendarApp = {
+      getCalendarById: () => ({
+        getEvents: () => {
+          throw new Error('Calendar service unavailable')
+        },
+      }),
+    }
+
+    expect(() => sandbox.syncClaimsFromCalendar()).toThrow('Calendar service unavailable')
+    expect(cacheEntries[CACHE_KEY]).toBeUndefined()
+  })
+
+  // The reservation is an optimisation. A cache outage must not stop the sync.
+  it('still runs when the slot check itself fails', () => {
+    const { sandbox, logged, llmCalls } = tickHarness([inspectionEvent()])
+    sandbox.CacheService = {
+      getScriptCache: () => {
+        throw new Error('CacheService unavailable')
+      },
+    }
+
+    sandbox.syncClaimsFromCalendar()
+
+    expect(llmCalls).toHaveLength(1)
+    expect(logged.some((l) => l.event === 'calendar_sync.slot_check_failed')).toBe(true)
+  })
+
+  // Telemetry that under-reports precisely when calls fail is worse than none:
+  // the request may already have been billed when the exception arrived.
+  it('counts an extraction call that threw as spent', () => {
+    const { sandbox, logged, tickEnds } = tickHarness([inspectionEvent()])
+    sandbox.callOpenRouter = () => {
+      throw new Error('OpenRouter request failed: 500 upstream exploded')
+    }
+
+    sandbox.syncClaimsFromCalendar()
+
+    expect(logged.find((l) => l.event === 'calendar_sync.event_failed')?.fields.llm_calls).toBe(1)
+    expect(tickEnds()[0].fields).toMatchObject({ llm_calls: 1, synced: 0 })
+  })
+
+  it('reads the Claims sheet once per tick, not once per event', () => {
+    const events = [
+      inspectionEvent({ id: 'ev-1', title: 'TALLEY - CLF-1 IBIS' }),
+      inspectionEvent({ id: 'ev-2', title: 'HENDERSON - CLF-2 IBIS' }),
+      inspectionEvent({ id: 'ev-3', title: 'OKAFOR - CLF-3 IBIS' }),
+    ]
+    const { sandbox, logged } = tickHarness(events)
+    let reads = 0
+    const claimsReader = sandbox.getClaims
+    sandbox.getClaims = () => {
+      reads += 1
+      return claimsReader()
+    }
+
+    sandbox.syncClaimsFromCalendar()
+
+    expect(reads).toBe(1)
+    expect(logged.find((l) => l.event === 'calendar_sync.tick_end')?.fields.synced).toBe(3)
+  })
+
+  // refreshClaimCandidatesCache reads the whole tab when it is handed nothing,
+  // which made the tick's "one read" two. It gets the rows the tick already has.
+  it('hands the rows it already read to the claim-candidates refresh', () => {
+    const received: Array<unknown[] | undefined> = []
+    const { sandbox } = tickHarness([inspectionEvent()])
+    sandbox.refreshClaimCandidatesCache = (rows?: unknown[]) => received.push(rows)
+
+    sandbox.syncClaimsFromCalendar()
+
+    expect(received).toHaveLength(1)
+    expect(Array.isArray(received[0])).toBe(true)
   })
 })

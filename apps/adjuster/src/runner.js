@@ -262,18 +262,29 @@ function advanceOldestPendingJob() {
   }
 
   var job = picked.job
+
+  // Leased BEFORE the log line so both read the attempt number leaseJob
+  // actually wrote. job.attempts here is a pre-lease snapshot that upsertJob
+  // never writes back, so deriving the count from it a second time is how
+  // runner.job_failed came to report attempts: 0 on a job's sixth lap
+  // (docs/specs/027).
+  var attempt = leaseJob(
+    picked.sheet,
+    picked.headers,
+    job,
+    stage === 'transcribe' ? 'matching' : 'extracting',
+  )
+
   logEvent('runner.job_leased', {
     capture_id: job.capture_id,
     stage: stage,
-    attempt: Number(job.attempts || 0) + 1,
+    attempt: attempt,
     transcript_chars: Number(job.transcript_chars || 0),
   })
 
-  leaseJob(picked.sheet, picked.headers, job, stage === 'transcribe' ? 'matching' : 'extracting')
-
   try {
     if (stage === 'transcribe') runTranscriptionStage(job)
-    else runExtractionStage(job)
+    else runExtractionStage(job, attempt)
   } catch (e) {
     var described = describeError(e)
     logEvent('runner.job_threw', {
@@ -282,13 +293,13 @@ function advanceOldestPendingJob() {
       error: described.error,
       stack: described.stack,
     })
-    failJob(job, e.message)
+    failJob(job, e.message, stage, attempt)
   }
 
-  // A stage that threw still counts as advanced: failJob moved the row to
-  // pending or failed, so the drain loop has work to re-examine rather than an
-  // empty queue. attempts >= 3 terminates the retry, and the iteration cap
-  // bounds the pathological case.
+  // A stage that threw still counts as advanced: failJob moved the row to its
+  // own stage's queue or to failed, so the drain loop has work to re-examine
+  // rather than an empty queue. attempts >= 3 terminates the retry, and the
+  // iteration cap bounds the pathological case.
   return { advanced: true, reason: '', capture_id: job.capture_id, stage: stage }
 }
 
@@ -297,16 +308,25 @@ function advanceOldestPendingJob() {
 // of dead time before a killed job could be reclaimed. Under the every-minute
 // trigger that barely showed; with reclaim now running once per 15-minute drain
 // it is three minutes added to every recovery.
+//
+// Returns the attempt number it wrote. That number is the authoritative one for
+// this pass — the caller holds it and hands it to failJob rather than letting
+// failJob re-derive it from a stale row snapshot or buy another Sheet read
+// inside the lock.
 function leaseJob(sheet, headers, job, status) {
+  var attempt = Number(job.attempts || 0) + 1
+
   writeRowFields(sheet, headers, job._rowIndex, {
     status: status,
     lease_until: new Date(Date.now() + 7 * 60 * 1000).toISOString(),
-    attempts: Number(job.attempts || 0) + 1,
+    attempts: attempt,
     // A new attempt starts clean. Without this the previous attempt's error text
     // survives a successful run and reads as a live failure long after the job
     // reached done.
     error: '',
   })
+
+  return attempt
 }
 
 // Stage A. Matching moved here from the old single-stage pipeline because the
@@ -352,6 +372,10 @@ function runTranscriptionStage(job) {
 
   // attempts resets on a clean stage handoff so stage B gets its own retry
   // budget rather than inheriting whatever stage A spent out of the same 3.
+  // This is safe only because failJob now resumes a failed extraction at
+  // 'transcribed' (docs/specs/027): while a stage B failure rewound the job to
+  // 'pending', this line handed every lap a fresh budget and stage A ran — and
+  // paid ElevenLabs — again. It runs once per genuine forward handoff.
   upsertJob(
     job.capture_id,
     Object.assign({ status: 'transcribed', lease_until: '', attempts: 0 }, transcription),
@@ -427,7 +451,7 @@ function llmAdjudicationTrigger(match) {
 // Stage B. Its input changed — the master transcript when stage A produced an
 // accepted one and the mode is live, otherwise whatever raw source stage A
 // resolved to — but its contract did not: extract, validate spans, generate.
-function runExtractionStage(job) {
+function runExtractionStage(job, attempt) {
   var claim = findClaimForJob(job)
   var tagSchema = loadEnums()
   var hints = buildExtractionHints(job, claim)
@@ -475,7 +499,7 @@ function runExtractionStage(job) {
 
   if (result.status === 'failed') {
     logEvent('runner.docgen_failed', { capture_id: job.capture_id, error: result.error })
-    failJob(getJobByCaptureId(job.capture_id) || job, result.error)
+    failJob(getJobByCaptureId(job.capture_id) || job, result.error, 'extract', attempt)
     return
   }
 
@@ -645,18 +669,61 @@ function parseCalendarFields(claim) {
   }
 }
 
-function failJob(job, errorMessage) {
-  var attempts = Number(job.attempts || 0)
-  var status = attempts >= 3 ? 'failed' : 'pending'
+// Status IS the queue: advanceOldestPendingJob reads 'transcribed' first and
+// 'pending' second, so the status a failed stage resumes at is the choice of
+// which stage runs next. Failing every stage back to 'pending' meant a failed
+// extraction re-entered transcription, buying a fresh paid ASR pass over a
+// recording that had transcribed fine — six of them, for one call, in 26
+// minutes. See docs/specs/027.
+var STAGE_RESUME_STATUS = {
+  transcribe: 'pending',
+  extract: 'transcribed',
+}
+
+// 401/402/403 cannot succeed on a retry: the key is wrong, the account is out of
+// credit, or the model is not permitted. callOpenRouter already refuses to retry
+// them in-process (its retryable check is 429 || >= 500); the job layer then
+// retried them anyway, three times, at a full stage each. Anchored on the
+// "request failed: <status>" text every vendor wrapper throws, so a 402 quoted
+// inside a response body or a transcript is never mistaken for the status.
+var VENDOR_FAILURE_STATUS_PATTERN = /request failed:\s*(\d{3})\b/
+var NON_RETRYABLE_VENDOR_STATUSES = ['401', '402', '403']
+
+function isNonRetryableVendorFailure(errorMessage) {
+  var match = VENDOR_FAILURE_STATUS_PATTERN.exec(String(errorMessage || ''))
+  if (!match) return false
+  return NON_RETRYABLE_VENDOR_STATUSES.indexOf(match[1]) !== -1
+}
+
+// attempts is the number leaseJob wrote for THIS pass, threaded down from
+// advanceOldestPendingJob. It is persisted here because nothing else on the
+// failure path writes it back, which is why the Jobs row still read attempts = 0
+// after six laps and the attempts >= 3 guard could never fire.
+function failJob(job, errorMessage, stage, attempts) {
+  var attemptCount = Number(attempts)
+  if (!isFinite(attemptCount) || attemptCount < 1) attemptCount = Number(job.attempts || 0)
+
+  var nonRetryable = isNonRetryableVendorFailure(errorMessage)
+  var status =
+    nonRetryable || attemptCount >= 3 ? 'failed' : STAGE_RESUME_STATUS[stage] || 'pending'
 
   logEvent('runner.job_failed', {
     capture_id: job.capture_id,
-    attempts: attempts,
+    stage: stage || '',
+    attempts: attemptCount,
     next_status: status,
+    non_retryable: nonRetryable,
     error: String(errorMessage).slice(0, 1000),
   })
 
-  upsertJob(job.capture_id, { status: status, error: errorMessage })
+  // lease_until is cleared alongside the status: a resume status is a queue
+  // status, and a row sitting in one with a live lease reads as work in flight.
+  upsertJob(job.capture_id, {
+    status: status,
+    error: errorMessage,
+    attempts: attemptCount,
+    lease_until: '',
+  })
 
   if (status === 'failed') notifyJobFailed(job, errorMessage)
 }
