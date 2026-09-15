@@ -316,6 +316,40 @@ describe('a failed stage resumes at its own stage', () => {
     expect(jobs.get('dograh-1')?.master_transcript_id).toBe('mt-1')
   })
 
+  // The point of resuming at 'transcribed' rather than 'pending': stage B reads
+  // the transcript back out of the Drive artifacts stage A already wrote (see
+  // resolveExtractionTranscript in transcription.js, which reads
+  // transcript_master_id). Surviving on the row is not enough — the retry lap has
+  // to actually hand them to the extractor, which is what this pins.
+  it('feeds the stored transcription artifacts to every extraction retry', () => {
+    const resolved: Job[] = []
+    const { sandbox } = harness([dograhJob()], {
+      runTranscriptionPass: () => ({
+        extraction_input: 'master',
+        transcript_master_id: 'drive-master-1',
+        transcript_elevenlabs_id: 'drive-11l-1',
+      }),
+      resolveExtractionTranscript: (job: Job) => {
+        resolved.push({ ...job })
+        return { source: 'master', transcript: 'master text', haystack: 'master haystack' }
+      },
+      extractFields: () => {
+        throw new Error('extraction exploded')
+      },
+    })
+
+    sandbox.processOldestPendingJob()
+    sandbox.processOldestPendingJob()
+    sandbox.processOldestPendingJob()
+
+    expect(resolved).toHaveLength(2)
+    resolved.forEach((job) => {
+      expect(job.extraction_input).toBe('master')
+      expect(job.transcript_master_id).toBe('drive-master-1')
+      expect(job.transcript_elevenlabs_id).toBe('drive-11l-1')
+    })
+  })
+
   it('still resumes a transcription-stage failure at pending', () => {
     const { sandbox, jobs, logged } = harness([dograhJob()], {
       runTranscriptionPass: () => {
