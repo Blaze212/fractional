@@ -1045,13 +1045,6 @@ function transcriptionInputsFingerprint(config) {
 // Letting a property lookup or a row moving up the sheet re-buy two ASR passes
 // would be the same bug in a new place. This covers the claim's content, sorted
 // so key order cannot matter, minus the bookkeeping the merge gains nothing from.
-var FINGERPRINT_IGNORED_CLAIM_KEYS = [
-  '_rowIndex',
-  'property_lookup_at',
-  'calendar_fingerprint',
-  'property_address_fingerprint',
-]
-
 function mergeInputsFingerprint(claim, glossary) {
   return fingerprintParts([
     // getOptionalConfig on both halves, where mergeIfPossible uses getConfig for
@@ -1069,13 +1062,12 @@ function mergeInputsFingerprint(claim, glossary) {
 function claimFingerprintParts(claim) {
   if (!claim) return ['no_claim']
 
-  return Object.keys(claim)
-    .filter(function (key) {
-      return FINGERPRINT_IGNORED_CLAIM_KEYS.indexOf(key) === -1
-    })
+  var meaningful = withoutClaimBookkeeping(claim)
+
+  return Object.keys(meaningful)
     .sort()
     .map(function (key) {
-      return key + '=' + String(claim[key])
+      return key + '=' + String(meaningful[key])
     })
 }
 
