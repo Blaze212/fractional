@@ -574,32 +574,10 @@ function stripZipPlusFour(text) {
 // across 10 distinct events in 48 hours, re-searching houses whose year built
 // and square footage were already sitting on the row.
 //
-// Fingerprints are only ever compared, never inspected, so any cheap hash will
-// do — but a collision would silently suppress an enrichment that should have
-// run, so this pairs two independent 32-bit hashes with the input length.
-function fingerprintText(text) {
-  var value = String(text == null ? '' : text)
-  var djb2 = 5381
-  var sdbm = 0
-
-  for (var i = 0; i < value.length; i++) {
-    var code = value.charCodeAt(i)
-    djb2 = (djb2 * 33 + code) | 0
-    sdbm = (code + (sdbm << 6) + (sdbm << 16) - sdbm) | 0
-  }
-
-  return value.length + '-' + toHex32(djb2) + toHex32(sdbm)
-}
-
-function toHex32(n) {
-  return ('0000000' + (n >>> 0).toString(16)).slice(-8)
-}
-
-// \u0000 rather than a printable separator: it cannot occur in a calendar field,
-// so no rearrangement of title/location/description can produce the same joined
-// string as a different one.
+// fingerprintParts/fingerprintText live in util.js — the transcription pass uses
+// the same hash for the same reason (ADR 013).
 function calendarFieldsFingerprint(title, location, description) {
-  return fingerprintText([title || '', location || '', description || ''].join('\u0000'))
+  return fingerprintParts([title, location, description])
 }
 
 // The lookup receives exactly this string (see resolveFullAddressText), so it is

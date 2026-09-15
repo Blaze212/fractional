@@ -149,6 +149,9 @@ var JOBS_TRANSCRIPTION_COLUMNS = [
   'transcription_sources',
   'extraction_input',
   'extraction_artifact_id',
+  // ADR 013. Fingerprint of everything the ASR calls read, so a stage A that is
+  // entered a second time over unchanged inputs reuses what it already paid for.
+  'transcription_fingerprint',
 ]
 
 // Same cap the Jobs sheet's other transcript columns use.
@@ -994,6 +997,118 @@ function availableSources(sources, precedence) {
 // problem: the floor is the job's own voice-platform transcript, which is
 // exactly today's behavior, so a dead vendor degrades the run rather than
 // failing the job.
+// ADR 013. Everything the ASR and merge calls actually read. Any change here has
+// to re-transcribe, and nothing else may:
+//
+//   audio           — the recording itself. A different file is a different call.
+//   keyterms        — buildKeyterms derives these from the matched claim, the
+//                     glossary and ADJUSTER_NAME, and they BIAS both ASR calls.
+//                     This is why "the artifacts exist, skip" would have been
+//                     wrong: correcting a claim match is the main legitimate
+//                     reason to re-transcribe, and it changes only the keyterms.
+//   voice text      — the voice platform's own transcript is a merge source.
+//   mode            — shadow/live decides extraction_input, which is part of what
+//                     a reused pass hands back.
+//   model ids       — a model bump must re-transcribe, not serve a cached result
+//                     from the previous one.
+function transcriptionInputsFingerprint(config) {
+  var job = config.job || {}
+
+  return fingerprintParts([
+    'v1',
+    config.mode,
+    job.source,
+    job.audio_drive_id,
+    TRANSCRIPTION_MODELS.elevenlabs.id,
+    TRANSCRIPTION_MODELS.qwen.id,
+    (config.keyterms || []).join('|'),
+    fingerprintText(job.transcript),
+  ])
+}
+
+// The stored pass, when the row's fingerprint matches AND the artifacts it points
+// at are still readable. The readability check is the point: a fingerprint match
+// over a master transcript somebody deleted out of Drive would hand extraction an
+// id that resolves to nothing, which is worse than paying to transcribe again.
+//
+// Returns the same field shape runTranscriptionPass returns, so the caller writes
+// the row identically whether the pass ran or was reused.
+function reusableTranscription(job, fingerprint) {
+  var stored = String(job.transcription_fingerprint || '')
+  if (!stored || stored !== fingerprint) return null
+
+  var fields = {
+    transcript_elevenlabs_id: String(job.transcript_elevenlabs_id || ''),
+    transcript_qwen_id: String(job.transcript_qwen_id || ''),
+    transcript_master: String(job.transcript_master || ''),
+    transcript_master_id: String(job.transcript_master_id || ''),
+    master_coverage: job.master_coverage === '' ? '' : job.master_coverage,
+    transcription_sources: String(job.transcription_sources || ''),
+    extraction_input: String(job.extraction_input || ''),
+    transcription_fingerprint: stored,
+  }
+
+  if (job.call_folder_id) fields.call_folder_id = String(job.call_folder_id)
+
+  if (!storedTranscriptIsReadable(job, fields)) {
+    logEvent('transcription.reuse_rejected', {
+      capture_id: job.capture_id,
+      reason: 'artifact_unreadable',
+      extraction_input: fields.extraction_input,
+    })
+    return null
+  }
+
+  return fields
+}
+
+// Checks the one artifact extraction will actually reach for — see
+// resolveExtractionTranscript, which branches on extraction_input. A 'master'
+// input backed by the inline transcript_master cell is readable without Drive at
+// all; anything falling back to the voice platform's own transcript needs no
+// artifact.
+function storedTranscriptIsReadable(job, fields) {
+  var input = fields.extraction_input
+
+  if (input === 'master') {
+    if (String(job.transcript_master || '')) return true
+    return Boolean(readCallArtifact(fields.transcript_master_id))
+  }
+
+  if (input === 'elevenlabs') return Boolean(readCallArtifact(fields.transcript_elevenlabs_id))
+  if (input === 'qwen') return Boolean(readCallArtifact(fields.transcript_qwen_id))
+
+  // A voice-platform input is carried on the job row itself, so there is nothing
+  // in Drive that a reuse could be missing.
+  return Boolean(String(job.transcript || ''))
+}
+
+// The deliberate override, for the case the fingerprint cannot see: the audio is
+// the same, the claim is the same, and the transcription is simply bad. Clears
+// the fingerprint and returns the job to stage A, so the next drain pays for a
+// fresh pass. Run by hand from the Apps Script editor against a capture_id off
+// the Jobs tab, the same way the replay entry points are.
+function forceRetranscribe(captureId) {
+  var job = getJobByCaptureId(captureId)
+  if (!job) throw new Error('No job for capture_id: ' + captureId)
+
+  logEvent('transcription.force_requested', {
+    capture_id: captureId,
+    previous_status: job.status,
+    previous_fingerprint: String(job.transcription_fingerprint || ''),
+  })
+
+  upsertJob(captureId, {
+    status: 'pending',
+    transcription_fingerprint: '',
+    lease_until: '',
+    attempts: 0,
+    error: '',
+  })
+
+  return { capture_id: captureId, status: 'pending' }
+}
+
 function runTranscriptionPass(job, claim) {
   var mode = getMasterTranscriptMode()
   var captureId = job.capture_id
@@ -1014,9 +1129,29 @@ function runTranscriptionPass(job, claim) {
     return { extraction_input: voiceSource }
   }
 
-  var folder = getOrCreateCallFolder(job, claim)
   var glossary = loadGlossary()
   var keyterms = buildKeyterms(claim, glossary, getOptionalConfig('ADJUSTER_NAME', 'Brandon'))
+
+  // Computed BEFORE the folder is touched and before the audio blob is fetched,
+  // so a reused pass costs one cheap artifact read and nothing else.
+  var fingerprint = transcriptionInputsFingerprint({
+    mode: mode,
+    job: job,
+    keyterms: keyterms,
+  })
+
+  var reusable = reusableTranscription(job, fingerprint)
+  if (reusable) {
+    logEvent('transcription.reused', {
+      capture_id: captureId,
+      fingerprint: fingerprint,
+      extraction_input: reusable.extraction_input,
+      transcription_sources: reusable.transcription_sources,
+    })
+    return reusable
+  }
+
+  var folder = getOrCreateCallFolder(job, claim)
   var audioFile = DriveApp.getFileById(job.audio_drive_id)
 
   var asr = transcribeInParallel({
@@ -1089,6 +1224,7 @@ function runTranscriptionPass(job, claim) {
     master_coverage: merged ? merged.coverage : '',
     transcription_sources: available.join(','),
     extraction_input: extractionInput,
+    transcription_fingerprint: fingerprint,
   }
 
   if (folder) fields.call_folder_id = folder.getId()

@@ -131,7 +131,7 @@ function response(status: number, body: string) {
   return { getResponseCode: () => status, getContentText: () => body }
 }
 
-const SOURCES = 'apps/adjuster/src/transcription.js'
+const SOURCES = ['apps/adjuster/src/util.js', 'apps/adjuster/src/transcription.js']
 
 function harness(overrides: Record<string, unknown> = {}) {
   const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
@@ -163,7 +163,7 @@ function harness(overrides: Record<string, unknown> = {}) {
   }
   delete overrides.DriveApp
 
-  const sandbox = loadGs([SOURCES], {
+  const sandbox = loadGs(SOURCES, {
     logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
     describeError: (err: Error) => ({ error: String(err.message ?? err), stack: '' }),
     getConfig: (key: string) => {
@@ -1158,6 +1158,125 @@ describe('runTranscriptionPass', () => {
     contested_passages: ['drip edge'],
     model: 'merge-model',
   }
+
+  // ADR 013. Stage A re-entered over unchanged inputs — a hand-edited status, a
+  // replayed job — used to buy a second ElevenLabs pass over the same recording.
+  // The fingerprint is over what the ASR calls actually read, so a corrected
+  // claim match (which changes the keyterms that bias both calls) still
+  // re-transcribes.
+  describe('idempotency', () => {
+    // One live pass, then a second call with the row as the first pass left it.
+    function twoPasses(secondJob: Record<string, unknown> = {}) {
+      const built = passHarness({ mode: 'live', merge: acceptedMerge })
+      const first = built.sandbox.runTranscriptionPass({ ...job }, claim)
+      const filesAfterFirst = built.folder.files.length
+
+      const second = built.sandbox.runTranscriptionPass({ ...job, ...first, ...secondJob }, claim)
+
+      return { ...built, first, second, filesAfterFirst }
+    }
+
+    it('reuses the stored pass instead of re-transcribing unchanged inputs', () => {
+      const { first, second, folder, filesAfterFirst, logged } = twoPasses()
+
+      expect(second).toEqual(first)
+      expect(folder.files).toHaveLength(filesAfterFirst)
+      expect(logged.filter((l) => l.event === 'transcription.pass_complete')).toHaveLength(1)
+      expect(logged.find((l) => l.event === 'transcription.reused')?.fields.extraction_input).toBe(
+        'master',
+      )
+    })
+
+    it('carries the fingerprint on the fields it writes to the row', () => {
+      const { first } = twoPasses()
+
+      expect(String(first.transcription_fingerprint)).not.toBe('')
+    })
+
+    // The case an "artifacts exist, skip" guard would have got wrong: the audio
+    // is identical, but a corrected claim changes the keyterms that bias the ASR.
+    it('re-transcribes when the matched claim changes the keyterms', () => {
+      const built = passHarness({ mode: 'live', merge: acceptedMerge })
+      const first = built.sandbox.runTranscriptionPass({ ...job }, claim)
+
+      built.sandbox.runTranscriptionPass({ ...job, ...first }, {
+        claim_id: 'claim-2',
+        insured_last_name: 'Okafor',
+      } as never)
+
+      expect(built.logged.filter((l) => l.event === 'transcription.pass_complete')).toHaveLength(2)
+      expect(built.logged.some((l) => l.event === 'transcription.reused')).toBe(false)
+    })
+
+    it('re-transcribes when the audio changes', () => {
+      const { logged } = twoPasses({ audio_drive_id: 'audio-2' })
+
+      expect(logged.filter((l) => l.event === 'transcription.pass_complete')).toHaveLength(2)
+    })
+
+    it('re-transcribes when the mode flips, since it decides extraction_input', () => {
+      const built = passHarness({ mode: 'live', merge: acceptedMerge })
+      const first = built.sandbox.runTranscriptionPass({ ...job }, claim)
+
+      built.properties.MASTER_TRANSCRIPT_MODE = 'shadow'
+      const second = built.sandbox.runTranscriptionPass({ ...job, ...first }, claim)
+
+      expect(second.extraction_input).toBe('dograh')
+      expect(built.logged.filter((l) => l.event === 'transcription.pass_complete')).toHaveLength(2)
+    })
+
+    it('re-transcribes a row that has no fingerprint yet', () => {
+      const { logged } = twoPasses({ transcription_fingerprint: '' })
+
+      expect(logged.filter((l) => l.event === 'transcription.pass_complete')).toHaveLength(2)
+    })
+
+    // A fingerprint match over a master somebody deleted out of Drive would hand
+    // extraction an id resolving to nothing — worse than paying again.
+    it('re-transcribes when the artifact the fingerprint vouches for is gone', () => {
+      const { logged } = twoPasses({ transcript_master: '', transcript_master_id: 'deleted-1' })
+
+      expect(logged.filter((l) => l.event === 'transcription.pass_complete')).toHaveLength(2)
+      expect(logged.find((l) => l.event === 'transcription.reuse_rejected')?.fields.reason).toBe(
+        'artifact_unreadable',
+      )
+    })
+  })
+
+  // The escape hatch for what the fingerprint cannot see: same audio, same claim,
+  // simply a bad transcription.
+  describe('forceRetranscribe', () => {
+    function forceHarness(row: Record<string, unknown> | null) {
+      const writes: Array<Record<string, unknown>> = []
+      const built = harness({
+        getJobByCaptureId: () => row,
+        upsertJob: (_id: string, fields: Record<string, unknown>) => writes.push(fields),
+      })
+      return { ...built, writes }
+    }
+
+    it('clears the fingerprint and returns the job to stage A', () => {
+      const { sandbox, writes } = forceHarness({
+        capture_id: 'dograh-1',
+        status: 'done',
+        transcription_fingerprint: 'fp-1',
+      })
+
+      sandbox.forceRetranscribe('dograh-1')
+
+      expect(writes[0]).toMatchObject({
+        status: 'pending',
+        transcription_fingerprint: '',
+        attempts: 0,
+      })
+    })
+
+    it('refuses a capture_id that is not on the Jobs tab', () => {
+      const { sandbox } = forceHarness(null)
+
+      expect(() => sandbox.forceRetranscribe('nope')).toThrow('No job for capture_id')
+    })
+  })
 
   it('skips everything and leaves extraction on Dograh when the mode is off', () => {
     const { sandbox, folder, logged } = passHarness({ mode: 'off' })
