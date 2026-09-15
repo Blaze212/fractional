@@ -4,6 +4,12 @@
 # The pin check is the point: scripts/kit-root.sh already refuses a mismatch at exit 3, but
 # it only runs when someone invokes a shim. This test puts the same check in CI, so a pin
 # that drifts from the installed/checked-out kit fails a PR rather than the next run.
+#
+# Under `kit_version: latest` there is no version to compare — kit-root.sh asserts the
+# SHIM SET instead (a kit script with no shim here), and that already ran when it resolved
+# the kit below. What is left to check here is the direction that assertion cannot see: a
+# shim this repo still carries whose kit script has been REMOVED, which would otherwise
+# die mid-run on a missing kit script rather than failing loudly now.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -20,11 +26,26 @@ want="$(grep -E '^kit_version:' "$profile" | head -1 \
 have="$(node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).version||""))' \
   "$kit/.claude-plugin/plugin.json")"
 
-if [ "$want" != "$have" ]; then
+if [ "$want" = "latest" ] || [ "$want" = "LATEST" ]; then
+  orphaned=""
+  for shim in scripts/*.sh; do
+    [ -f "$shim" ] || continue
+    name="$(basename "$shim")"
+    [ "$name" = "kit-root.sh" ] && continue
+    grep -q 'kit-root\.sh' "$shim" || continue   # only kit shims, not this repo's own scripts
+    [ -f "$kit/scripts/$name" ] || orphaned="$orphaned $name"
+  done
+  if [ -n "$orphaned" ]; then
+    echo "✗ shim(s) with no kit script in $have:$orphaned"
+    exit 1
+  fi
+  echo "✓ kit_version latest tracks kit $have, shim set agrees"
+elif [ "$want" != "$have" ]; then
   echo "✗ kit_version pin is $want but the resolved kit at $kit is $have"
   exit 1
+else
+  echo "✓ kit_version $want matches the resolved kit"
 fi
-echo "✓ kit_version $want matches the resolved kit"
 
 # Repo-specific keys the compiler and the runner read. A typo here is silent otherwise:
 # the compiler would emit a test-* step that does not exist, or push to the wrong repo.

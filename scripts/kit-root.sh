@@ -5,9 +5,14 @@
 #   scripts/kit-root.sh scripts/pr-open.sh …  execs that kit script with the rest of the args
 #
 # Resolution: $BH_DELIVERY_ROOT if set, else the installPath of bh-delivery@bh-delivery in
-# ~/.claude/plugins/installed_plugins.json. The kit's own plugin.json version must equal
-# kit_version in this repo's .claude/delivery-profile.yaml; any mismatch, or an
-# unresolvable kit, exits 3 with the fix-it command. It never falls back to another version.
+# ~/.claude/plugins/installed_plugins.json.
+#
+# Then one of two checks, chosen by the profile's kit_version:
+#   <exact version>  the kit's plugin.json version must equal it; any mismatch exits 3.
+#                    Never falls back to another version.
+#   latest           track whatever is installed — no version compare. Instead the SHIM SET
+#                    is asserted: every operational kit script must have a shim here, so a
+#                    kit that added one fails fast with the fix instead of dying mid-run.
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -73,9 +78,37 @@ if [ ! -f "$manifest" ]; then
   fixit
 fi
 have="$(node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).version||""))' "$manifest")"
-if [ "$have" != "$want" ]; then
+
+# `kit_version: latest` tracks whatever kit is installed, so there is no version to
+# compare. What replaces the check is not nothing — it is the assertion that actually
+# breaks a tracking repo: a kit release that ADDS an operational script leaves this repo
+# with no shim for it, and the first symptom is a compiled step dying on
+# "scripts/<new>.sh: No such file or directory" mid-run. So on `latest` we verify the SHIM
+# SET on every call and fail loudly, with the one command that fixes it, BEFORE any work
+# starts. A pinned repo keeps the exact-version check and is unaffected.
+if [ "$want" = "latest" ] || [ "$want" = "LATEST" ]; then
+  missing=""
+  for kitscript in "$root"/scripts/*.sh; do
+    [ -f "$kitscript" ] || continue
+    name="$(basename "$kitscript")"
+    # No `case` here on purpose: this whole resolver is a heredoc inside $( … ), and a
+    # case pattern's unbalanced `)` closes that command substitution early — the file
+    # still looks right and stops parsing at this line.
+    if [ "${name#_}" != "$name" ] || [ "$name" = "install-shims.sh" ]; then
+      continue                          # kit-internal / human-run: never shimmed
+    fi
+    [ -f "$repo_root/scripts/$name" ] || missing="$missing $name"
+  done
+  if [ -n "$missing" ]; then
+    echo "bh-delivery: kit $have ships script(s) this repo has no shim for:$missing" >&2
+    echo "   kit_version is 'latest', so the kit moved under this repo and the shims are stale." >&2
+    echo "   Fix: \"\$(claude plugin path bh-delivery)/scripts/install-shims.sh\"" >&2
+    exit 3
+  fi
+elif [ "$have" != "$want" ]; then
   echo "bh-delivery: kit version mismatch — this repo pins kit_version $want, the installed kit is $have." >&2
-  echo "   Either update the pin in $profile (a green one-line PR) or install the pinned kit." >&2
+  echo "   Either update the pin in $profile (a green one-line PR), install the pinned kit," >&2
+  echo "   or set kit_version: latest to track whatever is installed." >&2
   fixit
 fi
 

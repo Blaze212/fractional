@@ -37,23 +37,31 @@ jobs:
       # ── bh-delivery kit (spec 029 B-5) ────────────────────────────────────────
       # The delivery machinery lives in Blaze212/bh-delivery, not in this repo; the
       # scripts/*.sh here are three-line shims onto it. CI has no plugin manager, so it
-      # checks the kit out at the tag this repo pins and points BH_DELIVERY_ROOT at it.
-      # Pinned tag, never a moving ref: a kit whose scripts disagree with the profile they
-      # read is exactly the drift the kit exists to end.
-      - name: Read the pinned kit version
+      # checks the kit out at the ref this repo names and points BH_DELIVERY_ROOT at it.
+      # An exact pin still resolves to its tag, never a moving ref, so a kit whose scripts
+      # disagree with the profile they read is exactly the drift the kit exists to end.
+      - name: Resolve the bh-delivery ref
         id: kit
         run: |
           v="$(grep -E '^kit_version:' .claude/delivery-profile.yaml | head -1 \
             | sed -E "s/^kit_version:[[:space:]]*//; s/[\"']//g; s/[[:space:]]*(#.*)?$//")"
           [ -n "$v" ] || { echo "no kit_version in .claude/delivery-profile.yaml"; exit 1; }
+          # `latest` tracks the kit's default branch, which is the CI equivalent of what
+          # `latest` means to scripts/kit-root.sh locally: use whatever the kit currently
+          # is, and assert the shim SET instead of a version. An exact pin keeps its tag.
+          if [ "$v" = "latest" ]; then
+            echo "ref=refs/heads/main" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=refs/tags/v$v" >> "$GITHUB_OUTPUT"
+          fi
           echo "version=$v" >> "$GITHUB_OUTPUT"
-          echo "pinned kit_version: $v"
+          echo "kit_version: $v"
 
       - name: Check out the bh-delivery kit
         uses: actions/checkout@v4
         with:
           repository: Blaze212/bh-delivery
-          ref: refs/tags/v${{ steps.kit.outputs.version }}
+          ref: ${{ steps.kit.outputs.ref }}
           token: ${{ secrets.BH_DELIVERY_TOKEN }}
           path: .bh-delivery
           # Do NOT leave the kit token in .bh-delivery/.git/config: the very next step
