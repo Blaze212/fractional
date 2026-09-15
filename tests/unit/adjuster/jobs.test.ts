@@ -262,6 +262,45 @@ describe('reclaimStuckJobs', () => {
 
     expect(sandbox.reclaimStuckJobs()).toBe(0)
   })
+
+  // docs/specs/027 — an expired lease used to rewind every stage to 'pending',
+  // stage A's queue, so a killed extraction bought a second paid transcription
+  // of a recording that had already transcribed.
+  it('returns an expired extracting lease to transcribed, not to pending', () => {
+    const { sandbox, values, headers } = leaseHarness('extracting', 1)
+
+    sandbox.reclaimStuckJobs()
+
+    expect(values[1][headers.indexOf('status')]).toBe('transcribed')
+    expect(values[1][headers.indexOf('lease_until')]).toBe('')
+  })
+
+  // generating resumes at transcribed rather than at a docgen-only status:
+  // extraction's output never reaches the row, so there is no partial state to
+  // resume from and re-extracting the same transcript is idempotent.
+  it('returns an expired generating lease to transcribed', () => {
+    const { sandbox, values, headers } = leaseHarness('generating', 1)
+
+    sandbox.reclaimStuckJobs()
+
+    expect(values[1][headers.indexOf('status')]).toBe('transcribed')
+  })
+
+  it('returns an expired matching lease to pending, since stage A is what it was in', () => {
+    const { sandbox, values, headers } = leaseHarness('matching', 1)
+
+    sandbox.reclaimStuckJobs()
+
+    expect(values[1][headers.indexOf('status')]).toBe('pending')
+  })
+
+  it('still fails a stage B lease that has burned its attempts', () => {
+    const { sandbox, values, headers } = leaseHarness('extracting', 3)
+
+    sandbox.reclaimStuckJobs()
+
+    expect(values[1][headers.indexOf('status')]).toBe('failed')
+  })
 })
 
 describe('withJobLock flushing', () => {

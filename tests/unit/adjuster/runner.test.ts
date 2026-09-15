@@ -9,7 +9,10 @@ const TAG_SCHEMA = {
 
 function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
   const jobs = new Map<string, Job>()
-  jobRows.forEach((job) => jobs.set(job.capture_id, { ...job }))
+  // Row indexes are assigned here rather than taken from the fixture so the fake
+  // writeRowFields below can resolve a lease back to the job it leased — which
+  // is what makes the attempt counter leaseJob writes observable at all.
+  jobRows.forEach((job, i) => jobs.set(job.capture_id, { ...job, _rowIndex: i + 2 }))
 
   const logged: Array<{ event: string; fields: Record<string, unknown> }> = []
   const leases: Array<{ capture_id: string; fields: Record<string, unknown> }> = []
@@ -17,6 +20,7 @@ function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
   const validateCalls: Array<{ transcript: string }> = []
   const transcriptionCalls: Array<{ job: Job; claim: Job | null }> = []
   const artifactWrites: Array<{ job: Job; extraction: Record<string, any> }> = []
+  const failureNotices: Array<{ job: Job; error: string }> = []
 
   const sandbox = loadGs('apps/adjuster/src/runner.js', {
     logEvent: (event: string, fields: Record<string, unknown>) => logged.push({ event, fields }),
@@ -42,12 +46,13 @@ function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
     upsertJob: (id: string, fields: Job) => {
       jobs.set(id, { ...(jobs.get(id) ?? {}), ...fields })
     },
-    writeRowFields: (_sheet: unknown, _headers: unknown, _rowIndex: number, fields: Job) => {
-      // Only the lease path reaches here; the leased job is whichever one the
-      // dispatcher just picked, so record it against every pending/transcribed
-      // candidate rather than resolving a row index the fake sheet has no idea
-      // about.
-      leases.push({ capture_id: '', fields })
+    writeRowFields: (_sheet: unknown, _headers: unknown, rowIndex: number, fields: Job) => {
+      // Only the lease path reaches here. The write lands on the job at that row
+      // so the sheet's view of `attempts` is the leased one, not the pre-lease
+      // snapshot — the distinction docs/specs/027 turns on.
+      const target = [...jobs.values()].find((job) => job._rowIndex === rowIndex)
+      leases.push({ capture_id: String(target?.capture_id ?? ''), fields })
+      if (target) Object.assign(target, fields)
     },
 
     getClaims: () => [{ claim_id: 'claim-1', insured_last_name: 'Henderson' }],
@@ -86,7 +91,9 @@ function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
     dropCoverageRestatement: (validated: unknown) => ({ validated, dropped: null }),
     collectOffSuggestionFields: () => [],
     generateDoc: () => ({ status: 'done', docUrl: 'https://doc', needsInputCount: 0 }),
-    notifyJobFailed: () => {},
+    notifyJobFailed: (job: Job, error: string) => {
+      failureNotices.push({ job, error })
+    },
     // Defined in replay.js, which this sandbox does not load. Stubbed rather
     // than ignored: the pipeline persisting extraction.json is what makes a
     // later free replay possible, so it is asserted below.
@@ -106,6 +113,7 @@ function harness(jobRows: Job[], overrides: Record<string, unknown> = {}) {
     validateCalls,
     transcriptionCalls,
     artifactWrites,
+    failureNotices,
   }
 }
 
@@ -227,6 +235,169 @@ describe('processOldestPendingJob dispatch', () => {
     sandbox.processOldestPendingJob()
 
     expect(jobs.get('dograh-1')?.status).toBe('failed')
+  })
+})
+
+// docs/specs/027. A failed extraction used to rewind the job to 'pending',
+// which is stage A's queue, so every retry bought a fresh paid ElevenLabs pass
+// over a recording that had transcribed fine — one real call was transcribed six
+// times in 26 minutes. Status IS the queue, so the fix is which status a failure
+// resumes at.
+describe('a failed stage resumes at its own stage', () => {
+  function brokenExtractionHarness() {
+    // The call-count spy the acceptance criteria asks for: every ElevenLabs pass
+    // this records is one the old code paid for a second time.
+    const transcribed = vi.fn(() => ({
+      extraction_input: 'master',
+      master_transcript_id: 'mt-1',
+    }))
+
+    return {
+      ...harness([dograhJob()], {
+        runTranscriptionPass: transcribed,
+        extractFields: () => {
+          throw new Error('extraction exploded')
+        },
+      }),
+      transcribed,
+    }
+  }
+
+  it('transcribes exactly once across three extraction attempts', () => {
+    const { sandbox, jobs, transcribed, failureNotices } = brokenExtractionHarness()
+
+    // Stage A, then three full extraction attempts — the drain loop's whole life
+    // for this job.
+    sandbox.processOldestPendingJob()
+    sandbox.processOldestPendingJob()
+    sandbox.processOldestPendingJob()
+    sandbox.processOldestPendingJob()
+
+    expect(transcribed).toHaveBeenCalledTimes(1)
+    expect(jobs.get('dograh-1')?.status).toBe('failed')
+    expect(failureNotices).toHaveLength(1)
+  })
+
+  it('counts each extraction attempt on the row instead of resetting to zero', () => {
+    const { sandbox, jobs } = brokenExtractionHarness()
+
+    sandbox.processOldestPendingJob()
+    expect(jobs.get('dograh-1')?.status).toBe('transcribed')
+
+    const seen: number[] = []
+    for (let lap = 0; lap < 3; lap++) {
+      sandbox.processOldestPendingJob()
+      seen.push(Number(jobs.get('dograh-1')?.attempts))
+    }
+
+    expect(seen).toEqual([1, 2, 3])
+  })
+
+  it('logs the same attempt number it wrote to the row', () => {
+    const { sandbox, jobs, logged } = brokenExtractionHarness()
+
+    sandbox.processOldestPendingJob()
+    sandbox.processOldestPendingJob()
+    sandbox.processOldestPendingJob()
+
+    const failures = logged.filter((l) => l.event === 'runner.job_failed')
+    expect(failures.map((l) => l.fields.attempts)).toEqual([1, 2])
+    expect(failures[1].fields.stage).toBe('extract')
+    expect(Number(jobs.get('dograh-1')?.attempts)).toBe(2)
+  })
+
+  it('leaves the transcription columns a failed extraction never touched', () => {
+    const { sandbox, jobs } = brokenExtractionHarness()
+
+    sandbox.processOldestPendingJob()
+    sandbox.processOldestPendingJob()
+
+    expect(jobs.get('dograh-1')?.extraction_input).toBe('master')
+    expect(jobs.get('dograh-1')?.master_transcript_id).toBe('mt-1')
+  })
+
+  it('still resumes a transcription-stage failure at pending', () => {
+    const { sandbox, jobs, logged } = harness([dograhJob()], {
+      runTranscriptionPass: () => {
+        throw new Error('elevenlabs exploded')
+      },
+    })
+
+    sandbox.processOldestPendingJob()
+
+    expect(jobs.get('dograh-1')?.status).toBe('pending')
+    expect(logged.find((l) => l.event === 'runner.job_failed')?.fields.stage).toBe('transcribe')
+  })
+})
+
+// docs/specs/027. 401/402/403 cannot succeed on a retry. callOpenRouter already
+// refuses to retry them in-process; the job layer retried them anyway, three
+// times, at a full paid stage each.
+describe('non-retryable vendor failures', () => {
+  it('recognises 401, 402 and 403 in a vendor failure message', () => {
+    const { sandbox } = harness([dograhJob()])
+
+    expect(sandbox.isNonRetryableVendorFailure('OpenRouter request failed: 402 no credits')).toBe(
+      true,
+    )
+    expect(sandbox.isNonRetryableVendorFailure('OpenRouter request failed: 401 bad key')).toBe(true)
+    expect(sandbox.isNonRetryableVendorFailure('OpenRouter request failed: 403 forbidden')).toBe(
+      true,
+    )
+  })
+
+  it('leaves a retryable or unrecognised failure alone', () => {
+    const { sandbox } = harness([dograhJob()])
+
+    expect(sandbox.isNonRetryableVendorFailure('OpenRouter request failed: 500 upstream')).toBe(
+      false,
+    )
+    expect(sandbox.isNonRetryableVendorFailure('OpenRouter request failed: 429 slow down')).toBe(
+      false,
+    )
+    expect(sandbox.isNonRetryableVendorFailure('')).toBe(false)
+  })
+
+  // The status is read from the "request failed: <status>" text, never from a
+  // bare number anywhere in the message — a 402 quoted inside a response body or
+  // a transcript must not fail a job that is merely rate-limited.
+  it('reads the status from the failure text, not from a number in the body', () => {
+    const { sandbox } = harness([dograhJob()])
+
+    expect(
+      sandbox.isNonRetryableVendorFailure('OpenRouter request failed: 500 {"was":"402 earlier"}'),
+    ).toBe(false)
+    expect(
+      sandbox.isNonRetryableVendorFailure('Transcript mentions unit 402 of the building'),
+    ).toBe(false)
+  })
+
+  it('fails the job on the first attempt without spending a retry', () => {
+    const { sandbox, jobs, failureNotices } = harness([dograhJob()], {
+      runTranscriptionPass: () => {
+        throw new Error('OpenRouter request failed: 402 This request requires more credits')
+      },
+    })
+
+    sandbox.processOldestPendingJob()
+
+    expect(jobs.get('dograh-1')?.status).toBe('failed')
+    expect(Number(jobs.get('dograh-1')?.attempts)).toBe(1)
+    expect(jobs.get('dograh-1')?.error).toContain('402')
+    expect(failureNotices).toHaveLength(1)
+  })
+
+  it('still spends one attempt on a 500 and resumes at its own stage', () => {
+    const { sandbox, jobs } = harness([dograhJob({ status: 'transcribed', claim_id: 'claim-1' })], {
+      extractFields: () => {
+        throw new Error('OpenRouter request failed: 500 upstream exploded')
+      },
+    })
+
+    sandbox.processOldestPendingJob()
+
+    expect(jobs.get('dograh-1')?.status).toBe('transcribed')
+    expect(Number(jobs.get('dograh-1')?.attempts)).toBe(1)
   })
 })
 
@@ -533,7 +704,10 @@ describe('stage B', () => {
     sandbox.processOldestPendingJob()
 
     expect(events(logged)).toContain('runner.docgen_failed')
-    expect(jobs.get('dograh-1')?.status).toBe('pending')
+    // Stage B's own queue, not stage A's — docs/specs/027. Rewinding a docgen
+    // failure to 'pending' bought another paid transcription of a recording
+    // that had already transcribed.
+    expect(jobs.get('dograh-1')?.status).toBe('transcribed')
   })
 
   // docs/specs/022 phase 4 — an extractor-detected identity mismatch routes to

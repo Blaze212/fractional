@@ -249,6 +249,24 @@ function getOldestPendingJob() {
   return getOldestJobByStatus('pending')
 }
 
+// Every leased status, mapped to the queue status an expired lease returns it
+// to. Stage A's statuses go back to 'pending' and stage B's to 'transcribed',
+// for the same reason failJob (runner.js) routes that way: rewinding a killed
+// extraction to 'pending' buys a second paid transcription of a recording that
+// already transcribed. See docs/specs/027.
+//
+// 'generating' resumes at 'transcribed' rather than at a docgen-only status
+// because extraction's output never reaches the row — runExtractionStage writes
+// only status and model before it renders, and holds the fields in memory — so
+// there is no partial state for docgen to resume from. Re-running extraction
+// over the same transcript is idempotent.
+var LEASED_STATUS_RESUME = {
+  matching: 'pending',
+  transcribing: 'pending',
+  extracting: 'transcribed',
+  generating: 'transcribed',
+}
+
 // Returns the number of rows it touched, so drainPipeline (runner.js) can report
 // it in the drain summary. Under the every-minute trigger nobody needed the
 // count; at one pass per 15 minutes it is the only visibility into how often a
@@ -264,12 +282,8 @@ function reclaimStuckJobs() {
     // the longest-running stage in the pipeline and is the one most likely to
     // hit the 6-minute execution cap. Left off the list, a timed-out stage A
     // would sit in 'transcribing' forever with nothing to return it to pending.
-    var leased =
-      row.status === 'matching' ||
-      row.status === 'transcribing' ||
-      row.status === 'extracting' ||
-      row.status === 'generating'
-    if (!leased || !row.lease_until) return
+    var resumeStatus = LEASED_STATUS_RESUME[row.status]
+    if (!resumeStatus || !row.lease_until) return
 
     if (new Date(row.lease_until) < now) {
       if (Number(row.attempts) >= 3) {
@@ -278,7 +292,10 @@ function reclaimStuckJobs() {
           error: 'Exceeded max attempts after lease expiry',
         })
       } else {
-        writeRowFields(sheet, data.headers, row._rowIndex, { status: 'pending', lease_until: '' })
+        writeRowFields(sheet, data.headers, row._rowIndex, {
+          status: resumeStatus,
+          lease_until: '',
+        })
       }
       reclaimed += 1
     }

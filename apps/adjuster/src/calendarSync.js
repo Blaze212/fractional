@@ -20,7 +20,21 @@ var CLAIMS_CALENDAR_COLUMNS = [
   'property_bathrooms',
   'property_square_footage',
   'property_source_url',
+  // docs/specs/027. Appended, never inserted: ensureClaimsColumns adds missing
+  // headers at the end and every reader goes through getSheetRows' header map,
+  // so a Claims row written before these existed still reads (its blank
+  // fingerprints simply mean "enrich once, then cache").
+  'calendar_fingerprint',
+  'property_address_fingerprint',
+  'property_lookup_at',
 ]
+
+// A property lookup that ran and genuinely found nothing is cached this long.
+// Without a negative cache an unresolvable address is re-searched every hour
+// forever, which is the same defect in miniature; bounded so an address that
+// becomes findable is not hidden indefinitely. A corrected address changes the
+// fingerprint and re-runs immediately regardless.
+var PROPERTY_LOOKUP_MISS_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 // "5139 Alderman Rd. Concord NC 28025" and "1104 S Zion St, Landis, NC 28088"
 // both need to parse -> street / city / state / zip. The street/city split
@@ -201,11 +215,22 @@ function syncClaimsFromCalendar() {
 
     logEvent('calendar_sync.tick_start', { event_count: events.length })
 
+    // ONE Sheet read per tick, mapped by claim_id, rather than one per event:
+    // every event's enrichment-cache check is answered out of this map.
+    var storedClaims = indexClaimsByCalendarId(getClaims())
+
     var syncedTitles = []
     var skippedTitles = []
+    var llmCalls = 0
+    var llmCallsSkipped = 0
 
     events.forEach(function (event) {
-      if (syncEventToClaim(event)) {
+      var outcome = syncEventToClaim(event, storedClaims[event.getId()] || null)
+
+      llmCalls += outcome.llm_calls
+      llmCallsSkipped += outcome.llm_calls_skipped
+
+      if (outcome.synced) {
         syncedTitles.push(event.getTitle())
       } else {
         skippedTitles.push(event.getTitle())
@@ -227,11 +252,15 @@ function syncClaimsFromCalendar() {
     // claim_synced/event_failed/title_unparsed lines below — synced_titles and
     // skipped_titles so a bad sync is visible from the Raw sheet without having
     // to cross-reference event IDs against the calendar.
+    // llm_calls / llm_calls_skipped are the cost line: on a steady calendar the
+    // second tick over the same events should read llm_calls: 0.
     logEvent('calendar_sync.tick_end', {
       synced: syncedTitles.length,
       skipped: skippedTitles.length,
       synced_titles: syncedTitles.join(' | '),
       skipped_titles: skippedTitles.join(' | '),
+      llm_calls: llmCalls,
+      llm_calls_skipped: llmCallsSkipped,
       ms: Date.now() - startedAt,
     })
   } catch (err) {
@@ -245,28 +274,59 @@ function syncClaimsFromCalendar() {
   }
 }
 
-function syncEventToClaim(event) {
+// storedClaim is this event's Claims row as the tick read it, or null when the
+// event has never synced. It is what makes the enrichment cache possible: both
+// paid calls are gated on shouldReenrich comparing it against the event's
+// current fingerprints. The non-LLM fields below are rewritten every tick
+// regardless — they cost nothing and keep the row honest about the invite.
+//
+// Returns the per-event tally the tick summarises, not a bare boolean, so
+// calendar_sync.tick_end can report how many calls this tick made and how many
+// the cache saved.
+function syncEventToClaim(event, storedClaim) {
   var eventId = event.getId()
 
   try {
     var header = parseEventTitle(event.getTitle())
     if (!header.claim_number) {
       logEvent('calendar_sync.title_unparsed', { event_id: eventId, title: event.getTitle() })
-      return false
+      return eventOutcome(false, 0, 0)
     }
 
     var description = event.getDescription() || ''
     var address = parseAddress(event.getLocation(), description)
-    var details = extractCalendarFields(event.getTitle(), event.getLocation(), description)
-    var propertyLookup = lookupPropertyDetailsSafely(
-      resolveFullAddressText(event.getLocation(), description),
+    var fullAddressText = resolveFullAddressText(event.getLocation(), description)
+
+    var fingerprints = calendarEnrichmentFingerprints(
+      event.getTitle(),
+      event.getLocation(),
+      description,
+      fullAddressText,
     )
+    var decision = shouldReenrich(storedClaim || null, fingerprints, new Date())
+
+    // extractCalendarFields and lookupPropertyDetailsSafely each already skip
+    // their call when their own input is empty, so a decision to run is only a
+    // real call when there is something to run it on. Counted here rather than
+    // inside them so the tally matches what OpenRouter is actually billed for.
+    var extractable = description.trim() !== ''
+    var lookupable = fullAddressText !== ''
+
+    var details = decision.extract
+      ? extractCalendarFields(event.getTitle(), event.getLocation(), description)
+      : { fields: storedCalendarFields(storedClaim) }
+
+    var propertyLookup = decision.lookup
+      ? lookupPropertyDetailsSafely(fullAddressText)
+      : { values: storedPropertyValues(storedClaim), failed: false }
 
     // The LLM's extracted fields are a lossy summary — keep the verbatim
     // description alongside them so nothing the model missed or mis-normalized
     // is ever unrecoverable from the Claims row itself.
     var calendarFields = Object.assign({}, details.fields)
     if (description) calendarFields.raw_notes = description
+
+    var propertyValues = resolvePropertyValues(storedClaim, decision, propertyLookup)
 
     var fields = {
       insured_last_name: header.insured_last_name,
@@ -277,25 +337,43 @@ function syncEventToClaim(event) {
       appt_start: event.getStartTime().toISOString(),
       appt_end: event.getEndTime().toISOString(),
       calendar_fields: JSON.stringify(calendarFields),
-      property_year_built: propertyLookup.year_built,
-      property_bedrooms: propertyLookup.bedrooms,
-      property_bathrooms: propertyLookup.bathrooms,
-      property_square_footage: propertyLookup.square_footage,
-      property_source_url: propertyLookup.source_url,
+      property_year_built: propertyValues.year_built,
+      property_bedrooms: propertyValues.bedrooms,
+      property_bathrooms: propertyValues.bathrooms,
+      property_square_footage: propertyValues.square_footage,
+      property_source_url: propertyValues.source_url,
+      calendar_fingerprint: fingerprints.calendar_fingerprint,
+      property_address_fingerprint: fingerprints.property_address_fingerprint,
+      property_lookup_at: resolvePropertyLookupAt(storedClaim, decision, propertyLookup),
     }
 
     withJobLock(function () {
       upsertClaim(eventId, fields)
     })
 
+    var calls = (decision.extract && extractable ? 1 : 0) + (decision.lookup && lookupable ? 1 : 0)
+    var skipped =
+      (!decision.extract && extractable ? 1 : 0) + (!decision.lookup && lookupable ? 1 : 0)
+
+    if (skipped > 0) {
+      logEvent('calendar_sync.enrichment_skipped', {
+        event_id: eventId,
+        title: event.getTitle(),
+        extract_skipped: !decision.extract,
+        lookup_skipped: !decision.lookup,
+      })
+    }
+
     logEvent('calendar_sync.claim_synced', {
       event_id: eventId,
       title: event.getTitle(),
       claim_number: header.claim_number,
       field_count: Object.keys(details.fields).length,
+      llm_calls: calls,
+      llm_calls_skipped: skipped,
     })
 
-    return true
+    return eventOutcome(true, calls, skipped)
   } catch (err) {
     var described = describeError(err)
     logEvent('calendar_sync.event_failed', {
@@ -304,8 +382,76 @@ function syncEventToClaim(event) {
       error: described.error,
       stack: described.stack,
     })
-    return false
+    return eventOutcome(false, 0, 0)
   }
+}
+
+// upsertClaim files a calendar-sourced claim under the event id, so claim_id IS
+// the event id for every row this sync writes. Rows from any other source simply
+// never match an event and are ignored.
+function indexClaimsByCalendarId(claims) {
+  var byId = {}
+
+  ;(claims || []).forEach(function (claim) {
+    if (claim && claim.claim_id) byId[claim.claim_id] = claim
+  })
+
+  return byId
+}
+
+function eventOutcome(synced, calls, skipped) {
+  return { synced: synced, llm_calls: calls, llm_calls_skipped: skipped }
+}
+
+// The stored calendar_fields cell is the previous tick's extraction plus the
+// verbatim raw_notes added above; raw_notes is stripped back off so a cached
+// tick rebuilds the cell from the event's own description rather than carrying
+// a stale copy of it forward.
+function storedCalendarFields(storedClaim) {
+  if (!storedClaim || !storedClaim.calendar_fields) return {}
+
+  var parsed
+  try {
+    parsed = JSON.parse(storedClaim.calendar_fields)
+  } catch (err) {
+    return {}
+  }
+
+  if (!parsed || typeof parsed !== 'object') return {}
+
+  delete parsed.raw_notes
+  return parsed
+}
+
+function storedPropertyValues(storedClaim) {
+  if (!storedClaim) return EMPTY_PROPERTY_LOOKUP
+
+  return {
+    year_built: String(storedClaim.property_year_built || ''),
+    bedrooms: String(storedClaim.property_bedrooms || ''),
+    bathrooms: String(storedClaim.property_bathrooms || ''),
+    square_footage: String(storedClaim.property_square_footage || ''),
+    source_url: String(storedClaim.property_source_url || ''),
+  }
+}
+
+// A lookup that threw tells us nothing about the property, so the row keeps
+// whatever it already held rather than being blanked and re-searched next tick —
+// unless the address itself changed, in which case the stored values describe a
+// different house and must go.
+function resolvePropertyValues(storedClaim, decision, propertyLookup) {
+  if (!decision.lookup) return propertyLookup.values
+  if (!propertyLookup.failed) return propertyLookup.values
+  return decision.address_changed ? EMPTY_PROPERTY_LOOKUP : storedPropertyValues(storedClaim)
+}
+
+// The cache marker: set when a lookup completed (found or genuinely empty),
+// cleared when one threw so the next tick retries it. Never carried forward
+// across an address change — that marker belongs to the old address.
+function resolvePropertyLookupAt(storedClaim, decision, propertyLookup) {
+  if (!decision.lookup) return String((storedClaim && storedClaim.property_lookup_at) || '')
+  if (propertyLookup.failed) return ''
+  return new Date().toISOString()
 }
 
 // "TALLEY - CLF-00153289    IBIS" -> last name, claim number, vendor. The
@@ -420,6 +566,91 @@ function stripZipPlusFour(text) {
   return text.replace(/(\d{5})-\d{4}\s*$/, '$1')
 }
 
+// docs/specs/027. Both enrichment calls are pure functions of text that lives on
+// the calendar event, so a tick can decide whether either needs to run at all by
+// comparing a fingerprint of those inputs against the one stored on the Claims
+// row. Before this, the 52-hour window and the hourly trigger meant every event
+// was re-enriched about forty times before it aged out — 278 property lookups
+// across 10 distinct events in 48 hours, re-searching houses whose year built
+// and square footage were already sitting on the row.
+//
+// Fingerprints are only ever compared, never inspected, so any cheap hash will
+// do — but a collision would silently suppress an enrichment that should have
+// run, so this pairs two independent 32-bit hashes with the input length.
+function fingerprintText(text) {
+  var value = String(text == null ? '' : text)
+  var djb2 = 5381
+  var sdbm = 0
+
+  for (var i = 0; i < value.length; i++) {
+    var code = value.charCodeAt(i)
+    djb2 = (djb2 * 33 + code) | 0
+    sdbm = (code + (sdbm << 6) + (sdbm << 16) - sdbm) | 0
+  }
+
+  return value.length + '-' + toHex32(djb2) + toHex32(sdbm)
+}
+
+function toHex32(n) {
+  return ('0000000' + (n >>> 0).toString(16)).slice(-8)
+}
+
+// \u0000 rather than a printable separator: it cannot occur in a calendar field,
+// so no rearrangement of title/location/description can produce the same joined
+// string as a different one.
+function calendarFieldsFingerprint(title, location, description) {
+  return fingerprintText([title || '', location || '', description || ''].join('\u0000'))
+}
+
+// The lookup receives exactly this string (see resolveFullAddressText), so it is
+// the whole input and the whole fingerprint.
+function propertyAddressFingerprint(fullAddressText) {
+  return fingerprintText(fullAddressText || '')
+}
+
+function calendarEnrichmentFingerprints(title, location, description, fullAddressText) {
+  return {
+    calendar_fingerprint: calendarFieldsFingerprint(title, location, description),
+    property_address_fingerprint: propertyAddressFingerprint(fullAddressText),
+  }
+}
+
+// Decides which of the two paid calls this tick needs, given the Claims row as
+// it stands (stored, or null for an event never synced), the event's current
+// fingerprints, and the current time.
+//
+// The property lookup has three outcomes and they cache differently:
+//   found  — property_source_url is set. Cached until the address changes.
+//   miss   — the call returned nothing sourced. property_lookup_at marks it;
+//            cached for PROPERTY_LOOKUP_MISS_TTL_MS so an unresolvable address
+//            is not re-searched hourly forever.
+//   failed — the call threw. No marker is written, so this returns true and the
+//            next tick retries. Caching a 402 as a miss would suppress the
+//            lookup for a week after credits were restored.
+function shouldReenrich(stored, current, now) {
+  if (!stored) {
+    return { extract: true, lookup: true, address_changed: true }
+  }
+
+  var addressChanged =
+    String(stored.property_address_fingerprint || '') !== current.property_address_fingerprint
+
+  return {
+    extract: String(stored.calendar_fingerprint || '') !== current.calendar_fingerprint,
+    lookup: addressChanged || propertyLookupCacheExpired(stored, now),
+    address_changed: addressChanged,
+  }
+}
+
+function propertyLookupCacheExpired(stored, now) {
+  if (stored.property_source_url) return false
+
+  var lookupAt = Date.parse(String(stored.property_lookup_at || ''))
+  if (isNaN(lookupAt)) return true
+
+  return now.getTime() - lookupAt >= PROPERTY_LOOKUP_MISS_TTL_MS
+}
+
 var EMPTY_PROPERTY_LOOKUP = {
   year_built: '',
   bedrooms: '',
@@ -432,18 +663,26 @@ var EMPTY_PROPERTY_LOOKUP = {
 // or a malformed response degrades to "nothing found" instead of failing the
 // whole claim sync — this is best-effort enrichment on top of a sync that
 // already succeeded without it.
+//
+// Returns { values, failed } rather than the bare values because the caller has
+// to tell "searched, found nothing" from "the call never completed": the first
+// is cached, the second must be retried. Collapsing both into
+// EMPTY_PROPERTY_LOOKUP would have cached a 402 as a miss and suppressed the
+// lookup for a week after credits were restored (docs/specs/027).
 function lookupPropertyDetailsSafely(fullAddressText) {
-  if (!fullAddressText) return EMPTY_PROPERTY_LOOKUP
+  // No address is not a failure — there is nothing to look up, and the empty
+  // address fingerprint re-runs this the moment one appears on the event.
+  if (!fullAddressText) return { values: EMPTY_PROPERTY_LOOKUP, failed: false }
 
   try {
-    return lookupPropertyDetails(fullAddressText)
+    return { values: lookupPropertyDetails(fullAddressText), failed: false }
   } catch (err) {
     var described = describeError(err)
     logEvent('calendar_sync.property_lookup_failed', {
       address: fullAddressText,
       error: described.error,
     })
-    return EMPTY_PROPERTY_LOOKUP
+    return { values: EMPTY_PROPERTY_LOOKUP, failed: true }
   }
 }
 
