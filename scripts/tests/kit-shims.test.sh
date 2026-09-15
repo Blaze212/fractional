@@ -86,6 +86,13 @@ fi
 # repo has no profile of its own, hence BH_DELIVERY_PROFILE.
 prof="$repo_root/.claude/delivery-profile.yaml"
 git -C "$tmp" init -q fixture
+mkdir -p "$tmp/fixture/scripts"
+# The shims too, not just the profile: kit-root.sh resolves the consuming repo from the
+# CWD, and under `kit_version: latest` it asserts the SHIM SET against that repo. A
+# fixture with no scripts/ dir reads as "the kit moved and the shims are stale" and
+# exits 3 before pr-size-gate.sh ever runs. Copying them in makes the fixture what it
+# already claims to be — a minimal consuming repo.
+cp "$repo_root"/scripts/*.sh "$tmp/fixture/scripts/"
 (
   cd "$tmp/fixture"
   git config user.email t@t; git config user.name t
