@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { loadGs } from './loadGs'
 
-const { buildPrompt, formatFieldGuidance, formatLiveExtraction } = loadGs(
+const { buildPrompt, formatFieldGuidance, formatLiveExtraction } = loadGs([
+  'apps/adjuster/src/util.js',
   'apps/adjuster/src/prompt.js',
-)
+])
 
 const templateSpec = {
   roof_covering_type: {
@@ -40,6 +41,37 @@ describe('buildPrompt', () => {
 
     expect(user).toContain('Whitfield')
     expect(user).toContain('412 Maple St')
+  })
+
+  // docs/specs/027 appended three bookkeeping columns to the Claims tab, and
+  // formatClaimBlock serialized the whole row into the block the model is told to
+  // read as the claim's IDENTITY — including a line named
+  // property_address_fingerprint carrying an opaque hash, inside the block it
+  // compares addresses against. That is a false claim_identity_mismatch waiting
+  // to happen, and a job parked at needs_review with no draft and no
+  // notification.
+  it("keeps the pipeline's own bookkeeping columns out of the claim identity block", () => {
+    const { user } = buildPrompt({
+      transcript: 'anything',
+      templateSpec,
+      claim: {
+        claim_id: '3dslruuig6cvfqh605rfapm2at@google.com',
+        insured_last_name: 'Whitfield',
+        address_line1: '412 Maple St',
+        calendar_fingerprint: '412-1a2b3c4d5e6f7a8b',
+        property_address_fingerprint: '34-9f8e7d6c5b4a3210',
+        property_lookup_at: '2026-09-15T18:00:00Z',
+        _rowIndex: 7,
+      },
+    })
+
+    expect(user).toContain('Whitfield')
+    expect(user).toContain('412 Maple St')
+    expect(user).not.toContain('property_address_fingerprint')
+    expect(user).not.toContain('calendar_fingerprint')
+    expect(user).not.toContain('property_lookup_at')
+    expect(user).not.toContain('_rowIndex')
+    expect(user).not.toContain('9f8e7d6c5b4a3210')
   })
 
   it('notes when no claim was matched', () => {

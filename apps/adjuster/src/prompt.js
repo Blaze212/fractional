@@ -195,12 +195,23 @@ function formatFieldGuidance(templateSpec) {
   return lines.join('\n')
 }
 
+// The model is told to read this block as the claim's identity and to flag a
+// claim_identity_mismatch when the adjuster names a different insured, address or
+// claim number. So it gets the row's MEANING, not the row: the pipeline's own
+// bookkeeping columns (see CLAIM_BOOKKEEPING_KEYS in util.js) are dropped rather
+// than serialized as identity. docs/specs/027 added a
+// property_address_fingerprint column, and an opaque hash on a line with
+// "address" in its name, inside the block the model compares addresses against,
+// is a false mismatch waiting to happen — and pure cost in prompt tokens, which
+// is the bill this pipeline is trying to shrink.
 function formatClaimBlock(claim) {
   if (!claim) return 'No claim matched. Leave claim-identifying fields as needing input.'
 
-  return Object.keys(claim)
+  var meaningful = withoutClaimBookkeeping(claim)
+
+  return Object.keys(meaningful)
     .map(function (key) {
-      return '- ' + key + ': ' + claim[key]
+      return '- ' + key + ': ' + meaningful[key]
     })
     .join('\n')
 }

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { loadGs } from './loadGs'
 
 const FILES = [
+  'apps/adjuster/src/util.js',
   'apps/adjuster/src/transcription.js',
   'apps/adjuster/src/prompt.js',
   'apps/adjuster/src/llm/masterTranscript.js',
