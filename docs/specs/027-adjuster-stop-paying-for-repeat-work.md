@@ -2,7 +2,7 @@
 
 **Status:** Draft
 **Owner:** Adjuster MVP
-**Linear:** _not yet filed_
+**Linear:** BH-142
 **Last updated:** 2026-09-15
 
 ## Objective
